@@ -1,0 +1,26 @@
+{
+  "name": "vendor-automation",
+  "version": "1.0.0",
+  "description": "Vendor order automation server",
+  "main": "server-puppeteer.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:headless": "HEADLESS=true node server.js",
+    "stop": "pkill -f 'node server' || true",
+    "restart": "npm run stop && sleep 2 && npm run start",
+    "restart:headless": "npm run stop && sleep 2 && npm run start:headless",
+    "logs": "tail -f server.log",
+    "start:bg": "node server.js > server.log 2>&1 &",
+    "start:bg:headless": "HEADLESS=true node server.js > server.log 2>&1 &"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "puppeteer-real-browser": "^1.4.4",
+    "sharp": "^0.34.5",
+    "tesseract.js": "^6.0.1"
+  }
+}
