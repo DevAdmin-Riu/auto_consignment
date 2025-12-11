@@ -1,8 +1,12 @@
 /**
  * 협력사 설정
+ *
+ * 주의: dotenv 사용 금지 (puppeteer-real-browser와 충돌)
+ * 환경변수는 browser.js의 loadEnv()로 로드됨
  */
 
-require("dotenv").config();
+// 환경변수를 동적으로 가져오는 함수
+const getEnv = (key) => process.env[key] || "";
 
 const VENDORS = {
   // 쿠팡 - 쿠팡페이 결제
@@ -10,9 +14,9 @@ const VENDORS = {
     key: "coupang",
     loginUrl: "https://login.coupang.com/login/login.pang",
     siteUrl: "https://www.coupang.com",
-    email: process.env.COUPANG_EMAIL,
-    password: process.env.COUPANG_PASSWORD,
-    paymentPin: process.env.COUPANG_PAYMENT_PIN,
+    get email() { return getEnv("COUPANG_EMAIL"); },
+    get password() { return getEnv("COUPANG_PASSWORD"); },
+    get paymentPin() { return getEnv("COUPANG_PAYMENT_PIN"); },
     paymentMethod: "coupang_pay",
     automationType: "product_search",
   },
@@ -21,8 +25,8 @@ const VENDORS = {
     key: "napkin",
     loginUrl: "https://napkinkorea.com/member/login.html",
     siteUrl: "https://napkinkorea.com",
-    userId: process.env.NAPKIN_USER_ID,
-    password: process.env.NAPKIN_PASSWORD,
+    get userId() { return getEnv("NAPKIN_USER_ID"); },
+    get password() { return getEnv("NAPKIN_PASSWORD"); },
     paymentMethod: "card",
     automationType: "product_search",
   },
@@ -31,10 +35,10 @@ const VENDORS = {
     key: "baemin",
     loginUrl: "https://mart.baemin.com/login",
     siteUrl: "https://mart.baemin.com",
-    userId: process.env.BAEMIN_USER_ID,
-    password: process.env.BAEMIN_PASSWORD,
+    get userId() { return getEnv("BAEMIN_USER_ID"); },
+    get password() { return getEnv("BAEMIN_PASSWORD"); },
     paymentMethod: "naver_pay",
-    phone: process.env.BAEMIN_PHONE,
+    get phone() { return getEnv("BAEMIN_PHONE"); },
     automationType: "product_search",
   },
   // 네이버 스마트스토어 - 네이버페이 결제
@@ -42,8 +46,8 @@ const VENDORS = {
     key: "naver",
     loginUrl: "https://nid.naver.com/nidlogin.login",
     siteUrl: "https://smartstore.naver.com",
-    userId: process.env.NAVER_USER_ID,
-    password: process.env.NAVER_PASSWORD,
+    get userId() { return getEnv("NAVER_USER_ID"); },
+    get password() { return getEnv("NAVER_PASSWORD"); },
     paymentMethod: "naver_pay",
     automationType: "product_search",
   },
@@ -52,8 +56,8 @@ const VENDORS = {
     key: "sungwon",
     loginUrl: "https://www.sungwonadpia.co.kr/member/login.html",
     siteUrl: "https://www.sungwonadpia.co.kr",
-    userId: process.env.SUNGWON_USER_ID,
-    password: process.env.SUNGWON_PASSWORD,
+    get userId() { return getEnv("SUNGWON_USER_ID"); },
+    get password() { return getEnv("SUNGWON_PASSWORD"); },
     paymentMethod: "card",
     requiresProofing: true,
     hideSender: true,
@@ -64,8 +68,8 @@ const VENDORS = {
     key: "adpia",
     loginUrl: "https://www.adpiamall.co.kr/member/login.html",
     siteUrl: "https://www.adpiamall.co.kr",
-    userId: process.env.ADPIA_USER_ID,
-    password: process.env.ADPIA_PASSWORD,
+    get userId() { return getEnv("ADPIA_USER_ID"); },
+    get password() { return getEnv("ADPIA_PASSWORD"); },
     paymentMethod: "card",
     requiresProofing: true,
     hideSender: true,
@@ -76,8 +80,8 @@ const VENDORS = {
     key: "wowpress",
     loginUrl: "https://www.wowpress.co.kr/member/login.html",
     siteUrl: "https://www.wowpress.co.kr",
-    userId: process.env.WOWPRESS_USER_ID,
-    password: process.env.WOWPRESS_PASSWORD,
+    get userId() { return getEnv("WOWPRESS_USER_ID"); },
+    get password() { return getEnv("WOWPRESS_PASSWORD"); },
     paymentMethod: "card",
     hideSender: true,
     automationType: "product_search",
@@ -103,8 +107,8 @@ const VENDORS = {
     key: "marpple",
     loginUrl: "https://www.marpple.com/kr/login",
     siteUrl: "https://www.marpple.com",
-    email: process.env.MARPPLE_EMAIL,
-    password: process.env.MARPPLE_PASSWORD,
+    get email() { return getEnv("MARPPLE_EMAIL"); },
+    get password() { return getEnv("MARPPLE_PASSWORD"); },
     paymentMethod: "card",
     automationType: "reorder",
   },

@@ -180,9 +180,7 @@ async function processCoupangOrder(
 
       // 2-3. 장바구니 담기
       console.log(`상품 ${productIndex + 1}: 장바구니 담기...`);
-      const cartBtn = await page.$(
-        'button.prod-cart-btn, button[class*="cart"]'
-      );
+      const cartBtn = await page.$("button.prod-cart-btn");
       if (cartBtn) {
         await cartBtn.click();
         await delay(1500);
@@ -254,9 +252,7 @@ async function processCoupangOrder(
 
     const selectedCount = await page.evaluate((vendorItemIds) => {
       let count = 0;
-      const items = document.querySelectorAll(
-        '.cart-item, .cart-deal-item, [class*="cart-item"]'
-      );
+      const items = document.querySelectorAll('div[id^="item_"]');
 
       for (const item of items) {
         const link = item.querySelector('a[href*="coupang.com/vp/products"]');
@@ -352,53 +348,12 @@ async function processCoupangOrder(
   console.log("Step 5: 주문하기 버튼 클릭...");
   try {
     const orderClicked = await page.evaluate(() => {
-      const orderBtnSelectors = [
-        ".cart-order-btn",
-        'button[data-testid="order-button"]',
-        ".sticky-order-btn button",
-        "button.order-btn",
-        'a[href*="checkout"]',
-        ".order-button",
-        ".cart-bottom button",
-        ".cart-footer button",
-      ];
-
-      for (const selector of orderBtnSelectors) {
-        try {
-          const btn = document.querySelector(selector);
-          if (btn && btn.offsetParent !== null) {
-            console.log("주문 버튼 발견:", selector);
-            btn.click();
-            return { success: true, selector };
-          }
-        } catch (e) {}
+      const btn = document.querySelector("#btnPay");
+      if (btn && btn.offsetParent !== null) {
+        btn.click();
+        return { success: true, selector: "#btnPay" };
       }
-
-      // fallback: 모든 버튼에서 "주문" 텍스트 포함 버튼 찾기
-      // 주의: "결제하기"는 Step 7에서 처리하므로 여기서는 제외
-      const allButtons = document.querySelectorAll("button, a");
-      for (const btn of allButtons) {
-        const text = btn.textContent || btn.innerText || "";
-        if (
-          (text.includes("주문하기") || text.includes("구매하기")) &&
-          !text.includes("결제하기") && // 결제하기 버튼은 배송지 처리 후에 클릭해야 함
-          btn.offsetParent !== null
-        ) {
-          console.log("주문 버튼 발견 (텍스트 매칭):", text.trim());
-          btn.click();
-          return { success: true, text: text.trim() };
-        }
-      }
-
-      const btnList = [];
-      document.querySelectorAll("button").forEach((b) => {
-        if (b.offsetParent !== null) {
-          btnList.push(b.textContent?.trim().substring(0, 30));
-        }
-      });
-      console.log("페이지 버튼들:", btnList.join(", "));
-
-      return { success: false, buttons: btnList };
+      return { success: false, error: "#btnPay 버튼을 찾을 수 없음" };
     });
 
     console.log("주문하기 버튼 결과:", JSON.stringify(orderClicked));
@@ -445,31 +400,43 @@ async function processCoupangOrder(
         console.log("배송지 수정 버튼 결과:", JSON.stringify(editResult));
 
         if (editResult.success) {
+          const isAddNew = editResult.action === "add_new";
+          const stepName = isAddNew ? "shipping_add_button" : "shipping_edit_button";
+          const message = isAddNew ? "새 배송지 추가 폼 열림" : "배송지 수정 폼 열림";
+
+          console.log(`[배송지] ${message} (action: ${editResult.action})`);
+
           steps.push({
-            step: "shipping_edit_button",
+            step: stepName,
             success: true,
             detail: editResult,
           });
 
-          // 배송지 수정 폼 열림 - 여기서 멈춤
+          // 배송지 폼 열림 - 여기서 멈춤
           return res.json({
             success: true,
             vendor: vendor.name,
-            message: "배송지 수정 폼 열림",
+            message,
+            action: editResult.action,
+            addressCount: editResult.count,
             steps,
           });
         } else {
-          console.log("배송지 수정 버튼 클릭 실패:", editResult.error);
+          console.log("배송지 버튼 클릭 실패:", editResult.error);
           steps.push({
-            step: "shipping_edit_button",
+            step: "shipping_address_button",
             success: false,
             error: editResult.error,
+            addressCount: editResult.count,
           });
           // 배송지 처리 실패 - 여기서 멈춤
           return res.json({
             success: false,
             vendor: vendor.name,
-            error: "배송지 수정 버튼 클릭 실패",
+            error: editResult.count === 0
+              ? "배송지 추가 버튼 클릭 실패"
+              : "배송지 수정 버튼 클릭 실패",
+            addressCount: editResult.count,
             steps,
           });
         }
@@ -513,65 +480,12 @@ async function processCoupangOrder(
 
     // 결제하기 버튼 클릭
     const paymentClicked = await page.evaluate(() => {
-      // 쿠팡 결제 페이지 결제하기 버튼 셀렉터
-      const paymentBtnSelectors = [
-        // 결제하기 버튼 (일반적인 형태)
-        "button.payment-btn",
-        'button[data-testid="payment-button"]',
-        ".payment-button button",
-        "#payment-btn",
-        // 쿠팡페이 결제 버튼
-        "button.coupay-btn",
-        ".coupay-payment button",
-        // 하단 고정 결제 버튼
-        ".sticky-payment button",
-        ".order-summary button",
-        ".payment-area button",
-      ];
-
-      for (const selector of paymentBtnSelectors) {
-        try {
-          const btn = document.querySelector(selector);
-          if (btn && btn.offsetParent !== null) {
-            console.log("결제 버튼 발견:", selector);
-            btn.click();
-            return { success: true, selector };
-          }
-        } catch (e) {}
+      const btn = document.querySelector("#purchase > button");
+      if (btn && btn.offsetParent !== null) {
+        btn.click();
+        return { success: true, selector: "#purchase > button" };
       }
-
-      // fallback: 모든 버튼에서 "결제" 텍스트 포함 버튼 찾기
-      const allButtons = document.querySelectorAll(
-        "button, a, input[type='submit']"
-      );
-      for (const btn of allButtons) {
-        const text = btn.textContent || btn.innerText || btn.value || "";
-        if (
-          (text.includes("결제하기") ||
-            text.includes("결제 하기") ||
-            text.includes("원 결제하기") ||
-            (text.includes("결제") && !text.includes("결제수단"))) &&
-          btn.offsetParent !== null
-        ) {
-          console.log(
-            "결제 버튼 발견 (텍스트 매칭):",
-            text.trim().substring(0, 50)
-          );
-          btn.click();
-          return { success: true, text: text.trim().substring(0, 50) };
-        }
-      }
-
-      // 디버그: 페이지의 버튼 목록 출력
-      const btnList = [];
-      document.querySelectorAll("button").forEach((b) => {
-        if (b.offsetParent !== null) {
-          btnList.push(b.textContent?.trim().substring(0, 30));
-        }
-      });
-      console.log("페이지 버튼들:", btnList.join(", "));
-
-      return { success: false, buttons: btnList };
+      return { success: false, error: "#purchase > button 버튼을 찾을 수 없음" };
     });
 
     console.log("결제하기 버튼 결과:", JSON.stringify(paymentClicked));
@@ -918,40 +832,6 @@ async function processCoupangOrder(
 }
 
 /**
- * 매칭된 배송지 선택
- */
-async function selectMatchedAddress(page, seq, name, phone) {
-  return await page.evaluate(
-    (seq, name, phone) => {
-      const allItems = document.querySelectorAll(
-        '[class*="address"], [class*="recipient"], li, div'
-      );
-
-      for (const item of allItems) {
-        const text = item.textContent || "";
-        const hasName = text.includes(name);
-        const hasPhone = text.includes(phone);
-
-        if (hasName && hasPhone) {
-          const selectBtn = item.querySelector('button, input[type="radio"]');
-          if (selectBtn) {
-            selectBtn.click();
-            return { clicked: true, method: "button" };
-          }
-          item.click();
-          return { clicked: true, method: "item" };
-        }
-      }
-
-      return { clicked: false };
-    },
-    seq,
-    name,
-    phone
-  );
-}
-
-/**
  * 배송지 변경 버튼 클릭
  * - 주문/결제 페이지에서 "배송지 변경" 버튼을 찾아 클릭
  * - 배송지 목록 모달을 띄움
@@ -1001,39 +881,12 @@ async function clickChangeAddressButton(page) {
   console.log("[배송지] 클릭 결과:", JSON.stringify(clickResult));
 
   if (clickResult.success) {
-    // 모달이 열릴 때까지 대기
+    // iframe 로딩 대기
     await delay(1500);
-
-    // 모달이 열렸는지 확인
-    const modalSelectors = [
-      ".address-layer",
-      ".address-list-layer",
-      ".shipping-address-modal",
-      ".checkout-address-layer",
-      "[class*='address'][class*='layer']",
-      "[class*='address'][class*='modal']",
-    ];
-
-    let modalOpened = false;
-    for (const selector of modalSelectors) {
-      const modal = await page.$(selector);
-      if (modal) {
-        const isVisible = await page.evaluate(
-          (el) => el.offsetParent !== null,
-          modal
-        );
-        if (isVisible) {
-          modalOpened = true;
-          console.log(`[배송지] 모달 열림: ${selector}`);
-          break;
-        }
-      }
-    }
 
     return {
       success: true,
       buttonClicked: clickResult,
-      modalOpened,
     };
   }
 
@@ -1051,41 +904,21 @@ async function clickChangeAddressButton(page) {
 async function clickEditAddressInList(page) {
   console.log("[배송지] 배송지 목록에서 수정 버튼 찾기...");
 
-  // iframe 찾기
-  const addressIframeSelectors = [
-    "iframe[src*='addressbook']",
-    "iframe[src*='address']",
-    "#addressBookIframe",
-    ".address-layer iframe",
-  ];
-
+  // addressbook iframe 찾기
   let addressFrame = null;
 
   for (let retry = 0; retry < 15; retry++) {
-    // 먼저 iframe 찾기
-    for (const selector of addressIframeSelectors) {
-      try {
-        const iframeHandle = await page.$(selector);
-        if (iframeHandle) {
-          addressFrame = await iframeHandle.contentFrame();
-          if (addressFrame) {
-            console.log(`[배송지] iframe 발견: ${selector}`);
-            break;
-          }
+    try {
+      const iframeHandle = await page.$("iframe[src*='addressbook']");
+      if (iframeHandle) {
+        addressFrame = await iframeHandle.contentFrame();
+        if (addressFrame) {
+          console.log("[배송지] addressbook iframe 발견");
+          break;
         }
-      } catch (e) {
-        // 무시
       }
-    }
-
-    if (addressFrame) break;
-
-    // iframe 없으면 메인 페이지에서 찾기
-    const hasAddressCard = await page.$(".address-card");
-    if (hasAddressCard) {
-      addressFrame = page;
-      console.log("[배송지] 메인 페이지에서 배송지 카드 발견");
-      break;
+    } catch (e) {
+      // 무시
     }
 
     console.log(`[배송지] iframe 찾기 재시도... (${retry + 1}/15)`);
@@ -1114,39 +947,27 @@ async function clickEditAddressInList(page) {
   console.log(`[배송지] 배송지 목록: ${addressListInfo.count}개`);
   console.log("[배송지] 목록 상세:", JSON.stringify(addressListInfo.cards, null, 2));
 
+  // 배송지 목록이 비어있으면 배송지 추가 폼이 바로 열려있음 (버튼 클릭 불필요)
   if (addressListInfo.count === 0) {
-    return { success: false, error: "배송지 목록이 비어있음", count: 0 };
+    console.log("[배송지] 배송지 목록 비어있음 - 추가 폼이 바로 열려있음");
+    return {
+      success: true,
+      action: "add_new",
+      count: 0,
+    };
   }
 
-  // 첫 번째 배송지의 수정 버튼 클릭
-  const editBtnSelectors = [
-    ".address-card:first-child .address-card__button--edit",
-    ".address-card .address-card__button--edit",
-    "button.address-card__button--edit",
-  ];
-
-  for (const selector of editBtnSelectors) {
-    try {
-      const editBtn = await addressFrame.$(selector);
-      if (editBtn) {
-        const isVisible = await addressFrame.evaluate(
-          (el) => el.offsetParent !== null,
-          editBtn
-        );
-        if (isVisible) {
-          console.log(`[배송지] 수정 버튼 발견: ${selector}`);
-          await editBtn.click();
-          return {
-            success: true,
-            count: addressListInfo.count,
-            clickedAddress: addressListInfo.cards[0],
-            selector,
-          };
-        }
-      }
-    } catch (e) {
-      // 무시
-    }
+  // 배송지 목록이 있으면 첫 번째 배송지의 수정 버튼 클릭
+  const editBtn = await addressFrame.$(".address-card .address-card__button--edit");
+  if (editBtn) {
+    console.log("[배송지] 수정 버튼 발견: .address-card__button--edit");
+    await editBtn.click();
+    return {
+      success: true,
+      action: "edit_existing",
+      count: addressListInfo.count,
+      clickedAddress: addressListInfo.cards[0],
+    };
   }
 
   return {
@@ -1175,9 +996,7 @@ async function verifyCartItems(page, expectedProducts) {
   const cartItems = await page.evaluate(() => {
     const items = [];
     // 쿠팡 장바구니: div[id^="item_"] with data-selected, data-vid attributes
-    const cartItemElements = document.querySelectorAll(
-      'div[id^="item_"], [data-bundle-id], .cart-item, .cart-deal-item'
-    );
+    const cartItemElements = document.querySelectorAll('div[id^="item_"]');
 
     for (const item of cartItemElements) {
       // 체크박스 상태 확인 - data-selected 속성 또는 checkbox checked
@@ -1388,9 +1207,7 @@ async function adjustCartQuantity(page, vendorItemId, targetQuantity) {
 
   const adjusted = await page.evaluate(
     (vendorItemId, targetQuantity) => {
-      const cartItems = document.querySelectorAll(
-        '.cart-item, .cart-deal-item, [class*="cart-item"]'
-      );
+      const cartItems = document.querySelectorAll('div[id^="item_"]');
 
       for (const item of cartItems) {
         const link = item.querySelector('a[href*="coupang.com/vp/products"]');
@@ -2025,10 +1842,8 @@ async function clearCart(page) {
       return { isEmpty: true, itemCount: 0 };
     }
 
-    // 장바구니 상품 개수 확인 - div[id^="item_"] 또는 data-bundle-id 속성 사용
-    const cartItems = document.querySelectorAll(
-      'div[id^="item_"], [data-bundle-id], .cart-item, .cart-deal-item'
-    );
+    // 장바구니 상품 개수 확인
+    const cartItems = document.querySelectorAll('div[id^="item_"]');
     return { isEmpty: cartItems.length === 0, itemCount: cartItems.length };
   });
 
@@ -2327,7 +2142,6 @@ async function clearCart(page) {
 
 module.exports = {
   processCoupangOrder,
-  selectMatchedAddress,
   clickChangeAddressButton,
   clickEditAddressInList,
   verifyCartItems,
