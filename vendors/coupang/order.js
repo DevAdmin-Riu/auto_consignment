@@ -444,18 +444,20 @@ async function processCoupangOrder(
             detail: fillResult,
           });
 
-          // 폼 입력 완료 - 여기서 멈춤 (다음 단계: 저장 버튼 클릭)
-          return res.json({
-            success: fillResult.success,
-            vendor: vendor.name,
-            message: fillResult.success
-              ? "배송지 폼 입력 완료"
-              : "배송지 폼 입력 실패",
-            action: editResult.action,
-            addressCount: editResult.count,
-            fillResult,
-            steps,
-          });
+          if (!fillResult.success) {
+            // 배송지 폼 입력 실패 - 여기서 멈춤
+            return res.json({
+              success: false,
+              vendor: vendor.name,
+              message: "배송지 폼 입력 실패",
+              action: editResult.action,
+              addressCount: editResult.count,
+              fillResult,
+              steps,
+            });
+          }
+          // 배송지 입력 성공 - 결제 단계로 진행
+          console.log("[배송지] 배송지 입력 완료, 결제 단계로 진행...");
         } else {
           console.log("배송지 버튼 클릭 실패:", editResult.error);
           steps.push({
@@ -667,10 +669,45 @@ async function processCoupangOrder(
           if (pageState.orderAmount) {
             console.log(`[가격] 쿠팡 주문금액: ${pageState.orderAmount}원`);
           }
+
+          // 결제 완료 확인 버튼 클릭 → 주문번호 페이지로 이동
+          let finalOrderNumber = pageState.orderNumber;
+          try {
+            await delay(1000);
+            const confirmBtn = await page.$(
+              "#__next > div.sc-445mix-0.bdbSye > div.sc-wh3cod-0.sNTur > button.sc-1vm0jpx-0.sc-1vm0jpx-2.sc-wh3cod-1.gWgVCb.iqKTcw.hmSagB"
+            );
+            if (confirmBtn) {
+              await confirmBtn.click();
+              console.log("[결제 완료] 확인 버튼 클릭");
+              await delay(3000);
+
+              // 주문번호 추출
+              const orderInfo = await page.evaluate(() => {
+                const orderSpan = document.querySelector(
+                  "#__next > div.sc-vv7pzb-0.kqeqyx.my-area-body > div.sc-vv7pzb-1.dHwqA-d.my-area-contents > div > div.sc-llyby5-0.cpmwZc > div.sc-llyby5-1.hEqipt > span.sc-llyby5-2.jtryGp"
+                );
+                if (orderSpan) {
+                  const text = orderSpan.textContent || "";
+                  const match = text.match(/(\d+)/);
+                  return match ? match[1] : text;
+                }
+                return null;
+              });
+
+              if (orderInfo) {
+                finalOrderNumber = orderInfo;
+                console.log(`[결제 완료] 주문번호: ${finalOrderNumber}`);
+              }
+            }
+          } catch (e) {
+            console.log("[결제 완료] 확인 버튼/주문번호 처리 실패:", e.message);
+          }
+
           steps.push({
             step: "payment_complete",
             success: true,
-            orderNumber: pageState.orderNumber,
+            orderNumber: finalOrderNumber,
             orderAmount: pageState.orderAmount,
             url: currentUrl,
           });
@@ -1167,41 +1204,227 @@ async function fillAddressForm(page, shippingAddress) {
       if (zipcodeTrigger) {
         await zipcodeTrigger.click();
         console.log("[배송지] 우편번호 검색 버튼 클릭");
-        await delay(1000);
+        await delay(1500);
 
-        // 검색 팝업 대기 (메인 페이지에 뜸)
-        const searchQuery = streetAddress1 || postalCode;
+        // 주소 검색 picker iframe 찾기 (id.coupang.com/addressbook/picker)
+        let pickerFrame = null;
 
-        // 검색 입력 필드 찾기 - 메인 페이지의 우편번호 검색 팝업
-        const searchInput = await page.$("div.zipcode__keyword-box._zipcodeSearchKeyBox > input");
+        // 디버깅: 페이지의 모든 iframe 확인
+        const allIframes = await page.$$("iframe");
+        console.log(`[배송지 디버그] 페이지 내 iframe 개수: ${allIframes.length}`);
+        for (let i = 0; i < allIframes.length; i++) {
+          const src = await allIframes[i].evaluate((el) => el.src);
+          console.log(`[배송지 디버그] iframe[${i}] src: ${src}`);
+        }
 
-        if (searchInput) {
-          // 기존 값 지우고 새 값 입력
-          await searchInput.click();
-          await delay(100);
-          await searchInput.evaluate((el) => (el.value = ""));
-          await delay(100);
-          await page.keyboard.type(searchQuery, { delay: 50 });
-          console.log("[배송지] 주소 검색어 입력:", searchQuery);
-          await delay(300);
-
-          // 검색 버튼 클릭
-          const searchBtn = await page.$("div.zipcode__search-trigger > button");
-          if (searchBtn) {
-            await searchBtn.click();
-            console.log("[배송지] 검색 버튼 클릭");
-          } else {
-            await page.keyboard.press("Enter");
-            console.log("[배송지] Enter 키로 검색 (버튼 없음)");
+        for (let retry = 0; retry < 10; retry++) {
+          try {
+            const pickerIframeHandle = await page.$("iframe[src*='addressbook/picker']");
+            console.log(`[배송지 디버그] pickerIframeHandle: ${pickerIframeHandle ? "found" : "null"}`);
+            if (pickerIframeHandle) {
+              pickerFrame = await pickerIframeHandle.contentFrame();
+              console.log(`[배송지 디버그] pickerFrame: ${pickerFrame ? "found" : "null"}`);
+              if (pickerFrame) {
+                console.log("[배송지] picker iframe 발견");
+                break;
+              }
+            }
+          } catch (e) {
+            console.log(`[배송지 디버그] iframe 찾기 에러: ${e.message}`);
           }
-          await delay(1500);
+          console.log(`[배송지] picker iframe 찾기 재시도... (${retry + 1}/10)`);
+          await delay(500);
+        }
 
-          // TODO: 검색 결과에서 주소 선택 (셀렉터 확인 필요)
-          console.log("[배송지] 검색 결과 선택 대기 중...");
-          filledFields.push({ field: "roadAddress", value: searchQuery });
+        if (!pickerFrame) {
+          console.log("[배송지] picker iframe 찾을 수 없음");
+          errors.push({ field: "roadAddress", error: "picker iframe 찾을 수 없음" });
         } else {
-          console.log("[배송지] 검색 입력 필드 찾을 수 없음");
-          errors.push({ field: "roadAddress", error: "검색 입력 필드 찾을 수 없음" });
+          const searchQuery = streetAddress1 || postalCode;
+          console.log(`[배송지 디버그] searchQuery: ${searchQuery}`);
+
+          // 검색 입력 필드 찾기 - picker iframe 내부
+          let searchInput = await pickerFrame.$("div.zipcode__keyword-box._zipcodeSearchKeyBox > input");
+          let zipcodeFrame = null; // iframe 안의 iframe (zipcode 검색 화면)
+          console.log(`[배송지 디버그] searchInput (zipcode): ${searchInput ? "found" : "null"}`);
+
+          // 다른 셀렉터로도 시도
+          if (!searchInput) {
+            // 모든 input 태그 확인
+            const allInputs = await pickerFrame.$$("input");
+            console.log(`[배송지 디버그] pickerFrame 내 input 개수: ${allInputs.length}`);
+            for (let i = 0; i < Math.min(allInputs.length, 5); i++) {
+              const inputInfo = await allInputs[i].evaluate((el) => ({
+                name: el.name,
+                id: el.id,
+                type: el.type,
+                placeholder: el.placeholder,
+                className: el.className,
+              }));
+              console.log(`[배송지 디버그] input[${i}]:`, JSON.stringify(inputInfo));
+            }
+
+            // 주소 변경 버튼 찾기 (검색 화면으로 이동)
+            const changeAddressBtn = await pickerFrame.$("._addressBookZipcodeTrigger");
+            console.log(`[배송지 디버그] changeAddressBtn (_addressBookZipcodeTrigger): ${changeAddressBtn ? "found" : "null"}`);
+
+            if (changeAddressBtn) {
+              // 버튼 상태 확인
+              const btnInfo = await changeAddressBtn.evaluate((el) => ({
+                tagName: el.tagName,
+                className: el.className,
+                innerText: el.innerText.substring(0, 50),
+                href: el.href,
+              }));
+              console.log(`[배송지 디버그] 버튼 정보:`, JSON.stringify(btnInfo));
+
+              // disabled 클래스 제거 (버튼이 비활성화 상태일 수 있음)
+              await changeAddressBtn.evaluate((el) => {
+                el.classList.remove("icon-text-field__button--disabled");
+                el.removeAttribute("disabled");
+              });
+              console.log("[배송지 디버그] disabled 클래스 제거");
+
+              // 버튼이 보이도록 스크롤
+              await changeAddressBtn.evaluate((el) => el.scrollIntoView({ behavior: "instant", block: "center" }));
+              await delay(300);
+
+              // 클릭 시도
+              console.log("[배송지 디버그] 클릭 시도...");
+              await changeAddressBtn.click();
+              await delay(2000);
+
+              // zipcode__wrapper 확인
+              let wrapperFound = await pickerFrame.$("div.zipcode__wrapper");
+              console.log(`[배송지 디버그] 클릭 후 zipcode__wrapper: ${wrapperFound ? "found" : "null"}`);
+
+              // 안되면 href 직접 이동 시도 (A 태그)
+              if (!wrapperFound && btnInfo.href) {
+                console.log(`[배송지 디버그] href로 이동 시도: ${btnInfo.href}`);
+                await pickerFrame.goto(btnInfo.href);
+                await delay(2000);
+                wrapperFound = await pickerFrame.$("div.zipcode__wrapper");
+                console.log(`[배송지 디버그] href 이동 후 zipcode__wrapper: ${wrapperFound ? "found" : "null"}`);
+              }
+
+              // pickerFrame 안의 iframe 확인 (iframe 안에 iframe 구조)
+              const innerIframes = await pickerFrame.$$("iframe");
+              console.log(`[배송지 디버그] pickerFrame 내 iframe 개수: ${innerIframes.length}`);
+
+              for (let i = 0; i < innerIframes.length; i++) {
+                const src = await innerIframes[i].evaluate((el) => el.src);
+                console.log(`[배송지 디버그] pickerFrame 내 iframe[${i}] src: ${src}`);
+                const innerFrame = await innerIframes[i].contentFrame();
+                if (innerFrame) {
+                  const hasWrapper = await innerFrame.$("div.zipcode__wrapper");
+                  console.log(`[배송지 디버그] iframe[${i}] zipcode__wrapper: ${hasWrapper ? "found" : "null"}`);
+                  if (hasWrapper) {
+                    zipcodeFrame = innerFrame;
+                    console.log("[배송지 디버그] zipcode__wrapper가 있는 iframe 발견!");
+                    break;
+                  }
+                }
+              }
+
+              // zipcodeFrame에서 searchInput 찾기
+              if (zipcodeFrame) {
+                searchInput = await zipcodeFrame.$("div.zipcode__keyword-box._zipcodeSearchKeyBox > input");
+                console.log(`[배송지 디버그] searchInput (zipcodeFrame): ${searchInput ? "found" : "null"}`);
+              }
+
+              // pickerFrame에서 찾기
+              if (!searchInput) {
+                searchInput = await pickerFrame.$("div.zipcode__keyword-box._zipcodeSearchKeyBox > input");
+                console.log(`[배송지 디버그] searchInput (pickerFrame): ${searchInput ? "found" : "null"}`);
+              }
+
+              // addressFrame에서 찾기
+              if (!searchInput) {
+                searchInput = await addressFrame.$("div.zipcode__keyword-box._zipcodeSearchKeyBox > input");
+                console.log(`[배송지 디버그] searchInput (addressFrame): ${searchInput ? "found" : "null"}`);
+              }
+            }
+          }
+
+          if (searchInput) {
+            // iframe 내의 input에 직접 값 설정 (page.keyboard.type은 메인 페이지에서만 동작)
+            await searchInput.click();
+            console.log("[배송지 디버그] searchInput 클릭 완료");
+            await delay(100);
+
+            // 값 직접 설정 및 input 이벤트 발생
+            await searchInput.evaluate((el, val) => {
+              el.value = val;
+              el.dispatchEvent(new Event("input", { bubbles: true }));
+              el.dispatchEvent(new Event("change", { bubbles: true }));
+            }, searchQuery);
+            console.log("[배송지] 주소 검색어 입력:", searchQuery);
+            await delay(500);
+
+            // 검색 버튼 클릭 (zipcodeFrame 또는 pickerFrame 내에서)
+            let searchBtn = null;
+            if (zipcodeFrame) {
+              searchBtn = await zipcodeFrame.$("div.zipcode__search-trigger > button");
+              console.log(`[배송지 디버그] searchBtn (zipcodeFrame): ${searchBtn ? "found" : "null"}`);
+            }
+            if (!searchBtn) {
+              searchBtn = await pickerFrame.$("div.zipcode__search-trigger > button");
+              console.log(`[배송지 디버그] searchBtn (pickerFrame): ${searchBtn ? "found" : "null"}`);
+            }
+            if (searchBtn) {
+              await searchBtn.click();
+              console.log("[배송지] 검색 버튼 클릭");
+              await delay(2000);
+            } else {
+              // Enter 키로 검색
+              await searchInput.press("Enter");
+              console.log("[배송지] Enter 키로 검색");
+              await delay(2000);
+            }
+
+            // 검색 결과에서 우편번호 일치하는 도로명 주소 선택
+            const targetFrame = zipcodeFrame || pickerFrame;
+            const resultItems = await targetFrame.$$("._zipcodeResultSendTrigger.zipcode__result__item--road");
+            console.log(`[배송지 디버그] 검색 결과 개수: ${resultItems.length}`);
+
+            let addressSelected = false;
+            for (const item of resultItems) {
+              const dataResult = await item.evaluate((el) => el.getAttribute("data-result"));
+              if (dataResult) {
+                try {
+                  const resultData = JSON.parse(dataResult);
+                  console.log(`[배송지 디버그] 결과 우편번호: ${resultData.zipcode}, 찾는 우편번호: ${postalCode}`);
+                  if (resultData.zipcode === postalCode) {
+                    await item.click();
+                    console.log(`[배송지] 우편번호 ${postalCode} 일치하는 주소 선택: ${resultData.roadAddress}`);
+                    addressSelected = true;
+                    await delay(1500);
+                    break;
+                  }
+                } catch (e) {
+                  console.log(`[배송지 디버그] JSON 파싱 실패: ${e.message}`);
+                }
+              }
+            }
+
+            if (!addressSelected && resultItems.length > 0) {
+              // 일치하는 우편번호가 없으면 첫 번째 결과 선택
+              console.log("[배송지] 일치하는 우편번호 없음, 첫 번째 결과 선택");
+              await resultItems[0].click();
+              await delay(1500);
+              addressSelected = true;
+            }
+
+            if (addressSelected) {
+              filledFields.push({ field: "roadAddress", value: searchQuery, postalCode });
+            } else {
+              console.log("[배송지] 검색 결과 없음");
+              errors.push({ field: "roadAddress", error: "검색 결과 없음" });
+            }
+          } else {
+            console.log("[배송지] 검색 입력 필드 찾을 수 없음");
+            errors.push({ field: "roadAddress", error: "검색 입력 필드 찾을 수 없음" });
+          }
         }
       } else {
         console.log("[배송지] 우편번호 검색 버튼 찾을 수 없음 - 기존 주소 유지");
@@ -1217,17 +1440,28 @@ async function fillAddressForm(page, shippingAddress) {
   }
 
   // 상세주소 (addressDetail) 입력 - streetAddress2 또는 addressDetail 사용
+  // 주의: 주소 검색 후 상세주소가 초기화되므로 주소 선택 완료 후에 입력해야 함
   const addressDetail = shippingAddress.streetAddress2 || shippingAddress.addressDetail;
   if (addressDetail) {
     try {
-      const detailInput = await addressFrame.$('input[name="addressDetail"]');
+      // pickerFrame 다시 찾기 (주소 검색 후 변경되었을 수 있음)
+      let currentPickerFrame = null;
+      const pickerIframe = await page.$("iframe[src*='addressbook/picker']");
+      if (pickerIframe) {
+        currentPickerFrame = await pickerIframe.contentFrame();
+      }
+      const targetFrame = currentPickerFrame || addressFrame;
+
+      const detailInput = await targetFrame.$("#addressbookAddressDetail");
       if (detailInput) {
-        // 기존 값 지우고 새 값 입력
+        // 기존 값 지우고 새 값 입력 (iframe 내에서 직접 설정)
         await detailInput.click();
         await delay(100);
-        await detailInput.evaluate((el) => (el.value = ""));
-        await delay(100);
-        await page.keyboard.type(addressDetail, { delay: 50 });
+        await detailInput.evaluate((el, val) => {
+          el.value = val;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+        }, addressDetail);
         filledFields.push({
           field: "addressDetail",
           value: addressDetail,
@@ -1244,26 +1478,54 @@ async function fillAddressForm(page, shippingAddress) {
     }
   }
 
-  // 입력 완료 후 상태 확인
-  const finalFormState = await addressFrame.evaluate(() => {
-    const form = document.querySelector("form");
-    if (!form) return null;
+  // 저장 버튼 클릭
+  try {
+    // pickerFrame 다시 찾기
+    let saveFrame = null;
+    const pickerIframe = await page.$("iframe[src*='addressbook/picker']");
+    if (pickerIframe) {
+      saveFrame = await pickerIframe.contentFrame();
+    }
+    const targetFrame = saveFrame || addressFrame;
 
-    const inputs = form.querySelectorAll("input, textarea");
-    const state = {};
-    inputs.forEach((input) => {
-      if (input.name) {
-        state[input.name] = input.value;
-      }
-    });
-    return state;
-  });
+    const saveBtn = await targetFrame.$("div.addressbook__button-fixer > button");
+    if (saveBtn) {
+      await saveBtn.click();
+      console.log("[배송지] 저장 버튼 클릭");
+      await delay(2000);
+      filledFields.push({ field: "save", value: "clicked" });
+    } else {
+      console.log("[배송지] 저장 버튼 찾을 수 없음");
+      errors.push({ field: "save", error: "저장 버튼 찾을 수 없음" });
+    }
+  } catch (e) {
+    console.log("[배송지] 저장 버튼 클릭 실패:", e.message);
+    errors.push({ field: "save", error: e.message });
+  }
 
+  // 수정한 배송지 선택 버튼 클릭
+  try {
+    await delay(1000);
+    const pickBtn = await addressFrame.$("form.address-card__form.address-card__form--pick._addressBookAddressCardPickForm > button");
+    if (pickBtn) {
+      await pickBtn.click();
+      console.log("[배송지] 배송지 선택 버튼 클릭");
+      await delay(2000);
+      filledFields.push({ field: "pickAddress", value: "clicked" });
+    } else {
+      console.log("[배송지] 배송지 선택 버튼 찾을 수 없음");
+      errors.push({ field: "pickAddress", error: "배송지 선택 버튼 찾을 수 없음" });
+    }
+  } catch (e) {
+    console.log("[배송지] 배송지 선택 버튼 클릭 실패:", e.message);
+    errors.push({ field: "pickAddress", error: e.message });
+  }
+
+  // 배송지 선택 완료 - iframe이 닫혔을 수 있으므로 상태 확인 생략
   return {
     success: errors.length === 0,
     filledFields,
     errors: errors.length > 0 ? errors : undefined,
-    formState: finalFormState,
   };
 }
 

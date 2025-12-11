@@ -123,15 +123,30 @@ const AUTOMATION_TYPES = {
 };
 
 /**
+ * 협력사 설정을 getter 보존하여 반환
+ * (spread 연산자는 getter를 즉시 평가하므로 사용하지 않음)
+ */
+function wrapVendorConfig(name, config) {
+  const result = Object.create(null);
+  result.name = name;
+
+  // getter를 보존하면서 프로퍼티 복사
+  const descriptors = Object.getOwnPropertyDescriptors(config);
+  Object.defineProperties(result, descriptors);
+
+  return result;
+}
+
+/**
  * 협력사 이름으로 설정 찾기
  */
 function getVendorByName(vendorName) {
   if (VENDORS[vendorName]) {
-    return { name: vendorName, ...VENDORS[vendorName] };
+    return wrapVendorConfig(vendorName, VENDORS[vendorName]);
   }
   for (const [name, config] of Object.entries(VENDORS)) {
     if (vendorName.includes(name) || name.includes(vendorName)) {
-      return { name, ...config };
+      return wrapVendorConfig(name, config);
     }
   }
   return null;
@@ -143,7 +158,7 @@ function getVendorByName(vendorName) {
 function getVendorByKey(key) {
   for (const [name, config] of Object.entries(VENDORS)) {
     if (config.key === key) {
-      return { name, ...config };
+      return wrapVendorConfig(name, config);
     }
   }
   return null;
