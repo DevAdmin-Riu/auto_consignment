@@ -64,229 +64,237 @@ async function processCoupangOrder(
     );
 
     for (let productIndex = 0; productIndex < products.length; productIndex++) {
-    const product = products[productIndex];
-    const productUrl = product.productUrl;
-    const quantity = product.quantity || 1;
-    const productName = product.productName;
+      const product = products[productIndex];
+      const productUrl = product.productUrl;
+      const quantity = product.quantity || 1;
+      const productName = product.productName;
 
-    console.log(
-      `\n----- [${productIndex + 1}/${products.length}] 상품 처리: ${
-        productName || productUrl
-      } -----`
-    );
+      console.log(
+        `\n----- [${productIndex + 1}/${products.length}] 상품 처리: ${
+          productName || productUrl
+        } -----`
+      );
 
-    if (!productUrl) {
-      console.log(`상품 ${productIndex + 1}: URL 없음, 스킵`);
-      steps.push({
-        step: `product_${productIndex + 1}_skip`,
-        success: false,
-        error: "URL 없음",
-      });
-      continue;
-    }
+      if (!productUrl) {
+        console.log(`상품 ${productIndex + 1}: URL 없음, 스킵`);
+        steps.push({
+          step: `product_${productIndex + 1}_skip`,
+          success: false,
+          error: "URL 없음",
+        });
+        continue;
+      }
 
-    // 2-1. 상품 페이지 이동
-    console.log(`상품 ${productIndex + 1}: 페이지 이동...`, productUrl);
-    try {
-      await page.goto(productUrl, {
-        waitUntil: "networkidle2",
-        timeout: 30000,
-      });
-      await delay(2000);
-
-      // 상품명 추출
-      let extractedName = "";
+      // 2-1. 상품 페이지 이동
+      console.log(`상품 ${productIndex + 1}: 페이지 이동...`, productUrl);
       try {
-        const titleElem = await page.$(
-          "h1.prod-buy-header__title, h2.prod-buy-header__title, .prod-buy-header__title"
-        );
-        if (titleElem) {
-          extractedName = await page.evaluate(
-            (el) => el.textContent,
-            titleElem
-          );
-        }
-      } catch (e) {}
+        await page.goto(productUrl, {
+          waitUntil: "networkidle2",
+          timeout: 30000,
+        });
+        await delay(2000);
 
-      steps.push({
-        step: `product_${productIndex + 1}_navigate`,
-        success: true,
-        productName: extractedName?.trim() || productName,
-      });
-
-      // 2-2. 수량 설정
-      if (quantity > 1) {
-        console.log(`상품 ${productIndex + 1}: 수량 설정...`, quantity);
-        let qtySet = false;
-
-        // 방법 1: "수량더하기" 버튼 클릭 (가장 안정적)
+        // 상품명 추출
+        let extractedName = "";
         try {
-          for (let i = 1; i < Math.min(quantity, 50); i++) {
-            const clicked = await page.evaluate(() => {
-              const containers = document.querySelectorAll(
-                ".product-quantity > div"
-              );
-              for (const container of containers) {
-                if (container.offsetParent === null) {
-                  continue;
-                }
-                const btns = container.querySelectorAll("button");
-                for (const btn of btns) {
-                  if (btn.textContent.includes("수량더하기") && !btn.disabled) {
-                    btn.click();
-                    return true;
+          const titleElem = await page.$(
+            "h1.prod-buy-header__title, h2.prod-buy-header__title, .prod-buy-header__title"
+          );
+          if (titleElem) {
+            extractedName = await page.evaluate(
+              (el) => el.textContent,
+              titleElem
+            );
+          }
+        } catch (e) {}
+
+        steps.push({
+          step: `product_${productIndex + 1}_navigate`,
+          success: true,
+          productName: extractedName?.trim() || productName,
+        });
+
+        // 2-2. 수량 설정
+        if (quantity > 1) {
+          console.log(`상품 ${productIndex + 1}: 수량 설정...`, quantity);
+          let qtySet = false;
+
+          // 방법 1: "수량더하기" 버튼 클릭 (가장 안정적)
+          try {
+            for (let i = 1; i < Math.min(quantity, 50); i++) {
+              const clicked = await page.evaluate(() => {
+                const containers = document.querySelectorAll(
+                  ".product-quantity > div"
+                );
+                for (const container of containers) {
+                  if (container.offsetParent === null) {
+                    continue;
+                  }
+                  const btns = container.querySelectorAll("button");
+                  for (const btn of btns) {
+                    if (
+                      btn.textContent.includes("수량더하기") &&
+                      !btn.disabled
+                    ) {
+                      btn.click();
+                      return true;
+                    }
                   }
                 }
+                return false;
+              });
+              if (clicked) {
+                await delay(200);
+                qtySet = true;
+              } else {
+                console.log(`수량 버튼 클릭 실패 (${i}/${quantity - 1})`);
+                break;
               }
-              return false;
-            });
-            if (clicked) {
-              await delay(200);
-              qtySet = true;
-            } else {
-              console.log(`수량 버튼 클릭 실패 (${i}/${quantity - 1})`);
-              break;
-            }
-          }
-        } catch (e) {
-          console.log("수량 설정 방법 1 실패:", e.message);
-        }
-
-        // 방법 2: input 값 직접 변경 + Enter키 (fallback)
-        if (!qtySet) {
-          try {
-            const input = await page.$('.product-quantity input[type="text"]');
-            if (input) {
-              await input.click({ clickCount: 3 });
-              await delay(200);
-              await page.keyboard.press("Backspace");
-              await page.keyboard.type(String(quantity), { delay: 50 });
-              await page.keyboard.press("Enter");
-              await delay(500);
-              qtySet = true;
             }
           } catch (e) {
-            console.log("수량 설정 방법 2 실패:", e.message);
+            console.log("수량 설정 방법 1 실패:", e.message);
           }
+
+          // 방법 2: input 값 직접 변경 + Enter키 (fallback)
+          if (!qtySet) {
+            try {
+              const input = await page.$(
+                '.product-quantity input[type="text"]'
+              );
+              if (input) {
+                await input.click({ clickCount: 3 });
+                await delay(200);
+                await page.keyboard.press("Backspace");
+                await page.keyboard.type(String(quantity), { delay: 50 });
+                await page.keyboard.press("Enter");
+                await delay(500);
+                qtySet = true;
+              }
+            } catch (e) {
+              console.log("수량 설정 방법 2 실패:", e.message);
+            }
+          }
+
+          await delay(1000);
+          steps.push({
+            step: `product_${productIndex + 1}_quantity`,
+            success: qtySet,
+            quantity,
+          });
         }
 
-        await delay(1000);
-        steps.push({
-          step: `product_${productIndex + 1}_quantity`,
-          success: qtySet,
-          quantity,
-        });
-      }
+        // 2-3. 장바구니 담기
+        console.log(`상품 ${productIndex + 1}: 장바구니 담기...`);
+        const cartBtn = await page.$("button.prod-cart-btn");
+        if (cartBtn) {
+          await cartBtn.click();
+          await delay(1500);
+          steps.push({
+            step: `product_${productIndex + 1}_cart`,
+            success: true,
+          });
 
-      // 2-3. 장바구니 담기
-      console.log(`상품 ${productIndex + 1}: 장바구니 담기...`);
-      const cartBtn = await page.$("button.prod-cart-btn");
-      if (cartBtn) {
-        await cartBtn.click();
-        await delay(1500);
-        steps.push({ step: `product_${productIndex + 1}_cart`, success: true });
-
-        // vendorItemId 추출하여 저장 (나중에 장바구니에서 선택할 때 사용)
-        const vendorItemIdMatch = productUrl.match(/vendorItemId=(\d+)/);
-        addedProducts.push({
-          productUrl,
-          productName: extractedName?.trim() || productName,
-          quantity,
-          vendorItemId: vendorItemIdMatch ? vendorItemIdMatch[1] : null,
-        });
-      } else {
+          // vendorItemId 추출하여 저장 (나중에 장바구니에서 선택할 때 사용)
+          const vendorItemIdMatch = productUrl.match(/vendorItemId=(\d+)/);
+          addedProducts.push({
+            productUrl,
+            productName: extractedName?.trim() || productName,
+            quantity,
+            vendorItemId: vendorItemIdMatch ? vendorItemIdMatch[1] : null,
+          });
+        } else {
+          steps.push({
+            step: `product_${productIndex + 1}_cart`,
+            success: false,
+            error: "버튼을 찾을 수 없음",
+          });
+        }
+      } catch (e) {
+        console.log(`상품 ${productIndex + 1} 처리 실패:`, e.message);
         steps.push({
-          step: `product_${productIndex + 1}_cart`,
+          step: `product_${productIndex + 1}_error`,
           success: false,
-          error: "버튼을 찾을 수 없음",
+          error: e.message,
         });
       }
-    } catch (e) {
-      console.log(`상품 ${productIndex + 1} 처리 실패:`, e.message);
-      steps.push({
-        step: `product_${productIndex + 1}_error`,
-        success: false,
-        error: e.message,
-      });
     }
-  }
 
-  console.log(
-    `\n========== 장바구니 담기 완료: ${addedProducts.length}/${products.length}개 성공 ==========\n`
-  );
+    console.log(
+      `\n========== 장바구니 담기 완료: ${addedProducts.length}/${products.length}개 성공 ==========\n`
+    );
 
-  // 3. 장바구니 페이지로 이동
-  console.log("Step 3: 장바구니 페이지로 이동...");
-  await page.goto("https://cart.coupang.com/cartView.pang", {
-    waitUntil: "networkidle2",
-    timeout: 30000,
-  });
-  await delay(1000);
-  steps.push({ step: "cart_page", success: true });
-
-  // 4. 전체 선택 해제 후 방금 담은 상품들만 선택
-  console.log("Step 4: 담은 상품들만 선택...");
-  try {
-    // 전체 선택 체크박스 해제 (이미 선택되어 있으면)
-    const allChecked = await page.evaluate(() => {
-      const allCheckbox = document.querySelector(
-        'input[name="allCheckbox"], input.all-checkbox, #allCheckbox'
-      );
-      if (allCheckbox && allCheckbox.checked) {
-        allCheckbox.click();
-        return true;
-      }
-      return false;
+    // 3. 장바구니 페이지로 이동
+    console.log("Step 3: 장바구니 페이지로 이동...");
+    await page.goto("https://cart.coupang.com/cartView.pang", {
+      waitUntil: "networkidle2",
+      timeout: 30000,
     });
-    if (allChecked) {
-      await delay(1000);
-      console.log("전체 선택 해제됨");
-    }
+    await delay(1000);
+    steps.push({ step: "cart_page", success: true });
 
-    // 방금 담은 상품들 선택 (vendorItemId로 매칭)
-    const vendorItemIds = addedProducts
-      .filter((p) => p.vendorItemId)
-      .map((p) => p.vendorItemId);
+    // 4. 전체 선택 해제 후 방금 담은 상품들만 선택
+    console.log("Step 4: 담은 상품들만 선택...");
+    try {
+      // 전체 선택 체크박스 해제 (이미 선택되어 있으면)
+      const allChecked = await page.evaluate(() => {
+        const allCheckbox = document.querySelector(
+          'input[name="allCheckbox"], input.all-checkbox, #allCheckbox'
+        );
+        if (allCheckbox && allCheckbox.checked) {
+          allCheckbox.click();
+          return true;
+        }
+        return false;
+      });
+      if (allChecked) {
+        await delay(1000);
+        console.log("전체 선택 해제됨");
+      }
 
-    console.log(`선택할 vendorItemIds: ${vendorItemIds.join(", ")}`);
+      // 방금 담은 상품들 선택 (vendorItemId로 매칭)
+      const vendorItemIds = addedProducts
+        .filter((p) => p.vendorItemId)
+        .map((p) => p.vendorItemId);
 
-    const selectedCount = await page.evaluate((vendorItemIds) => {
-      let count = 0;
-      const items = document.querySelectorAll('div[id^="item_"]');
+      console.log(`선택할 vendorItemIds: ${vendorItemIds.join(", ")}`);
 
-      for (const item of items) {
-        const link = item.querySelector('a[href*="coupang.com/vp/products"]');
-        const checkbox = item.querySelector('input[type="checkbox"]');
+      const selectedCount = await page.evaluate((vendorItemIds) => {
+        let count = 0;
+        const items = document.querySelectorAll('div[id^="item_"]');
 
-        if (link && checkbox) {
-          const href = link.getAttribute("href") || "";
-          // vendorItemId들 중 하나와 매칭되면 선택
-          for (const vendorItemId of vendorItemIds) {
-            if (href.includes(vendorItemId)) {
-              if (!checkbox.checked) {
-                checkbox.click();
+        for (const item of items) {
+          const link = item.querySelector('a[href*="coupang.com/vp/products"]');
+          const checkbox = item.querySelector('input[type="checkbox"]');
+
+          if (link && checkbox) {
+            const href = link.getAttribute("href") || "";
+            // vendorItemId들 중 하나와 매칭되면 선택
+            for (const vendorItemId of vendorItemIds) {
+              if (href.includes(vendorItemId)) {
+                if (!checkbox.checked) {
+                  checkbox.click();
+                }
+                count++;
+                break;
               }
-              count++;
-              break;
             }
           }
         }
-      }
 
-      return count;
-    }, vendorItemIds);
+        return count;
+      }, vendorItemIds);
 
-    console.log(`${selectedCount}개 상품 선택됨`);
-    steps.push({
-      step: "select_items",
-      success: selectedCount > 0,
-      selectedCount,
-    });
-    await delay(1000);
-  } catch (e) {
-    console.log("상품 선택 실패:", e.message);
-    steps.push({ step: "select_items", success: false, error: e.message });
-  }
+      console.log(`${selectedCount}개 상품 선택됨`);
+      steps.push({
+        step: "select_items",
+        success: selectedCount > 0,
+        selectedCount,
+      });
+      await delay(1000);
+    } catch (e) {
+      console.log("상품 선택 실패:", e.message);
+      steps.push({ step: "select_items", success: false, error: e.message });
+    }
 
     // 4.5 장바구니 검증 - 선택된 상품이 주문할 상품과 일치하는지 확인
     console.log("Step 4.5: 장바구니 검증...");
@@ -329,7 +337,11 @@ async function processCoupangOrder(
       cartVerified = true;
     } catch (e) {
       console.log("장바구니 검증 실패:", e.message);
-      steps.push({ step: "cart_verification", success: false, error: e.message });
+      steps.push({
+        step: "cart_verification",
+        success: false,
+        error: e.message,
+      });
       cartVerified = true; // 검증 실패해도 진행
     }
   } // while 루프 끝
@@ -401,8 +413,12 @@ async function processCoupangOrder(
 
         if (editResult.success) {
           const isAddNew = editResult.action === "add_new";
-          const stepName = isAddNew ? "shipping_add_button" : "shipping_edit_button";
-          const message = isAddNew ? "새 배송지 추가 폼 열림" : "배송지 수정 폼 열림";
+          const stepName = isAddNew
+            ? "shipping_add_button"
+            : "shipping_edit_button";
+          const message = isAddNew
+            ? "새 배송지 추가 폼 열림"
+            : "배송지 수정 폼 열림";
 
           console.log(`[배송지] ${message} (action: ${editResult.action})`);
 
@@ -412,13 +428,32 @@ async function processCoupangOrder(
             detail: editResult,
           });
 
-          // 배송지 폼 열림 - 여기서 멈춤
+          // Step 6-2: 배송지 폼에 데이터 입력
+          console.log("Step 6-2: 배송지 폼에 데이터 입력...");
+          await delay(1000); // 폼 로딩 대기
+
+          const fillResult = await fillAddressForm(page, shippingAddress);
+          console.log(
+            "배송지 폼 입력 결과:",
+            JSON.stringify(fillResult, null, 2)
+          );
+
+          steps.push({
+            step: "shipping_fill_form",
+            success: fillResult.success,
+            detail: fillResult,
+          });
+
+          // 폼 입력 완료 - 여기서 멈춤 (다음 단계: 저장 버튼 클릭)
           return res.json({
-            success: true,
+            success: fillResult.success,
             vendor: vendor.name,
-            message,
+            message: fillResult.success
+              ? "배송지 폼 입력 완료"
+              : "배송지 폼 입력 실패",
             action: editResult.action,
             addressCount: editResult.count,
+            fillResult,
             steps,
           });
         } else {
@@ -433,9 +468,10 @@ async function processCoupangOrder(
           return res.json({
             success: false,
             vendor: vendor.name,
-            error: editResult.count === 0
-              ? "배송지 추가 버튼 클릭 실패"
-              : "배송지 수정 버튼 클릭 실패",
+            error:
+              editResult.count === 0
+                ? "배송지 추가 버튼 클릭 실패"
+                : "배송지 수정 버튼 클릭 실패",
             addressCount: editResult.count,
             steps,
           });
@@ -485,7 +521,10 @@ async function processCoupangOrder(
         btn.click();
         return { success: true, selector: "#purchase > button" };
       }
-      return { success: false, error: "#purchase > button 버튼을 찾을 수 없음" };
+      return {
+        success: false,
+        error: "#purchase > button 버튼을 찾을 수 없음",
+      };
     });
 
     console.log("결제하기 버튼 결과:", JSON.stringify(paymentClicked));
@@ -935,9 +974,15 @@ async function clickEditAddressInList(page) {
     return {
       count: addressCards.length,
       cards: Array.from(addressCards).map((card, index) => {
-        const title = card.querySelector(".address-card__title")?.textContent?.trim();
-        const address = card.querySelector(".address-card__text--address")?.textContent?.trim();
-        const phone = card.querySelector(".address-card__text--cellphone")?.textContent?.trim();
+        const title = card
+          .querySelector(".address-card__title")
+          ?.textContent?.trim();
+        const address = card
+          .querySelector(".address-card__text--address")
+          ?.textContent?.trim();
+        const phone = card
+          .querySelector(".address-card__text--cellphone")
+          ?.textContent?.trim();
         const hasEditBtn = !!card.querySelector(".address-card__button--edit");
         return { index, title, address, phone, hasEditBtn };
       }),
@@ -945,7 +990,10 @@ async function clickEditAddressInList(page) {
   });
 
   console.log(`[배송지] 배송지 목록: ${addressListInfo.count}개`);
-  console.log("[배송지] 목록 상세:", JSON.stringify(addressListInfo.cards, null, 2));
+  console.log(
+    "[배송지] 목록 상세:",
+    JSON.stringify(addressListInfo.cards, null, 2)
+  );
 
   // 배송지 목록이 비어있으면 배송지 추가 폼이 바로 열려있음 (버튼 클릭 불필요)
   if (addressListInfo.count === 0) {
@@ -958,7 +1006,9 @@ async function clickEditAddressInList(page) {
   }
 
   // 배송지 목록이 있으면 첫 번째 배송지의 수정 버튼 클릭
-  const editBtn = await addressFrame.$(".address-card .address-card__button--edit");
+  const editBtn = await addressFrame.$(
+    ".address-card .address-card__button--edit"
+  );
   if (editBtn) {
     console.log("[배송지] 수정 버튼 발견: .address-card__button--edit");
     await editBtn.click();
@@ -974,6 +1024,266 @@ async function clickEditAddressInList(page) {
     success: false,
     error: "수정 버튼을 찾을 수 없음",
     count: addressListInfo.count,
+  };
+}
+
+/**
+ * 배송지 폼에 데이터 입력
+ * - iframe 내 배송지 폼 필드에 값 입력
+ * - shippingAddress: { name, phone, zonecode, address, addressDetail }
+ */
+async function fillAddressForm(page, shippingAddress) {
+  console.log("[배송지] 폼 데이터 입력 시작...");
+  console.log(
+    "[배송지] 입력할 데이터:",
+    JSON.stringify(shippingAddress, null, 2)
+  );
+
+  // addressbook iframe 찾기
+  let addressFrame = null;
+
+  for (let retry = 0; retry < 10; retry++) {
+    try {
+      const iframeHandle = await page.$("iframe[src*='addressbook']");
+      if (iframeHandle) {
+        addressFrame = await iframeHandle.contentFrame();
+        if (addressFrame) {
+          console.log("[배송지] addressbook iframe 발견");
+          break;
+        }
+      }
+    } catch (e) {
+      // 무시
+    }
+
+    console.log(`[배송지] iframe 찾기 재시도... (${retry + 1}/10)`);
+    await delay(500);
+  }
+
+  if (!addressFrame) {
+    return { success: false, error: "배송지 iframe을 찾을 수 없음" };
+  }
+
+  // 폼 로딩 대기
+  await delay(1000);
+
+  // 폼 필드 정보 확인
+  const formInfo = await addressFrame.evaluate(() => {
+    const form = document.querySelector("form");
+    if (!form) return { hasForm: false };
+
+    const inputs = Array.from(form.querySelectorAll("input, textarea"));
+    return {
+      hasForm: true,
+      fields: inputs.map((input) => ({
+        name: input.name,
+        id: input.id,
+        type: input.type,
+        placeholder: input.placeholder,
+        className: input.className,
+        value: input.value,
+      })),
+    };
+  });
+
+  if (!formInfo.hasForm) {
+    return { success: false, error: "배송지 폼을 찾을 수 없음" };
+  }
+
+  const filledFields = [];
+  const errors = [];
+
+  // 받는 분 (recipientName) 입력 - firstName 또는 name 사용
+  const recipientName = shippingAddress.firstName || shippingAddress.name;
+  if (recipientName) {
+    try {
+      const nameInput = await addressFrame.$('input[name="recipientName"]');
+      if (nameInput) {
+        // 기존 값 지우고 새 값 입력
+        await nameInput.click();
+        await delay(100);
+        await nameInput.evaluate((el) => (el.value = ""));
+        await delay(100);
+        await page.keyboard.type(recipientName, { delay: 50 });
+        filledFields.push({
+          field: "recipientName",
+          value: recipientName,
+        });
+        console.log("[배송지] 받는 분 입력 완료:", recipientName);
+      } else {
+        errors.push({
+          field: "recipientName",
+          error: "input[name='recipientName'] 찾을 수 없음",
+        });
+      }
+    } catch (e) {
+      errors.push({ field: "recipientName", error: e.message });
+    }
+  }
+
+  // 연락처 (recipientCellphone) 입력
+  if (shippingAddress.phone) {
+    try {
+      const phoneInput = await addressFrame.$(
+        'input[name="recipientCellphone"]'
+      );
+      if (phoneInput) {
+        // 하이픈 제거, 국가코드 제거 (쿠팡은 국가코드 별도 관리)
+        // +821012345678 → 1012345678, 010-1234-5678 → 1012345678
+        let phoneNumber = shippingAddress.phone.replace(/-/g, "");
+        if (phoneNumber.startsWith("+82")) {
+          phoneNumber = phoneNumber.substring(3);
+        } else if (phoneNumber.startsWith("0")) {
+          phoneNumber = phoneNumber.substring(1);
+        }
+        // 기존 값 지우고 새 값 입력
+        await phoneInput.click();
+        await delay(100);
+        await phoneInput.evaluate((el) => (el.value = ""));
+        await delay(100);
+        await page.keyboard.type(phoneNumber, { delay: 50 });
+        filledFields.push({ field: "recipientCellphone", value: phoneNumber });
+        console.log("[배송지] 연락처 입력 완료:", phoneNumber);
+      } else {
+        errors.push({
+          field: "recipientCellphone",
+          error: "input[name='recipientCellphone'] 찾을 수 없음",
+        });
+      }
+    } catch (e) {
+      errors.push({ field: "recipientCellphone", error: e.message });
+    }
+  }
+
+  // 주소 검색 (우편번호 검색 팝업 사용)
+  const postalCode = shippingAddress.postalCode;
+  const streetAddress1 = shippingAddress.streetAddress1;
+  if (postalCode || streetAddress1) {
+    try {
+      console.log("[배송지] 주소 검색 시작...");
+
+      // 우편번호 검색 버튼 클릭
+      const zipcodeTrigger = await addressFrame.$("._addressBookZipcodeTrigger");
+      if (zipcodeTrigger) {
+        await zipcodeTrigger.click();
+        console.log("[배송지] 우편번호 검색 버튼 클릭");
+        await delay(1000);
+
+        // 검색 팝업(새 iframe 또는 레이어) 대기
+        // 검색어 입력 (postalCode 또는 streetAddress1)
+        const searchQuery = postalCode || streetAddress1;
+
+        // 검색 입력 필드 찾기 - 팝업 내 input
+        const searchInput = await addressFrame.$('input[name="keyword"]')
+          || await addressFrame.$('input.search-input')
+          || await addressFrame.$('input[placeholder*="주소"]')
+          || await addressFrame.$('input[placeholder*="검색"]');
+
+        if (searchInput) {
+          // 기존 값 지우고 새 값 입력
+          await searchInput.click();
+          await delay(100);
+          await searchInput.evaluate((el) => (el.value = ""));
+          await delay(100);
+          await page.keyboard.type(searchQuery, { delay: 50 });
+          console.log("[배송지] 주소 검색어 입력:", searchQuery);
+          await delay(300);
+
+          // 검색 버튼 클릭
+          const searchBtn = await addressFrame.$('button[type="submit"]')
+            || await addressFrame.$('button.search-btn')
+            || await addressFrame.$('button._searchButton');
+
+          if (searchBtn) {
+            await searchBtn.click();
+            console.log("[배송지] 검색 버튼 클릭");
+            await delay(1500);
+          } else {
+            // Enter 키로 검색
+            await page.keyboard.press("Enter");
+            console.log("[배송지] Enter 키로 검색");
+            await delay(1500);
+          }
+
+          // 검색 결과에서 첫 번째 주소 선택
+          const addressResult = await addressFrame.$('li._addressItem')
+            || await addressFrame.$('li.address-item')
+            || await addressFrame.$('ul.address-list li:first-child');
+
+          if (addressResult) {
+            await addressResult.click();
+            console.log("[배송지] 검색 결과 주소 선택 완료");
+            await delay(500);
+            filledFields.push({ field: "roadAddress", value: searchQuery });
+          } else {
+            console.log("[배송지] 검색 결과 없음 - 기존 주소 유지");
+            filledFields.push({ field: "roadAddress", value: "no_result", skipped: true });
+          }
+        } else {
+          console.log("[배송지] 검색 입력 필드 찾을 수 없음");
+          errors.push({ field: "roadAddress", error: "검색 입력 필드 찾을 수 없음" });
+        }
+      } else {
+        console.log("[배송지] 우편번호 검색 버튼 찾을 수 없음 - 기존 주소 유지");
+        filledFields.push({ field: "roadAddress", value: "no_trigger", skipped: true });
+      }
+    } catch (e) {
+      console.log("[배송지] 주소 검색 실패:", e.message);
+      errors.push({ field: "roadAddress", error: e.message });
+    }
+  } else {
+    console.log("[배송지] 주소 정보 없음 - 기존 주소 유지");
+    filledFields.push({ field: "roadAddress", value: "no_data", skipped: true });
+  }
+
+  // 상세주소 (addressDetail) 입력 - streetAddress2 또는 addressDetail 사용
+  const addressDetail = shippingAddress.streetAddress2 || shippingAddress.addressDetail;
+  if (addressDetail) {
+    try {
+      const detailInput = await addressFrame.$('input[name="addressDetail"]');
+      if (detailInput) {
+        // 기존 값 지우고 새 값 입력
+        await detailInput.click();
+        await delay(100);
+        await detailInput.evaluate((el) => (el.value = ""));
+        await delay(100);
+        await page.keyboard.type(addressDetail, { delay: 50 });
+        filledFields.push({
+          field: "addressDetail",
+          value: addressDetail,
+        });
+        console.log("[배송지] 상세주소 입력 완료:", addressDetail);
+      } else {
+        errors.push({
+          field: "addressDetail",
+          error: "input[name='addressDetail'] 찾을 수 없음",
+        });
+      }
+    } catch (e) {
+      errors.push({ field: "addressDetail", error: e.message });
+    }
+  }
+
+  // 입력 완료 후 상태 확인
+  const finalFormState = await addressFrame.evaluate(() => {
+    const form = document.querySelector("form");
+    if (!form) return null;
+
+    const inputs = form.querySelectorAll("input, textarea");
+    const state = {};
+    inputs.forEach((input) => {
+      if (input.name) {
+        state[input.name] = input.value;
+      }
+    });
+    return state;
+  });
+
+  return {
+    success: errors.length === 0,
+    filledFields,
+    errors: errors.length > 0 ? errors : undefined,
+    formState: finalFormState,
   };
 }
 
