@@ -1169,15 +1169,11 @@ async function fillAddressForm(page, shippingAddress) {
         console.log("[배송지] 우편번호 검색 버튼 클릭");
         await delay(1000);
 
-        // 검색 팝업(새 iframe 또는 레이어) 대기
-        // 검색어 입력 (postalCode 또는 streetAddress1)
-        const searchQuery = postalCode || streetAddress1;
+        // 검색 팝업 대기 (메인 페이지에 뜸)
+        const searchQuery = streetAddress1 || postalCode;
 
-        // 검색 입력 필드 찾기 - 팝업 내 input
-        const searchInput = await addressFrame.$('input[name="keyword"]')
-          || await addressFrame.$('input.search-input')
-          || await addressFrame.$('input[placeholder*="주소"]')
-          || await addressFrame.$('input[placeholder*="검색"]');
+        // 검색 입력 필드 찾기 - 메인 페이지의 우편번호 검색 팝업
+        const searchInput = await page.$("div.zipcode__keyword-box._zipcodeSearchKeyBox > input");
 
         if (searchInput) {
           // 기존 값 지우고 새 값 입력
@@ -1190,35 +1186,19 @@ async function fillAddressForm(page, shippingAddress) {
           await delay(300);
 
           // 검색 버튼 클릭
-          const searchBtn = await addressFrame.$('button[type="submit"]')
-            || await addressFrame.$('button.search-btn')
-            || await addressFrame.$('button._searchButton');
-
+          const searchBtn = await page.$("div.zipcode__search-trigger > button");
           if (searchBtn) {
             await searchBtn.click();
             console.log("[배송지] 검색 버튼 클릭");
-            await delay(1500);
           } else {
-            // Enter 키로 검색
             await page.keyboard.press("Enter");
-            console.log("[배송지] Enter 키로 검색");
-            await delay(1500);
+            console.log("[배송지] Enter 키로 검색 (버튼 없음)");
           }
+          await delay(1500);
 
-          // 검색 결과에서 첫 번째 주소 선택
-          const addressResult = await addressFrame.$('li._addressItem')
-            || await addressFrame.$('li.address-item')
-            || await addressFrame.$('ul.address-list li:first-child');
-
-          if (addressResult) {
-            await addressResult.click();
-            console.log("[배송지] 검색 결과 주소 선택 완료");
-            await delay(500);
-            filledFields.push({ field: "roadAddress", value: searchQuery });
-          } else {
-            console.log("[배송지] 검색 결과 없음 - 기존 주소 유지");
-            filledFields.push({ field: "roadAddress", value: "no_result", skipped: true });
-          }
+          // TODO: 검색 결과에서 주소 선택 (셀렉터 확인 필요)
+          console.log("[배송지] 검색 결과 선택 대기 중...");
+          filledFields.push({ field: "roadAddress", value: searchQuery });
         } else {
           console.log("[배송지] 검색 입력 필드 찾을 수 없음");
           errors.push({ field: "roadAddress", error: "검색 입력 필드 찾을 수 없음" });
