@@ -1,0 +1,22 @@
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    volumes:
+      - ./data:/home/node/.n8n
+    environment:
+      - TZ=Asia/Seoul
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false
+      - N8N_ALLOW_ENV_ACCESS=AUTH_TOKEN,GRAPHQL_URL,CONTENT_TYPE
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      # Allow external npm modules in Code node
+      - NODE_FUNCTION_ALLOW_EXTERNAL=xlsx,xlsx-js-style
+      # GraphQL API (아래 중 하나 선택)
+      # - GRAPHQL_URL=http://host.docker.internal:8080/graphql/  # 로컬
+      - GRAPHQL_URL=https://stage-api.pojangboss.com/graphql/   # 스테이지
+      # - GRAPHQL_URL=https://api.pojangboss.com/graphql/       # 프로덕션
+      # Auth Token (로그인 후 개발자도구에서 복사)
+      - AUTH_TOKEN=JWT YOUR_TOKEN_HERE

@@ -1,0 +1,76 @@
+{
+  "name": "주문 라인 조회 (3분마다)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 3
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8080/graphql",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "JWT [여기에_새로운_토큰을_붙여넣으세요]"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"operationName\": \"OrderLineList\",\n  \"variables\": {\n    \"forPurchase\": true,\n    \"first\": 20,\n    \"filter\": {\n      \"orderStatus\": [\"READY_TO_FULFILL_PLUS_BEING_APPROVED\"],\n      \"orderType\": [\"BY_STAFF_FOR_BAD_STOCK\", \"BY_STAFF_FOR_BRAND\", \"BY_HQ_STAFF_FOR_BRAND\", \"BY_STAFF_FOR_ETC\", \"BY_USER\"],\n      \"trackInventory\": false,\n      \"deliveryMethods\": [\"BY_COURIER\"],\n      \"existPurchaseOrderLine\": false,\n      \"fulfilled\": false,\n      \"isB2b\": false\n    },\n    \"sort\": {\n      \"direction\": \"DESC\",\n      \"field\": \"NUMBER\"\n    }\n  },\n  \"query\": \"fragment OrderLineForPurchaseFragment on OrderLine { id composedIdWithPrefix productName quantityUnfulfilled unitPriceExcludeVat thumbnail { url alt } product { id name category { id name } productType { id name } } variant { id name sku stockQuantity stocks { id quantity warehouse { id name } } } } query OrderLineList($first: Int, $filter: OrderLineFilterInput, $sort: OrderLineSortingInput, $forPurchase: Boolean) { orderLines(first: $first, filter: $filter, sortBy: $sort, forPurchase: $forPurchase) { edges { node { ...OrderLineForPurchaseFragment } } } }\"\n}",
+        "options": {}
+      },
+      "id": "http-request",
+      "name": "GraphQL 주문 라인 조회",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [450, 300]
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "GraphQL 주문 라인 조회",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-11-20T19:22:41.542Z",
+  "versionId": "1"
+}
