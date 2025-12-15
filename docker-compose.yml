@@ -16,7 +16,7 @@ services:
       - NODE_FUNCTION_ALLOW_EXTERNAL=xlsx,xlsx-js-style
       # GraphQL API (아래 중 하나 선택)
       # - GRAPHQL_URL=http://host.docker.internal:8080/graphql/  # 로컬
-      - GRAPHQL_URL=https://stage-api.pojangboss.com/graphql/   # 스테이지
-      # - GRAPHQL_URL=https://api.pojangboss.com/graphql/       # 프로덕션
+      # - GRAPHQL_URL=https://stage-api.pojangboss.com/graphql/ # 스테이지
+      - GRAPHQL_URL=https://api.pojangboss.com/graphql/ # 프로덕션
       # Auth Token (로그인 후 개발자도구에서 복사)
-      - AUTH_TOKEN=JWT YOUR_TOKEN_HERE
+      - AUTH_TOKEN=JWT eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3NjM2ODQ1ODQsImV4cCI6MTc2MzY4NDg4NCwidG9rZW4iOiJFZ0JlM2R6N25TNEEiLCJsb2dpbl9pZCI6ImNoYmtrMTIzIiwidHlwZSI6ImFjY2VzcyIsInVzZXJfaWQiOiJWWE5sY2pveCIsImlzX3N0YWZmIjp0cnVlLCJpc19ocV9zdGFmZiI6ZmFsc2UsImlzX3ZlbmRvcl9zdGFmZiI6ZmFsc2UsInJlcXVlc3Rfb3JpZ2luIjoiREFTSEJPQVJEIn0.VXHRWgfBbQtCQVw48X7LrzlnlKdzDX99riFXABaUoAE

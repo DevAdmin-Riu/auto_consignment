@@ -11,7 +11,11 @@
     "restart:headless": "npm run stop && sleep 2 && npm run start:headless",
     "logs": "tail -f server.log",
     "start:bg": "node server.js > server.log 2>&1 &",
-    "start:bg:headless": "HEADLESS=true node server.js > server.log 2>&1 &"
+    "start:bg:headless": "HEADLESS=true node server.js > server.log 2>&1 &",
+    "docker:start": "cd docker-compose up -d",
+    "docker:stop": "cd docker-compose down",
+    "docker:restart": "npm run docker:stop && npm run docker:start",
+    "docker:logs": "docker logs -f n8n"
   },
   "keywords": [],
   "author": "",
