@@ -814,7 +814,8 @@ async function processCoupangOrder(
       productName: product.productName || addedProducts[i]?.productName || null,
       productUrl: product.productUrl,
       quantity: quantity,
-      lineId: lineIds?.[i] || null,
+      orderLineId: product.orderLineId || null,  // OrderLine ID (mutation용)
+      lineId: lineIds?.[i] || null,  // PurchaseOrderLine ID
       orderNumber: paymentStep?.orderNumber || null,
       orderAmount: paymentStep?.orderAmount || null,
       priceMismatch: priceMismatch,
@@ -876,34 +877,21 @@ async function processCoupangOrder(
 </div>`;
   }
 
-  // 응답 반환 (리스트 형태)
+  // 응답 반환 (필수 데이터만)
   return res.json({
     success: isPaymentComplete,
-    vendor: vendor.name,
-    automationType: "product_search",
-    paymentMethod: vendor.paymentMethod,
     orderNumber: paymentStep?.orderNumber || null,
-    orderAmount: paymentStep?.orderAmount || null,
-    totalProducts: products.length,
-    // 상품별 결과 리스트
-    products: productResults,
+    // 상품별 결과 (mutation용 orderLineId 포함)
+    products: productResults.map(p => ({
+      orderLineId: p.orderLineId,
+      orderNumber: p.orderNumber,
+      productName: p.productName,
+      quantity: p.quantity,
+    })),
     // 가격 불일치 관련
     hasPriceMismatch: priceMismatchList.length > 0,
     priceMismatchCount: priceMismatchList.length,
-    priceMismatches: priceMismatchList,
     priceMismatchEmailHtml: priceMismatchEmailHtml,
-    // 기존 호환성 유지
-    lineIds,
-    addedProducts,
-    steps,
-    currentUrl: page.url(),
-    message: isPaymentComplete
-      ? priceMismatchList.length > 0
-        ? `쿠팡 결제 완료! (${priceMismatchList.length}개 상품 가격 불일치 감지)`
-        : "쿠팡 결제 완료!"
-      : shippingAddress
-      ? "쿠팡 결제 페이지까지 진행됨. 결제 확인 필요."
-      : "쿠팡 장바구니 담기 완료. 쿠팡페이로 결제 필요.",
   });
 }
 
@@ -1505,8 +1493,13 @@ async function fillAddressForm(page, shippingAddress) {
 
   // 수정한 배송지 선택 버튼 클릭
   try {
-    await delay(1000);
-    const pickBtn = await addressFrame.$("form.address-card__form.address-card__form--pick._addressBookAddressCardPickForm > button");
+    await delay(2000);  // UI 갱신 대기
+
+    // 버튼이 나타날 때까지 대기
+    const pickSelector = "form.address-card__form.address-card__form--pick._addressBookAddressCardPickForm > button";
+    await addressFrame.waitForSelector(pickSelector, { timeout: 5000 });
+
+    const pickBtn = await addressFrame.$(pickSelector);
     if (pickBtn) {
       await pickBtn.click();
       console.log("[배송지] 배송지 선택 버튼 클릭");
