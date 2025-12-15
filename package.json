@@ -12,9 +12,9 @@
     "logs": "tail -f server.log",
     "start:bg": "node server.js > server.log 2>&1 &",
     "start:bg:headless": "HEADLESS=true node server.js > server.log 2>&1 &",
-    "docker:start": "cd docker-compose up -d",
-    "docker:stop": "cd docker-compose down",
-    "docker:restart": "npm run docker:stop && npm run docker:start",
+    "docker:start": "docker-compose up -d",
+    "docker:stop": "docker-compose down",
+    "docker:restart": "docker-compose restart",
     "docker:logs": "docker logs -f n8n"
   },
   "keywords": [],
@@ -23,13 +23,8 @@
   "dependencies": {
     "dotenv": "^16.6.1",
     "express": "^5.2.1",
-    "puppeteer-extra": "^3.3.6",
-    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "puppeteer-real-browser": "^1.4.4",
     "sharp": "^0.34.5",
     "tesseract.js": "^6.0.1"
-  },
-  "devDependencies": {
-    "puppeteer": "^24.32.1"
   }
 }
