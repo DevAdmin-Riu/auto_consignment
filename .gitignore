@@ -30,4 +30,7 @@ screenshots/
 dist/
 build/
 
+# n8n 데이터 (Docker volume)
+data/
+
 .*/

@@ -32,9 +32,13 @@ const { processNapkinOrder } = require("./vendors/napkin");
 const { processBaeminOrder } = require("./vendors/baemin");
 const { processNaverOrder } = require("./vendors/naver");
 const { processWowpressOrder } = require("./vendors/wowpress");
+const { router: swadpiaRouter, processSwadpiaOrder } = require("./vendors/swadpia");
 
 const app = express();
 app.use(express.json());
+
+// 협력사별 라우터
+app.use("/api/swadpia", swadpiaRouter);
 
 // ==================== 요청 큐 관리 ====================
 let isProcessing = false;
@@ -273,6 +277,12 @@ async function handleProductSearchOrder(
         orderData,
       });
 
+    case "swadpia":
+      return await processSwadpiaOrder(res, page, vendor, {
+        products,
+        shippingAddress,
+      });
+
     default:
       return res.json({
         success: false,
@@ -395,6 +405,7 @@ app.listen(PORT, () => {
   console.log(`  GET  /api/vendor/list  - 협력사 목록`);
   console.log(`  GET  /api/browser/status - 브라우저 상태`);
   console.log(`  POST /api/browser/reset - 브라우저 리셋`);
+  console.log(`  POST /api/swadpia/login - 성원애드피아 로그인`);
   console.log(`  GET  /health - 헬스체크`);
   console.log("");
 });

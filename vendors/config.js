@@ -51,17 +51,15 @@ const VENDORS = {
     paymentMethod: "naver_pay",
     automationType: "product_search",
   },
-  // 성원애드피아 - 교정확인 필요
+  // 성원애드피아
   성원애드피아: {
-    key: "sungwon",
-    loginUrl: "https://www.sungwonadpia.co.kr/member/login.html",
-    siteUrl: "https://www.sungwonadpia.co.kr",
-    get userId() { return getEnv("SUNGWON_USER_ID"); },
-    get password() { return getEnv("SUNGWON_PASSWORD"); },
+    key: "swadpia",
+    loginUrl: "https://www.swadpia.co.kr/member/re_login",
+    siteUrl: "https://www.swadpia.co.kr",
+    get email() { return getEnv("SWADPIA_EMAIL"); },
+    get password() { return getEnv("SWADPIA_PASSWORD"); },
     paymentMethod: "card",
-    requiresProofing: true,
-    hideSender: true,
-    automationType: "needs_confirmation",
+    automationType: "product_search",
   },
   // 애드피아몰 - 교정확인 필요
   애드피아몰: {

@@ -10,16 +10,16 @@ npm install
 
 ## 서버 실행
 
-| 명령어 | 설명 |
-|--------|------|
-| `npm start` | 서버 시작 (포그라운드, 브라우저 화면 표시) |
-| `npm run start:headless` | Headless 모드 시작 (브라우저 화면 없음) |
-| `npm run stop` | 서버 중지 |
-| `npm run restart` | 서버 재시작 |
-| `npm run restart:headless` | Headless 모드로 재시작 |
-| `npm run start:bg` | 백그라운드 실행 (로그 파일 저장) |
-| `npm run start:bg:headless` | Headless + 백그라운드 |
-| `npm run logs` | 로그 실시간 보기 (`tail -f server.log`) |
+| 명령어                      | 설명                                       |
+| --------------------------- | ------------------------------------------ |
+| `npm start`                 | 서버 시작 (포그라운드, 브라우저 화면 표시) |
+| `npm run start:headless`    | Headless 모드 시작 (브라우저 화면 없음)    |
+| `npm run stop`              | 서버 중지                                  |
+| `npm run restart`           | 서버 재시작                                |
+| `npm run restart:headless`  | Headless 모드로 재시작                     |
+| `npm run start:bg`          | 백그라운드 실행 (로그 파일 저장)           |
+| `npm run start:bg:headless` | Headless + 백그라운드                      |
+| `npm run logs`              | 로그 실시간 보기 (`tail -f server.log`)    |
 
 ### 예시
 
@@ -43,6 +43,7 @@ npm run restart
 협력사 자동 발주 실행
 
 **Request Body:**
+
 ```json
 {
   "vendorName": "쿠팡",
@@ -68,6 +69,7 @@ npm run restart
 ```
 
 **Response (성공):**
+
 ```json
 {
   "success": true,
@@ -79,6 +81,7 @@ npm run restart
 ```
 
 **Response (가격 불일치):**
+
 ```json
 {
   "success": true,
@@ -148,6 +151,7 @@ npm run restart
 쿠팡은 WAF(Web Application Firewall)로 headless 브라우저를 탐지하여 차단합니다.
 
 **Linux 서버에서 권장 방법:**
+
 ```bash
 # Xvfb (가상 디스플레이) 설치
 sudo apt-get install xvfb
@@ -191,7 +195,53 @@ vendor-automation/
 n8n 워크플로우에서 HTTP Request 노드로 API 호출
 
 **설정:**
+
 - Method: POST
 - URL: `http://localhost:3002/api/vendor/order`
 - Body Content Type: JSON
 - Timeout: 300000 (5분)
+
+---
+
+# n8n 설정
+
+## 설치 방법
+
+### 1. Docker로 실행 (권장)
+
+```bash
+cd n8n
+docker-compose up -d
+```
+
+### 2. npm으로 실행 (Docker 없이)
+
+```bash
+npm install -g n8n
+n8n start
+```
+
+## 접속
+
+- URL: http://localhost:5678
+
+## 설정
+
+### AUTH_TOKEN 설정
+
+1. pojangboss 어드민 로그인
+2. F12 > Application > Local Storage > token 복사
+3. docker-compose.yml의 AUTH_TOKEN에 붙여넣기
+4. `docker-compose down && docker-compose up -d`
+
+### GRAPHQL_URL 설정
+
+- 로컬: `http://host.docker.internal:8080/graphql/`
+- 스테이지: `https://stage-api.pojangboss.com/graphql/`
+- 프로덕션: `https://api.pojangboss.com/graphql/`
+
+## 워크플로우 Import
+
+1. n8n 접속 (localhost:5678)
+2. 좌측 메뉴 > Import from file
+3. `workflows/` 폴더의 JSON 파일 선택

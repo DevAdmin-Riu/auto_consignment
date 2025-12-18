@@ -12,9 +12,9 @@
     "logs": "tail -f server.log",
     "start:bg": "node server.js > server.log 2>&1 &",
     "start:bg:headless": "HEADLESS=true node server.js > server.log 2>&1 &",
-    "docker:start": "docker-compose up -d",
-    "docker:stop": "docker-compose down",
-    "docker:restart": "docker-compose restart",
+    "docker:start": "docker compose up -d",
+    "docker:stop": "docker compose down",
+    "docker:restart": "docker compose restart",
     "docker:logs": "docker logs -f n8n"
   },
   "keywords": [],
