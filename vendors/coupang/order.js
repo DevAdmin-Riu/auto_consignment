@@ -877,6 +877,19 @@ async function processCoupangOrder(
 </div>`;
   }
 
+  // 가격 불일치 상세 데이터 (n8n용)
+  const priceMismatches = priceMismatchList.map(p => ({
+    productCode: p.priceMismatch?.productUrl?.match(/vendorItemId=(\d+)/)?.[1] || null,
+    productName: p.priceMismatch?.productName || p.productName,
+    quantity: p.priceMismatch?.quantity || p.quantity,
+    currentPrice: p.priceMismatch?.coupangPrice,        // 현재 쿠팡 가격
+    expectedPrice: p.priceMismatch?.expectedPrice,      // 협력사 가격 (VAT 포함)
+    vendorPriceExcludeVat: p.priceMismatch?.vendorPriceExcludeVat,  // 협력사 단가 (VAT 별도)
+    difference: p.priceMismatch?.difference,
+    differencePercent: p.priceMismatch?.differencePercent,
+    vendor: "쿠팡",
+  }));
+
   // 응답 반환 (필수 데이터만)
   return res.json({
     success: isPaymentComplete,
@@ -891,6 +904,7 @@ async function processCoupangOrder(
     // 가격 불일치 관련
     hasPriceMismatch: priceMismatchList.length > 0,
     priceMismatchCount: priceMismatchList.length,
+    priceMismatches: priceMismatches,  // 상세 데이터 배열
     priceMismatchEmailHtml: priceMismatchEmailHtml,
   });
 }

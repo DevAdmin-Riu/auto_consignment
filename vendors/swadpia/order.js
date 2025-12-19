@@ -716,11 +716,15 @@ async function verifySwadpiaCartItems(page, expectedProducts) {
           100
         ).toFixed(2);
         priceMismatches.push({
-          productSku: matchedExpected.productSku,
-          expectedPrice: expectedUnitPrice,
-          actualPrice: cartItem.unitPrice,
+          productCode: matchedExpected.productSku,
+          productName: cartItem.name,
+          quantity: cartItem.quantity,
+          currentPrice: cartItem.unitPrice,        // 현재 성원애드피아 가격
+          expectedPrice: expectedUnitPrice,        // 협력사 가격 (VAT 별도)
+          vendorPriceExcludeVat: matchedExpected.vendorPriceExcludeVat || null,
           difference: priceDiff,
           differencePercent: priceDiffPercent,
+          vendor: "성원애드피아",
         });
         console.log(
           `[가격 불일치] ${matchedExpected.productSku} - 기대: ${expectedUnitPrice}원, 실제: ${cartItem.unitPrice}원`
@@ -771,9 +775,9 @@ async function verifySwadpiaCartItems(page, expectedProducts) {
         (pm, i) => `
         <tr>
           <td style="border:1px solid #ddd;padding:8px;">${i + 1}</td>
-          <td style="border:1px solid #ddd;padding:8px;">${pm.productSku}</td>
+          <td style="border:1px solid #ddd;padding:8px;">${pm.productCode}</td>
           <td style="border:1px solid #ddd;padding:8px;text-align:right;">${pm.expectedPrice.toLocaleString()}원</td>
-          <td style="border:1px solid #ddd;padding:8px;text-align:right;">${pm.actualPrice.toLocaleString()}원</td>
+          <td style="border:1px solid #ddd;padding:8px;text-align:right;">${pm.currentPrice.toLocaleString()}원</td>
           <td style="border:1px solid #ddd;padding:8px;text-align:right;color:${
             pm.difference > 0 ? "red" : "blue"
           };">${
