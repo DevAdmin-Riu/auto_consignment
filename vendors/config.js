@@ -1,12 +1,62 @@
 /**
  * 협력사 설정
  *
- * 주의: dotenv 사용 금지 (puppeteer-real-browser와 충돌)
- * 환경변수는 browser.js의 loadEnv()로 로드됨
+ * 환경변수를 .env 파일에서 동적으로 로드
+ * getter를 사용하여 매번 최신 값 참조
  */
 
-// 환경변수를 동적으로 가져오는 함수
-const getEnv = (key) => process.env[key] || "";
+const fs = require("fs");
+const path = require("path");
+
+// .env 파일 경로
+const ENV_FILE_PATH = path.join(__dirname, "../.env");
+
+// .env 파일 캐시 (파일 변경 시 자동 갱신)
+let envCache = {};
+let lastModified = 0;
+
+/**
+ * .env 파일을 파싱하여 캐시에 저장
+ */
+function loadEnvFile() {
+  try {
+    const stats = fs.statSync(ENV_FILE_PATH);
+    const currentModified = stats.mtimeMs;
+
+    // 파일이 변경되었거나 캐시가 비어있으면 다시 로드
+    if (currentModified !== lastModified || Object.keys(envCache).length === 0) {
+      const content = fs.readFileSync(ENV_FILE_PATH, "utf8");
+      envCache = {};
+
+      content.split("\n").forEach((line) => {
+        // 주석과 빈 줄 무시
+        line = line.trim();
+        if (!line || line.startsWith("#")) return;
+
+        const equalIndex = line.indexOf("=");
+        if (equalIndex > 0) {
+          const key = line.substring(0, equalIndex).trim();
+          const value = line.substring(equalIndex + 1).trim();
+          envCache[key] = value;
+        }
+      });
+
+      lastModified = currentModified;
+      console.log("[config] .env 파일 로드됨:", Object.keys(envCache).length, "개 항목");
+    }
+  } catch (error) {
+    console.error("[config] .env 파일 로드 실패:", error.message);
+  }
+}
+
+/**
+ * 환경변수를 동적으로 가져오는 함수
+ * .env 파일에서 먼저 찾고, 없으면 process.env에서 찾음
+ */
+function getEnv(key) {
+  loadEnvFile();
+  return envCache[key] || process.env[key] || "";
+}
 
 const VENDORS = {
   // 쿠팡 - 쿠팡페이 결제

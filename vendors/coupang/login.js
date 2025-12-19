@@ -15,6 +15,11 @@ async function coupangLogin(page) {
   }
 
   console.log("쿠팡 로그인 시작...");
+  console.log("[vendor 정보]", {
+    email: vendor.email,
+    password: vendor.password ? "***" + vendor.password.slice(-3) : "없음",
+    loginUrl: vendor.loginUrl,
+  });
 
   // 쿠팡 메인 페이지 방문
   await page.goto("https://www.coupang.com", {
@@ -41,48 +46,41 @@ async function coupangLogin(page) {
   }
 
   // 이메일 입력
-  const emailSelectors = [
-    'input[name="email"]',
-    'input[type="email"]',
-    "input#email",
-  ];
-  let emailInput = null;
-  for (const selector of emailSelectors) {
-    try {
-      await page.waitForSelector(selector, { timeout: 3000 });
-      emailInput = await page.$(selector);
-      if (emailInput) {
-        break;
-      }
-    } catch (e) {
-      continue;
+  console.log("이메일 입력 필드 대기...");
+  await page.waitForSelector("#login-email-input", { timeout: 10000 });
+
+  // 필드 초기화 후 입력
+  await page.evaluate(() => {
+    const input = document.querySelector("#login-email-input");
+    if (input) {
+      input.value = "";
+      input.focus();
     }
-  }
-
-  if (!emailInput) {
-    throw new Error("로그인 폼을 찾을 수 없습니다");
-  }
-
-  await emailInput.click({ clickCount: 3 });
+  });
   await delay(300);
-  await page.keyboard.press("Backspace");
-  await delay(200);
-  for (const char of vendor.email) {
-    await page.keyboard.type(char, { delay: 30 + Math.random() * 30 });
-  }
+
+  // page.type으로 입력 (셀렉터 직접 지정)
+  await page.type("#login-email-input", vendor.email, { delay: 80 + Math.random() * 40 });
+  console.log("이메일 입력 완료:", vendor.email);
 
   // 비밀번호 입력
   await delay(500);
-  const passwordInput = await page.$('input[type="password"]');
-  if (passwordInput) {
-    await passwordInput.click({ clickCount: 3 });
-    await delay(200);
-    await page.keyboard.press("Backspace");
-    await delay(200);
-    for (const char of vendor.password) {
-      await page.keyboard.type(char, { delay: 30 + Math.random() * 30 });
+  console.log("비밀번호 입력 필드 대기...");
+  await page.waitForSelector("#login-password-input", { timeout: 10000 });
+
+  // 비밀번호 필드 초기화
+  await page.evaluate(() => {
+    const input = document.querySelector("#login-password-input");
+    if (input) {
+      input.value = "";
+      input.focus();
     }
-  }
+  });
+  await delay(300);
+
+  // 비밀번호 입력
+  await page.type("#login-password-input", vendor.password, { delay: 80 + Math.random() * 40 });
+  console.log("비밀번호 입력 완료");
 
   // 로그인 버튼 클릭
   await delay(500);

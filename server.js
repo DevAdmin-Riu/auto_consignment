@@ -229,12 +229,12 @@ async function handleProductSearchOrder(
   vendor,
   { products, shippingAddress, orderData, lineIds }
 ) {
-  let { browser, page } = await getBrowser();
+  let { browser, page } = await getBrowser(vendor.key);
 
   // 페이지 유효성 검사 및 복구
   if (!(await isPageValid(page))) {
     console.log("[주문 처리] 페이지 무효, 복구 시도...");
-    const recovered = await recoverPage();
+    const recovered = await recoverPage(vendor.key);
     page = recovered.page;
   }
 
@@ -339,7 +339,7 @@ app.get("/api/vendor/list", (req, res) => {
  */
 app.get("/api/browser/status", async (req, res) => {
   try {
-    const { browser, page } = await getBrowser();
+    const { browser, page } = await getBrowser(); // 상태 확인용은 vendorKey 없이 호출
     const isValid = await isPageValid(page);
 
     res.json({
