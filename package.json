@@ -6,9 +6,12 @@
   "scripts": {
     "start": "node server.js",
     "start:headless": "HEADLESS=true node server.js",
-    "stop": "pkill -f 'node server' || true",
-    "restart": "npm run stop && sleep 2 && npm run start",
-    "restart:headless": "npm run stop && sleep 2 && npm run start:headless",
+    "win:start": "node server.js",
+    "win:stop": "taskkill /F /IM node.exe || exit 0",
+    "win:restart": "taskkill /F /IM node.exe & ping 127.0.0.1 -n 4 > nul & node server.js",
+    "mac:start": "node server.js",
+    "mac:stop": "pkill -f 'node server' || true",
+    "mac:restart": "npm run mac:stop && sleep 2 && npm run mac:start",
     "logs": "tail -f server.log",
     "start:bg": "node server.js > server.log 2>&1 &",
     "start:bg:headless": "HEADLESS=true node server.js > server.log 2>&1 &",
@@ -24,6 +27,7 @@
     "dotenv": "^16.6.1",
     "express": "^5.2.1",
     "puppeteer-real-browser": "^1.4.4",
+    "screenshot-desktop": "^1.15.3",
     "sharp": "^0.34.5",
     "tesseract.js": "^6.0.1"
   }
