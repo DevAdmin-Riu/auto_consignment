@@ -716,6 +716,7 @@ async function verifySwadpiaCartItems(page, expectedProducts) {
           100
         ).toFixed(2);
         priceMismatches.push({
+          purchaseOrderLineId: matchedExpected.lineId || null,  // PurchaseOrderLine ID (mutation용)
           productCode: matchedExpected.productSku,
           productName: cartItem.name,
           quantity: cartItem.quantity,
@@ -724,7 +725,6 @@ async function verifySwadpiaCartItems(page, expectedProducts) {
           vendorPriceExcludeVat: matchedExpected.vendorPriceExcludeVat || null,
           difference: priceDiff,
           differencePercent: priceDiffPercent,
-          vendor: "성원애드피아",
         });
         console.log(
           `[가격 불일치] ${matchedExpected.productSku} - 기대: ${expectedUnitPrice}원, 실제: ${cartItem.unitPrice}원`

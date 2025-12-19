@@ -879,6 +879,7 @@ async function processCoupangOrder(
 
   // 가격 불일치 상세 데이터 (n8n용)
   const priceMismatches = priceMismatchList.map(p => ({
+    purchaseOrderLineId: p.lineId,  // PurchaseOrderLine ID (mutation용)
     productCode: p.priceMismatch?.productUrl?.match(/vendorItemId=(\d+)/)?.[1] || null,
     productName: p.priceMismatch?.productName || p.productName,
     quantity: p.priceMismatch?.quantity || p.quantity,
@@ -887,7 +888,6 @@ async function processCoupangOrder(
     vendorPriceExcludeVat: p.priceMismatch?.vendorPriceExcludeVat,  // 협력사 단가 (VAT 별도)
     difference: p.priceMismatch?.difference,
     differencePercent: p.priceMismatch?.differencePercent,
-    vendor: "쿠팡",
   }));
 
   // 응답 반환 (필수 데이터만)
