@@ -33,4 +33,5 @@ build/
 # n8n 데이터 (Docker volume)
 data/
 
-.*/eng.traineddata
+.*/
+*.traineddata
