@@ -767,47 +767,6 @@ async function verifySwadpiaCartItems(page, expectedProducts) {
     quantityMismatches.length === 0 &&
     unexpectedItems.length === 0;
 
-  // 가격 불일치 HTML 생성
-  let priceMismatchEmailHtml = null;
-  if (priceMismatches.length > 0) {
-    const rows = priceMismatches
-      .map(
-        (pm, i) => `
-        <tr>
-          <td style="border:1px solid #ddd;padding:8px;">${i + 1}</td>
-          <td style="border:1px solid #ddd;padding:8px;">${pm.productCode}</td>
-          <td style="border:1px solid #ddd;padding:8px;text-align:right;">${pm.expectedPrice.toLocaleString()}원</td>
-          <td style="border:1px solid #ddd;padding:8px;text-align:right;">${pm.currentPrice.toLocaleString()}원</td>
-          <td style="border:1px solid #ddd;padding:8px;text-align:right;color:${
-            pm.difference > 0 ? "red" : "blue"
-          };">${
-          pm.difference > 0 ? "+" : ""
-        }${pm.difference.toLocaleString()}원 (${pm.differencePercent}%)</td>
-        </tr>
-      `
-      )
-      .join("");
-
-    priceMismatchEmailHtml = `
-<div style="font-family:Arial,sans-serif;max-width:800px;">
-  <div style="background:#ff9800;color:white;padding:15px;">
-    <b>⚠️ 성원애드피아 가격 불일치 - ${priceMismatches.length}건</b>
-  </div>
-  <div style="border:1px solid #ddd;border-top:none;padding:15px;">
-    <table style="width:100%;border-collapse:collapse;">
-      <tr style="background:#f5f5f5;">
-        <th style="border:1px solid #ddd;padding:8px;">#</th>
-        <th style="border:1px solid #ddd;padding:8px;">상품코드</th>
-        <th style="border:1px solid #ddd;padding:8px;">협력사매입가</th>
-        <th style="border:1px solid #ddd;padding:8px;">성원애드피아</th>
-        <th style="border:1px solid #ddd;padding:8px;">차이</th>
-      </tr>
-      ${rows}
-    </table>
-  </div>
-</div>`;
-  }
-
   return {
     isValid,
     totalInCart: cartItems.length,
@@ -819,7 +778,6 @@ async function verifySwadpiaCartItems(page, expectedProducts) {
     unexpectedItems,
     hasPriceMismatch: priceMismatches.length > 0,
     priceMismatchCount: priceMismatches.length,
-    priceMismatchEmailHtml,
     summary: isValid
       ? "✅ 장바구니 검증 통과"
       : `⚠️ 검증 실패: 매칭 ${matchedItems.length}/${expectedProducts.length}, 수량불일치 ${quantityMismatches.length}, 누락 ${missingItems.length}, 예상외 ${unexpectedItems.length}`,
@@ -1911,7 +1869,7 @@ async function processSwadpiaOrder(
   res,
   page,
   vendor,
-  { products, shippingAddress }
+  { products, shippingAddress, lineIds, purchaseOrderId }
 ) {
   const downloadedFiles = []; // 다운로드한 파일 경로들
   const MAX_RETRY = 2; // 최대 재시도 횟수
@@ -2056,6 +2014,8 @@ async function processSwadpiaOrder(
         ? `${products.length}개 상품 주문 완료`
         : `${products.length}개 상품 장바구니 담기 완료`,
       vendor: vendor.name,
+      purchaseOrderId: purchaseOrderId || null,
+      purchaseOrderLineIds: lineIds || [],  // PurchaseOrderLinesReceive mutation용
       retryCount,
       products: products.map((p) => ({
         productName: p.productName,
@@ -2086,7 +2046,7 @@ async function processSwadpiaOrder(
       // 가격 불일치 관련
       hasPriceMismatch: cartVerification?.hasPriceMismatch || false,
       priceMismatchCount: cartVerification?.priceMismatchCount || 0,
-      priceMismatchEmailHtml: cartVerification?.priceMismatchEmailHtml || null,
+      priceMismatches: cartVerification?.priceMismatches || [],
     });
   } catch (error) {
     console.error("[swadpia] 주문 처리 에러:", error);

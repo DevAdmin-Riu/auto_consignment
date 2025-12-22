@@ -14,22 +14,7 @@ async function coupangLogin(page) {
     throw new Error("쿠팡 설정을 찾을 수 없습니다");
   }
 
-  console.log("쿠팡 로그인 시작...");
-  console.log("[vendor 정보]", {
-    email: vendor.email,
-    password: vendor.password ? "***" + vendor.password.slice(-3) : "없음",
-    loginUrl: vendor.loginUrl,
-  });
-
-  // 쿠팡 메인 페이지 방문
-  await page.goto("https://www.coupang.com", {
-    waitUntil: "networkidle2",
-    timeout: 30000,
-  });
-
-  await delay(2000 + Math.random() * 2000);
-  await page.mouse.move(100 + Math.random() * 200, 100 + Math.random() * 200);
-  await delay(500);
+  console.log("쿠팡 로그인 체크...");
 
   // 로그인 페이지로 이동
   await page.goto(vendor.loginUrl, {
@@ -37,13 +22,28 @@ async function coupangLogin(page) {
     timeout: 30000,
   });
 
-  await delay(2000 + Math.random() * 1000);
+  await delay(2000);
+
+  // 현재 URL 확인 - 로그인 페이지가 아니면 이미 로그인됨
+  const currentUrl = page.url();
+  console.log("[로그인 체크] 현재 URL:", currentUrl);
+
+  if (!currentUrl.includes("login")) {
+    console.log("쿠팡 이미 로그인됨, 스킵");
+    return true;
+  }
 
   // Access Denied 체크
   const pageContent = await page.content();
   if (pageContent.includes("Access Denied")) {
     throw new Error("Access Denied by Coupang WAF");
   }
+
+  console.log("쿠팡 로그인 시작...");
+  console.log("[vendor 정보]", {
+    email: vendor.email,
+    password: vendor.password ? "***" + vendor.password.slice(-3) : "없음",
+  });
 
   // 이메일 입력
   console.log("이메일 입력 필드 대기...");

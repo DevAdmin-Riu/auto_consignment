@@ -1,0 +1,15 @@
+FROM docker.n8n.io/n8nio/n8n
+
+USER root
+
+# xlsx-js-style 패키지를 전역으로 설치
+RUN npm install -g xlsx-js-style
+
+# n8n이 찾을 수 있도록 node_modules에도 설치
+RUN cd /usr/local/lib/node_modules/n8n && \
+    npm install xlsx-js-style --legacy-peer-deps || true
+
+# 심볼릭 링크 생성 (n8n vm2 resolver가 찾을 수 있도록)
+RUN ln -sf /usr/local/lib/node_modules/xlsx-js-style /usr/local/lib/node_modules/n8n/node_modules/xlsx-js-style || true
+
+USER node

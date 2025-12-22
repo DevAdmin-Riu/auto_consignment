@@ -16,7 +16,7 @@ async function processCoupangOrder(
   res,
   page,
   vendor,
-  { products, shippingAddress, lineIds }
+  { products, shippingAddress, lineIds, purchaseOrderId }
 ) {
   const steps = [];
   const addedProducts = []; // 장바구니에 담긴 상품들 추적
@@ -827,57 +827,7 @@ async function processCoupangOrder(
     (p) => p.priceMismatch?.detected
   );
 
-  // 가격 불일치 HTML 생성 (n8n에서 바로 이메일로 사용 가능)
-  let priceMismatchEmailHtml = null;
-  if (priceMismatchList.length > 0) {
-    const rows = priceMismatchList
-      .map((item, i) => {
-        const pm = item.priceMismatch;
-        const diffColor = pm.difference > 0 ? "#d32f2f" : "#2e7d32";
-        return `<tr style="background:${i % 2 ? "#f9f9f9" : "#fff"}">
-        <td style="padding:8px 12px;border-bottom:1px solid #eee;">${
-          pm.productName || "상품"
-        }</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;">${
-          item.quantity
-        }개</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:#1976d2;font-weight:bold;">${pm.coupangPrice?.toLocaleString()}원</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;">${pm.expectedPrice?.toLocaleString()}원</td>
-        <td style="padding:8px 12px;border-bottom:1px solid #eee;text-align:right;color:${diffColor};font-weight:bold;">${
-          pm.difference > 0 ? "+" : ""
-        }${pm.difference?.toLocaleString()}원 (${pm.differencePercent}%)</td>
-      </tr>`;
-      })
-      .join("");
-
-    priceMismatchEmailHtml = `
-<div style="font-family:Arial,sans-serif;max-width:700px;">
-  <div style="background:#ff9800;color:white;padding:15px;">
-    <b>⚠️ 쿠팡 가격 불일치 - ${priceMismatchList.length}건</b>
-  </div>
-  <div style="border:1px solid #ddd;border-top:none;padding:15px;">
-    <p><b>주문번호:</b> ${paymentStep?.orderNumber || "-"}</p>
-    <p><b>총 결제금액:</b> ${
-      paymentStep?.orderAmount?.toLocaleString() || "-"
-    }원</p>
-    <table style="width:100%;border-collapse:collapse;margin-top:10px;">
-      <tr style="background:#f0f0f0;">
-        <th style="padding:8px 12px;text-align:left;">상품명</th>
-        <th style="padding:8px 12px;text-align:right;">수량</th>
-        <th style="padding:8px 12px;text-align:right;">쿠팡 가격</th>
-        <th style="padding:8px 12px;text-align:right;">협력사 가격<br/><small>(VAT포함)</small></th>
-        <th style="padding:8px 12px;text-align:right;">차이</th>
-      </tr>
-      ${rows}
-    </table>
-    <p style="margin-top:15px;color:#666;font-size:12px;">
-      ※ 쿠팡 가격이 협력사 등록 가격과 다릅니다. 확인이 필요합니다.
-    </p>
-  </div>
-</div>`;
-  }
-
-  // 가격 불일치 상세 데이터 (n8n용)
+  // 가격 불일치 상세 데이터 (시스템 저장용)
   const priceMismatches = priceMismatchList.map(p => ({
     purchaseOrderLineId: p.lineId,  // PurchaseOrderLine ID (mutation용)
     productCode: p.priceMismatch?.productUrl?.match(/vendorItemId=(\d+)/)?.[1] || null,
@@ -894,6 +844,8 @@ async function processCoupangOrder(
   return res.json({
     success: isPaymentComplete,
     orderNumber: paymentStep?.orderNumber || null,
+    purchaseOrderId: purchaseOrderId || null,
+    purchaseOrderLineIds: lineIds || [],  // PurchaseOrderLinesReceive mutation용
     // 상품별 결과 (mutation용 orderLineId 포함)
     products: productResults.map(p => ({
       orderLineId: p.orderLineId,
@@ -904,8 +856,7 @@ async function processCoupangOrder(
     // 가격 불일치 관련
     hasPriceMismatch: priceMismatchList.length > 0,
     priceMismatchCount: priceMismatchList.length,
-    priceMismatches: priceMismatches,  // 상세 데이터 배열
-    priceMismatchEmailHtml: priceMismatchEmailHtml,
+    priceMismatches: priceMismatches,
   });
 }
 
@@ -1863,10 +1814,10 @@ async function enterCoupangPayPin(page, pin) {
     fs.mkdirSync(tempDir, { recursive: true });
   }
 
-  // 비밀번호 입력 UI가 나타날 때까지 대기
+  // 비밀번호 입력 UI가 나타날 때까지 대기 (최대 1분)
   let pinFrame = null;
   let attempts = 0;
-  const maxAttempts = 15;
+  const maxAttempts = 60;
 
   while (!pinFrame && attempts < maxAttempts) {
     attempts++;

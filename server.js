@@ -108,6 +108,7 @@ async function handleVendorOrder(req, res) {
       shippingAddress,
       orderData,
       lineIds, // 주문 라인 ID들
+      purchaseOrderId, // 발주 ID
     } = req.body;
 
     if (!vendorName) {
@@ -170,6 +171,7 @@ async function handleVendorOrder(req, res) {
           shippingAddress: resolvedShippingAddress,
           orderData,
           lineIds,
+          purchaseOrderId,
         });
 
       case "reorder":
@@ -227,7 +229,7 @@ async function handleVendorOrder(req, res) {
 async function handleProductSearchOrder(
   res,
   vendor,
-  { products, shippingAddress, orderData, lineIds }
+  { products, shippingAddress, orderData, lineIds, purchaseOrderId }
 ) {
   let { browser, page } = await getBrowser(vendor.key);
 
@@ -245,6 +247,7 @@ async function handleProductSearchOrder(
         products,
         shippingAddress,
         lineIds,
+        purchaseOrderId,
       });
 
     case "napkin":
@@ -281,6 +284,8 @@ async function handleProductSearchOrder(
       return await processSwadpiaOrder(res, page, vendor, {
         products,
         shippingAddress,
+        lineIds,
+        purchaseOrderId,
       });
 
     default:
