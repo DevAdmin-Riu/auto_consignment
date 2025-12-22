@@ -11,6 +11,8 @@
     "pm2:restart": "npx pm2 restart all",
     "pm2:order": "npx pm2 restart order",
     "pm2:tracking": "npx pm2 restart tracking",
+    "tracking:restart": "pkill -f 'node tracking-server' || true && node tracking-server.js",
+    "tracking:stop": "pkill -f 'node tracking-server' || true",
     "pm2:logs": "npx pm2 logs",
     "pm2:status": "npx pm2 status",
     "win:stop": "taskkill /F /IM node.exe || exit 0",

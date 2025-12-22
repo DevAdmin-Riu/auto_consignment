@@ -3,13 +3,20 @@
  *
  * - 포트: 3001
  * - 독립 브라우저 인스턴스 사용
- * - 쿠팡 주문목록에서 송장번호 크롤링
+ * - 오픈몰별 주문목록에서 송장번호 크롤링
+ *
+ * API:
+ * - POST /api/vendor/tracking
+ * - Body: { vendors: [{ vendor: "coupang", openMallOrderNumbers: [...], fulfillmentMap: {...} }, ...] }
  */
 
 const express = require("express");
 const { connect } = require("puppeteer-real-browser");
-const { VENDORS } = require("./vendors/config");
+const { getVendorByKey } = require("./vendors/config");
+
+// 각 벤더별 tracking 모듈
 const { getCoupangTrackingNumbers } = require("./vendors/coupang/tracking");
+const { getSwadpiaTrackingNumbers } = require("./vendors/swadpia/tracking");
 
 const app = express();
 app.use(express.json());
@@ -20,6 +27,7 @@ let pageInstance = null;
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 
 /**
  * 브라우저 시작
@@ -63,34 +71,111 @@ async function resetBrowser() {
   pageInstance = null;
 }
 
+// ==================== 벤더별 Tracking 핸들러 ====================
+
+/**
+ * 벤더별 tracking 함수 매핑
+ */
+const trackingHandlers = {
+  coupang: getCoupangTrackingNumbers,
+  swadpia: getSwadpiaTrackingNumbers,
+  // TODO: 추후 다른 오픈몰 추가
+  // naver: getNaverTrackingNumbers,
+};
+
+/**
+ * 지원되는 벤더 목록
+ */
+const supportedVendors = Object.keys(trackingHandlers);
+
 // ==================== API 엔드포인트 ====================
 
 /**
- * 쿠팡 송장번호 조회
- * POST /api/tracking/coupang
- * Body: { orderNumbers: ["28100159951030", ...] }
+ * 송장번호 조회
+ * POST /api/vendor/tracking
+ * Body: { vendors: [{ vendor: "coupang", openMallOrderNumbers: [...], fulfillmentMap: {...} }, ...] }
  */
-app.post("/api/tracking/coupang", async (req, res) => {
+app.post("/api/vendor/tracking", async (req, res) => {
+  const { vendors } = req.body;
+
+  // vendors 배열 유효성 검사
+  if (!vendors || !Array.isArray(vendors) || vendors.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: "vendors 배열이 필요합니다",
+    });
+  }
+
   try {
-    const { orderNumbers } = req.body;
-
-    if (!orderNumbers || !Array.isArray(orderNumbers) || orderNumbers.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: "orderNumbers 배열이 필요합니다",
-      });
-    }
-
-    console.log(`[tracking] 쿠팡 송장 조회 요청: ${orderNumbers.length}건`);
+    console.log(`[tracking] 송장 조회 요청: ${vendors.length}개 벤더`);
 
     const { browser, page } = await getBrowser();
-    const vendor = VENDORS.coupang;
+    const trackingResults = [];
 
-    const result = await getCoupangTrackingNumbers(page, vendor, orderNumbers);
+    // 각 vendor별로 순차 처리
+    for (const v of vendors) {
+      const { vendor, openMallOrderNumbers, fulfillmentMap } = v;
 
-    return res.json(result);
+      // vendor 유효성 검사
+      if (!vendor || !supportedVendors.includes(vendor)) {
+        console.log(`[tracking] 지원하지 않는 벤더 스킵: ${vendor}`);
+        continue;
+      }
+
+      // openMallOrderNumbers 유효성 검사
+      if (!openMallOrderNumbers || !Array.isArray(openMallOrderNumbers) || openMallOrderNumbers.length === 0) {
+        console.log(`[tracking] ${vendor}: openMallOrderNumbers 없음, 스킵`);
+        continue;
+      }
+
+      const vendorConfig = getVendorByKey(vendor);
+      if (!vendorConfig) {
+        console.log(`[tracking] ${vendor}: 설정 없음, 스킵`);
+        continue;
+      }
+
+      console.log(`[tracking] ${vendor} 송장 조회: ${openMallOrderNumbers.length}건`);
+
+      // 벤더 전환 전 페이지 초기화 (Frame detach 방지)
+      try {
+        await page.goto("about:blank", { waitUntil: "domcontentloaded", timeout: 5000 });
+        await delay(500);
+      } catch (e) {
+        console.log(`[tracking] 페이지 초기화 실패, 새 페이지 생성`);
+        // 페이지가 완전히 망가진 경우 새 페이지 생성
+        pageInstance = await browser.newPage();
+        page = pageInstance;
+      }
+
+      // 벤더별 tracking 함수 호출
+      const trackingHandler = trackingHandlers[vendor];
+      const results = await trackingHandler(page, vendorConfig, openMallOrderNumbers);
+
+      // 송장번호가 있는 것만 fulfillmentMap과 병합하여 추가
+      for (const r of results) {
+        if (r.trackingNumber && fulfillmentMap[r.openMallOrderNumber]) {
+          const fm = fulfillmentMap[r.openMallOrderNumber];
+          // 모든 fulfillmentId에 대해 결과 추가
+          for (const fulfillmentId of fm.fulfillmentIds) {
+            trackingResults.push({
+              openMallOrderNumber: r.openMallOrderNumber,
+              trackingNumber: r.trackingNumber,
+              carrier: r.carrier,
+              fulfillmentId,
+            });
+          }
+        }
+      }
+    }
+
+    console.log(`[tracking] 송장번호 찾음: ${trackingResults.length}건`);
+
+    return res.json({
+      success: true,
+      trackingResults,
+    });
   } catch (error) {
-    console.error("[tracking] 에러:", error);
+    console.error(`[tracking] 에러:`, error);
     return res.status(500).json({
       success: false,
       error: error.message,
@@ -99,9 +184,19 @@ app.post("/api/tracking/coupang", async (req, res) => {
 });
 
 /**
+ * 지원 벤더 목록 조회
+ */
+app.get("/api/vendor/tracking/list", (req, res) => {
+  res.json({
+    success: true,
+    vendors: supportedVendors,
+  });
+});
+
+/**
  * 상태 확인
  */
-app.get("/api/tracking/status", async (req, res) => {
+app.get("/api/vendor/tracking/status", async (req, res) => {
   try {
     const hasBrowser = !!browserInstance;
     res.json({
@@ -109,6 +204,7 @@ app.get("/api/tracking/status", async (req, res) => {
       status: hasBrowser ? "ready" : "no_browser",
       service: "tracking",
       port: 3001,
+      supportedVendors,
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
@@ -118,7 +214,7 @@ app.get("/api/tracking/status", async (req, res) => {
 /**
  * 브라우저 리셋
  */
-app.post("/api/tracking/reset", async (req, res) => {
+app.post("/api/vendor/tracking/reset", async (req, res) => {
   try {
     await resetBrowser();
     res.json({ success: true, message: "브라우저 리셋 완료" });
@@ -133,6 +229,7 @@ app.listen(PORT, () => {
   console.log(`\n========================================`);
   console.log(`  송장번호 조회 서버 시작`);
   console.log(`  포트: ${PORT}`);
-  console.log(`  API: POST /api/tracking/coupang`);
+  console.log(`  API: POST /api/vendor/tracking`);
+  console.log(`  지원 벤더: ${supportedVendors.join(", ")}`);
   console.log(`========================================\n`);
 });

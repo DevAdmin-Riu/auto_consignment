@@ -10,197 +10,167 @@ const { coupangLogin } = require("./login");
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * 택배사 이름 정규화
+ * - 띄어쓰기 제거
+ * - 특수 케이스 처리 (우체국택배 → 우체국)
+ */
+function normalizeCarrier(carrier) {
+  if (!carrier) return "자체배송";
+
+  // 띄어쓰기 제거
+  let normalized = carrier.replace(/\s+/g, "");
+
+  // 특수 케이스 처리
+  const mappings = {
+    "우체국택배": "우체국",
+    "우체국소포": "우체국",
+    "쿠팡로켓배송": "쿠팡",
+    "로켓배송": "쿠팡",
+    "쿠팡로켓": "쿠팡",
+  };
+
+  if (mappings[normalized]) {
+    normalized = mappings[normalized];
+  }
+
+  return normalized;
+}
+
+/**
  * 쿠팡 송장번호 조회
  * @param {Page} page - Puppeteer 페이지
  * @param {Object} vendor - 쿠팡 협력사 설정
- * @param {string[]} orderNumbers - 조회할 주문번호 배열
- * @returns {Object} 조회 결과
+ * @param {string[]} openMallOrderNumbers - 조회할 오픈몰 주문번호 배열
+ * @returns {Array} 조회 결과 배열 [{ openMallOrderNumber, trackingNumber, carrier }, ...]
  */
-async function getCoupangTrackingNumbers(page, vendor, orderNumbers) {
-  console.log(`[송장조회] 시작: ${orderNumbers.length}건`);
+async function getCoupangTrackingNumbers(page, vendor, openMallOrderNumbers) {
+  console.log(`[송장조회] 시작: ${openMallOrderNumbers.length}건`);
 
   const results = [];
-  const errors = [];
 
   try {
     // 1. 로그인 확인/처리
     await coupangLogin(page, vendor);
     console.log("[송장조회] 로그인 완료");
 
-    // 2. 주문목록 페이지로 이동
-    const orderListUrl = "https://www.coupang.com/np/orders";
-    await page.goto(orderListUrl, {
-      waitUntil: "networkidle2",
-      timeout: 30000,
-    });
-    console.log("[송장조회] 주문목록 페이지 이동");
-
-    await delay(2000);
-
-    // 3. 각 주문번호에 대해 송장번호 조회
-    for (const orderNumber of orderNumbers) {
+    // 2. 각 주문번호에 대해 송장번호 조회
+    for (const openMallOrderNumber of openMallOrderNumbers) {
       try {
-        console.log(`[송장조회] 주문번호 ${orderNumber} 검색 중...`);
+        console.log(`[송장조회] 주문번호 ${openMallOrderNumber} 검색 중...`);
 
-        const trackingInfo = await findTrackingNumber(page, orderNumber);
+        const trackingInfo = await findTrackingNumber(page, openMallOrderNumber);
 
-        if (trackingInfo) {
+        if (trackingInfo?.trackingNumber) {
+          const carrier = normalizeCarrier(trackingInfo.carrier);
           results.push({
-            orderNumber,
+            openMallOrderNumber,
             trackingNumber: trackingInfo.trackingNumber,
-            carrier: trackingInfo.carrier,
-            status: trackingInfo.status,
-            found: true,
+            carrier,
           });
-          console.log(`[송장조회] ${orderNumber} → ${trackingInfo.trackingNumber} (${trackingInfo.carrier})`);
+          console.log(`[송장조회] ${openMallOrderNumber} → ${trackingInfo.trackingNumber} (${carrier})`);
         } else {
-          results.push({
-            orderNumber,
-            trackingNumber: null,
-            carrier: null,
-            status: "not_found",
-            found: false,
-          });
-          console.log(`[송장조회] ${orderNumber} → 송장번호 없음`);
+          console.log(`[송장조회] ${openMallOrderNumber} → 송장번호 없음`);
         }
       } catch (error) {
-        console.error(`[송장조회] ${orderNumber} 에러:`, error.message);
-        errors.push({
-          orderNumber,
-          error: error.message,
-        });
-        results.push({
-          orderNumber,
-          trackingNumber: null,
-          carrier: null,
-          status: "error",
-          found: false,
-          error: error.message,
-        });
+        console.error(`[송장조회] ${openMallOrderNumber} 에러:`, error.message);
       }
     }
 
-    return {
-      success: true,
-      totalRequested: orderNumbers.length,
-      totalFound: results.filter(r => r.found).length,
-      results,
-      errors: errors.length > 0 ? errors : undefined,
-    };
+    return results;
   } catch (error) {
     console.error("[송장조회] 전체 에러:", error);
-    return {
-      success: false,
-      error: error.message,
-      results,
-      errors,
-    };
+    return results;
   }
 }
 
+// 셀렉터 상수 (클래스 제거하고 구조로만 찾기)
+const SELECTORS = {
+  // 배송 조회 버튼
+  deliveryTrackingBtn: '#__next > div.my-area-body > div.my-area-contents > div > div > table > tbody > tr > td > div > button',
+  // 배송 정보 테이블 기본 경로
+  deliveryTableBase: '#__next > div.my-area-body > div.my-area-contents > div > table > tbody > tr > td > table > tbody',
+};
+
 /**
- * 주문목록에서 특정 주문번호의 송장번호 찾기
+ * 주문 상세 페이지에서 송장번호 조회
  * @param {Page} page - Puppeteer 페이지
- * @param {string} orderNumber - 주문번호
+ * @param {string} openMallOrderNumber - 오픈몰 주문번호
  * @returns {Object|null} 송장 정보 또는 null
  */
-async function findTrackingNumber(page, orderNumber) {
-  // 주문목록 페이지에서 주문번호 검색
-  // 쿠팡 주문목록 구조에 따라 셀렉터 조정 필요
+async function findTrackingNumber(page, openMallOrderNumber) {
+  try {
+    // 1. 주문 상세 페이지로 이동
+    const orderUrl = `https://mc.coupang.com/ssr/desktop/order/${openMallOrderNumber}`;
+    console.log(`[송장조회] 주문 페이지 이동: ${orderUrl}`);
 
-  // 방법 1: 주문목록에서 직접 검색
-  const trackingInfo = await page.evaluate((targetOrderNumber) => {
-    // 주문 카드들을 순회
-    const orderCards = document.querySelectorAll(".order-list__item, [class*='order-item'], [class*='OrderItem']");
+    await page.goto(orderUrl, {
+      waitUntil: "networkidle2",
+      timeout: 30000,
+    });
+    await delay(2000);
 
-    for (const card of orderCards) {
-      const cardText = card.textContent || "";
-
-      // 주문번호가 포함된 카드 찾기
-      if (cardText.includes(targetOrderNumber)) {
-        // 송장번호 찾기 (다양한 패턴 시도)
-        // 패턴 1: "송장번호: XXXXX" 또는 "운송장번호: XXXXX"
-        const trackingMatch = cardText.match(/(?:송장|운송장)\s*(?:번호)?\s*[:\s]*(\d{10,15})/);
-
-        // 패턴 2: 배송사 + 송장번호
-        const carrierMatch = cardText.match(/(CJ대한통운|한진택배|롯데택배|우체국택배|로젠택배|쿠팡로켓)/);
-
-        if (trackingMatch) {
-          return {
-            trackingNumber: trackingMatch[1],
-            carrier: carrierMatch ? carrierMatch[1] : "알 수 없음",
-            status: "found",
-          };
-        }
-
-        // 배송 상태 확인
-        if (cardText.includes("배송완료")) {
-          return { trackingNumber: null, carrier: null, status: "delivered_no_tracking" };
-        }
-        if (cardText.includes("배송중")) {
-          return { trackingNumber: null, carrier: null, status: "shipping_no_tracking" };
-        }
-        if (cardText.includes("상품준비중")) {
-          return { trackingNumber: null, carrier: null, status: "preparing" };
-        }
-
-        return { trackingNumber: null, carrier: null, status: "order_found_no_tracking" };
-      }
+    // 2. 배송 조회 버튼 클릭
+    const deliveryBtn = await page.$(SELECTORS.deliveryTrackingBtn);
+    if (!deliveryBtn) {
+      console.log(`[송장조회] ${openMallOrderNumber}: 배송 조회 버튼 없음`);
+      return { trackingNumber: null, carrier: null, status: "no_delivery_button" };
     }
 
-    return null;
-  }, orderNumber);
+    await deliveryBtn.click();
+    console.log(`[송장조회] 배송 조회 버튼 클릭`);
+    await delay(2000);
 
-  if (trackingInfo) {
-    return trackingInfo;
-  }
+    // 3. 배송 정보 추출 (라벨 기반으로 찾기)
+    const trackingInfo = await page.evaluate((baseSelector) => {
+      const tbody = document.querySelector(baseSelector);
+      if (!tbody) return null;
 
-  // 방법 2: 주문 상세 페이지로 이동해서 조회
-  // 주문목록에서 못 찾으면 상세 페이지 시도
-  try {
-    const detailUrl = `https://www.coupang.com/np/orders/detail?orderId=${orderNumber}`;
-    await page.goto(detailUrl, {
-      waitUntil: "networkidle2",
-      timeout: 15000,
-    });
+      const rows = tbody.querySelectorAll('tr');
+      if (rows.length === 0) return null;
 
-    await delay(1500);
+      let carrier = null;
+      let trackingNumber = null;
 
-    const detailTrackingInfo = await page.evaluate(() => {
-      const pageText = document.body.textContent || "";
+      // 각 행을 순회하며 라벨 확인
+      for (const row of rows) {
+        const labelCell = row.querySelector('td:first-child');
+        const valueCell = row.querySelector('td:last-child');
 
-      // 송장번호 패턴 검색
-      const trackingMatch = pageText.match(/(?:송장|운송장)\s*(?:번호)?\s*[:\s]*(\d{10,15})/);
-      const carrierMatch = pageText.match(/(CJ대한통운|한진택배|롯데택배|우체국택배|로젠택배|쿠팡로켓)/);
+        if (!labelCell || !valueCell) continue;
 
-      if (trackingMatch) {
-        return {
-          trackingNumber: trackingMatch[1],
-          carrier: carrierMatch ? carrierMatch[1] : "알 수 없음",
-          status: "found",
-        };
+        const label = labelCell.textContent?.trim() || '';
+        const value = valueCell.textContent?.trim() || '';
+
+        // 택배사 찾기
+        if (label.includes('택배사') || label.includes('배송사')) {
+          carrier = value;
+        }
+
+        // 송장번호 찾기 (라벨에 "송장" 포함)
+        if (label.includes('송장')) {
+          // 숫자로 구성된 값만 (하이픈 허용)
+          if (value && /^[\d-]+$/.test(value) && value.length >= 10) {
+            trackingNumber = value.replace(/-/g, ''); // 하이픈 제거
+          }
+        }
       }
 
-      // 배송 상태 확인
-      if (pageText.includes("배송완료")) {
-        return { trackingNumber: null, carrier: null, status: "delivered_no_tracking" };
-      }
-      if (pageText.includes("배송중")) {
-        return { trackingNumber: null, carrier: null, status: "shipping_no_tracking" };
-      }
+      return { carrier, trackingNumber };
+    }, SELECTORS.deliveryTableBase);
 
-      return null;
-    });
+    if (trackingInfo?.trackingNumber) {
+      console.log(`[송장조회] 찾음: ${trackingInfo.carrier} / ${trackingInfo.trackingNumber}`);
+      return {
+        trackingNumber: trackingInfo.trackingNumber,
+        carrier: trackingInfo.carrier || "알 수 없음",
+        status: "found",
+      };
+    }
 
-    // 주문목록 페이지로 복귀
-    await page.goto("https://www.coupang.com/np/orders", {
-      waitUntil: "networkidle2",
-      timeout: 15000,
-    });
-
-    return detailTrackingInfo;
+    console.log(`[송장조회] ${openMallOrderNumber}: 송장번호 없음`);
+    return { trackingNumber: null, carrier: null, status: "tracking_not_found" };
   } catch (error) {
-    console.error(`[송장조회] 상세페이지 조회 실패 (${orderNumber}):`, error.message);
+    console.error(`[송장조회] ${openMallOrderNumber} 조회 실패:`, error.message);
     return null;
   }
 }
