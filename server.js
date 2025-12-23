@@ -267,9 +267,10 @@ async function handleProductSearchOrder(
 
     case "naver":
       return await processNaverOrder(res, page, vendor, {
-        productUrl: products[0]?.productUrl,
-        productName: products[0]?.productName,
-        quantity: products[0]?.quantity || 1,
+        products,
+        shippingAddress,
+        lineIds,
+        purchaseOrderId,
       });
 
     case "wowpress":

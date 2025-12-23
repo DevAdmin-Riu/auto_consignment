@@ -186,14 +186,26 @@ function wrapVendorConfig(name, config) {
 }
 
 /**
+ * 협력사 이름 별칭 매핑
+ * 위탁용 협력사 등 실제 오픈몰과 다른 이름으로 등록된 경우
+ */
+const VENDOR_ALIASES = {
+  "위탁전용_임시협력사": "네이버",
+  // 추후 다른 별칭 추가
+};
+
+/**
  * 협력사 이름으로 설정 찾기
  */
 function getVendorByName(vendorName) {
-  if (VENDORS[vendorName]) {
-    return wrapVendorConfig(vendorName, VENDORS[vendorName]);
+  // 별칭 매핑 확인
+  const resolvedName = VENDOR_ALIASES[vendorName] || vendorName;
+
+  if (VENDORS[resolvedName]) {
+    return wrapVendorConfig(resolvedName, VENDORS[resolvedName]);
   }
   for (const [name, config] of Object.entries(VENDORS)) {
-    if (vendorName.includes(name) || name.includes(vendorName)) {
+    if (resolvedName.includes(name) || name.includes(resolvedName)) {
       return wrapVendorConfig(name, config);
     }
   }
