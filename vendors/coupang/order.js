@@ -812,6 +812,7 @@ async function processCoupangOrder(
       success: isPaymentComplete,
       productIndex: i + 1,
       productName: product.productName || addedProducts[i]?.productName || null,
+      productSku: product.productSku || null,  // 제품코드 (가격 불일치 mutation용)
       productUrl: product.productUrl,
       quantity: quantity,
       orderLineId: product.orderLineId || null,  // OrderLine ID (mutation용)
@@ -833,9 +834,9 @@ async function processCoupangOrder(
     productCode: p.priceMismatch?.productUrl?.match(/vendorItemId=(\d+)/)?.[1] || null,
     productName: p.priceMismatch?.productName || p.productName,
     quantity: p.priceMismatch?.quantity || p.quantity,
-    currentPrice: p.priceMismatch?.coupangPrice,        // 현재 쿠팡 가격
-    expectedPrice: p.priceMismatch?.expectedPrice,      // 협력사 가격 (VAT 포함)
-    vendorPriceExcludeVat: p.priceMismatch?.vendorPriceExcludeVat,  // 협력사 단가 (VAT 별도)
+    openMallPrice: p.priceMismatch?.coupangPrice,       // 오픈몰 현재 가격 (VAT 포함)
+    expectedPrice: p.priceMismatch?.expectedPrice,      // 예상 가격 (VAT 포함)
+    vendorPriceExcludeVat: p.priceMismatch?.vendorPriceExcludeVat,  // 협력사 매입가 (VAT 별도)
     difference: p.priceMismatch?.difference,
     differencePercent: p.priceMismatch?.differencePercent,
   }));
@@ -849,12 +850,15 @@ async function processCoupangOrder(
     // 상품별 결과 (mutation용 orderLineId 포함)
     products: productResults.map(p => ({
       orderLineId: p.orderLineId,
-      orderNumber: p.orderNumber,
+      openMallOrderNumber: p.orderNumber,
       productName: p.productName,
+      productSku: p.productSku,
       quantity: p.quantity,
+      openMallPrice: p.priceMismatch?.coupangPrice || null,   // 쿠팡 현재 가격
+      vendorPriceExcludeVat: p.priceMismatch?.vendorPriceExcludeVat || null,  // 협력사 매입가 (VAT 별도)
+      priceMismatch: p.priceMismatch?.detected || false,
     })),
     // 가격 불일치 관련
-    hasPriceMismatch: priceMismatchList.length > 0,
     priceMismatchCount: priceMismatchList.length,
     priceMismatches: priceMismatches,
   });

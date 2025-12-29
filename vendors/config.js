@@ -98,6 +98,7 @@ const VENDORS = {
     siteUrl: "https://smartstore.naver.com",
     get userId() { return getEnv("NAVER_USER_ID"); },
     get password() { return getEnv("NAVER_PASSWORD"); },
+    get naverPayPin() { return getEnv("NAVER_PAY_PIN"); },
     paymentMethod: "naver_pay",
     automationType: "product_search",
   },

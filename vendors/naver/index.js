@@ -9,6 +9,10 @@ const {
   setQuantity,
   addToCart,
   processProduct,
+  selectDeliveryAddress,
+  modifyDeliveryAddress,
+  enterNaverPayPin,
+  getProductPrice,
 } = require("./order");
 const { getNaverTrackingNumbers } = require("./tracking");
 
@@ -22,6 +26,10 @@ module.exports = {
   setQuantity,
   addToCart,
   processProduct,
+  selectDeliveryAddress,
+  modifyDeliveryAddress,
+  enterNaverPayPin,
+  getProductPrice,
 
   // 송장 조회
   getNaverTrackingNumbers,

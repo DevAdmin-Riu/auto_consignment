@@ -10,9 +10,16 @@
  */
 
 const { login } = require("./login");
+const Tesseract = require("tesseract.js");
+const sharp = require("sharp");
+const path = require("path");
+const fs = require("fs");
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// 임시 디렉토리
+const tempDir = "/tmp/naver_ocr";
 
 // 셀렉터 상수
 const SELECTORS = {
@@ -32,6 +39,8 @@ const SELECTORS = {
     addToCartBtn: "a._basket, button._basket, a.npay_btn_cart",
     // 가격
     totalPrice: "strong._total_price, span._total_price",
+    // 상품 가격 (옵션 선택 후)
+    productPrice: "strong span.e1DMQNBPJ_",
   },
   // 장바구니
   cart: {
@@ -57,14 +66,37 @@ const SELECTORS = {
 };
 
 /**
+ * 상품 가격 추출
+ * @param {Page} page - Puppeteer 페이지
+ * @returns {number|null} 가격 (원)
+ */
+async function getProductPrice(page) {
+  try {
+    const priceText = await page.$eval(
+      SELECTORS.product.productPrice,
+      (el) => el.textContent.trim()
+    );
+    // "6,500" → 6500
+    const price = parseInt(priceText.replace(/[^0-9]/g, ""), 10);
+    console.log(`[naver] 상품 가격: ${priceText} → ${price}원`);
+    return price;
+  } catch (error) {
+    console.error("[naver] 가격 추출 실패:", error.message);
+    return null;
+  }
+}
+
+/**
  * 옵션 선택
  * @param {Page} page
  * @param {Array} openMallOptions - [{ title: "상품선택", value: "EH-158파이 소 400세트" }, ...]
+ * @returns {Object} { success: boolean, reason?: string }
  */
 async function selectOptions(page, openMallOptions) {
+  // 옵션이 없으면 성공으로 처리 (옵션 선택 불필요)
   if (!openMallOptions || openMallOptions.length === 0) {
     console.log("[naver] 옵션 없음, 스킵");
-    return true;
+    return { success: true, skipped: true };
   }
 
   // 문자열이면 JSON 파싱
@@ -74,14 +106,14 @@ async function selectOptions(page, openMallOptions) {
       options = JSON.parse(openMallOptions);
       console.log("[naver] 옵션 JSON 파싱 완료");
     } catch (e) {
-      throw new Error(`[naver] 옵션 JSON 파싱 실패: ${e.message}`);
+      return { success: false, reason: `옵션 JSON 파싱 실패: ${e.message}` };
     }
   }
 
   // 첫 번째 옵션 유효성 검사
   const firstOption = options[0];
   if (!firstOption || !firstOption.title || !firstOption.value) {
-    throw new Error(`[naver] 옵션 데이터 오류: ${JSON.stringify(firstOption)}`);
+    return { success: false, reason: `옵션 데이터 오류: ${JSON.stringify(firstOption)}` };
   }
 
   console.log("[naver] 옵션 선택 시작:", options.length, "개");
@@ -91,9 +123,7 @@ async function selectOptions(page, openMallOptions) {
 
     // 각 옵션 유효성 검사
     if (!option || !option.title || !option.value) {
-      throw new Error(
-        `[naver] 옵션 ${i + 1} 데이터 오류: ${JSON.stringify(option)}`
-      );
+      return { success: false, reason: `옵션 ${i + 1} 데이터 오류: ${JSON.stringify(option)}` };
     }
 
     console.log(`[naver] 옵션 ${i + 1}: ${option.title} = ${option.value}`);
@@ -135,14 +165,18 @@ async function selectOptions(page, openMallOptions) {
         console.log(`[naver] 옵션 선택됨: ${selected}`);
         await delay(1000);
       } else {
-        console.log(`[naver] 옵션 값 매칭 실패: ${option.value}`);
+        // 옵션 값 매칭 실패 → 실패 반환
+        console.log(`[naver] ❌ 옵션 값 매칭 실패: ${option.value}`);
+        return { success: false, reason: `옵션 값 매칭 실패: ${option.title} = ${option.value}` };
       }
     } else {
-      console.log(`[naver] 옵션 버튼 없음: ${option.title}`);
+      // 옵션 버튼 없음 → 실패 반환
+      console.log(`[naver] ❌ 옵션 버튼 없음: ${option.title}`);
+      return { success: false, reason: `옵션 버튼 없음: ${option.title}` };
     }
   }
 
-  return true;
+  return { success: true };
 }
 
 /**
@@ -218,6 +252,579 @@ async function clearCart(page) {
 }
 
 /**
+ * 배송지 수정 (팝업에서 첫 번째 주소 수정)
+ * @param {Page} popupPage - 팝업 페이지
+ * @param {Object} shippingAddress - 배송지 정보
+ * @returns {Object} { success: boolean, reason?: string }
+ */
+async function modifyDeliveryAddress(popupPage, shippingAddress) {
+  console.log("[naver] 배송지 수정 시작...");
+
+  try {
+    // 1. 첫 번째 주소의 "수정" 버튼 클릭
+    const editBtnSelector = "#content > div > ul > li:nth-child(1) > div > div.DeliveryList_area-button__RQrYY > button:nth-child(1)";
+
+    // 대체 셀렉터들
+    const editBtnSelectors = [
+      editBtnSelector,
+      "ul.DeliveryList_article__bH\\+FQ li:first-child button:first-child",
+      "[class*='DeliveryList_item'] [class*='area-button'] button:first-child",
+    ];
+
+    let editBtn = null;
+    for (const selector of editBtnSelectors) {
+      try {
+        editBtn = await popupPage.$(selector);
+        if (editBtn) {
+          console.log(`[naver] 수정 버튼 찾음: ${selector.substring(0, 50)}...`);
+          break;
+        }
+      } catch (e) {
+        // 셀렉터 오류 무시
+      }
+    }
+
+    // 텍스트 기반 폴백
+    if (!editBtn) {
+      console.log("[naver] 텍스트 기반으로 수정 버튼 검색...");
+      editBtn = await popupPage.evaluateHandle(() => {
+        const buttons = document.querySelectorAll("button");
+        for (const btn of buttons) {
+          if (btn.textContent?.trim() === "수정") {
+            return btn;
+          }
+        }
+        return null;
+      });
+    }
+
+    if (!editBtn || !(await editBtn.asElement())) {
+      console.log("[naver] 수정 버튼을 찾을 수 없음");
+      return { success: false, reason: "edit_button_not_found" };
+    }
+
+    await editBtn.click();
+    console.log("[naver] 수정 버튼 클릭");
+    await delay(2000); // 폼 렌더링 대기
+
+    // 2. 폼 필드 입력
+    const receiverName = shippingAddress.firstName;
+    const phone = shippingAddress.phone;
+
+    // 배송지명 = 받는이 (동일하게)
+    const deliveryName = receiverName || "배송지";
+
+    // 전체 지우기 버튼 셀렉터
+    const clearBtnSelectors = {
+      receiver: "#content > div > div.InputAnimationWrapper_article__RjFjk.InputAnimationWrapper_show__835Gz > div > div.InputLineBasic_article__VC\\+ru.InputLineBasic_focus__BJYnn > button",
+      contact: "#content > div > div.Contact_article__iwSg7 > div.InputAnimationWrapper_article__RjFjk.InputAnimationWrapper_show__835Gz > div > div.InputLineBasic_article__VC\\+ru > button",
+      deliveryName: "#content > div > div.InputDeliveryName_article__DaSdG > div:nth-child(2) > div > div > button",
+    };
+
+    // 받는 이: 지우기 → 입력
+    if (receiverName) {
+      // 입력 필드 클릭 (focus)
+      const receiverInput = await popupPage.$("#receiver");
+      if (receiverInput) {
+        await receiverInput.click();
+        await delay(300);
+
+        // 전체 지우기 버튼 클릭
+        try {
+          const clearBtn = await popupPage.$(clearBtnSelectors.receiver);
+          if (clearBtn) {
+            await clearBtn.click();
+            console.log("[naver] 받는 이 지우기 버튼 클릭");
+            await delay(300);
+          }
+        } catch (e) {
+          console.log("[naver] 받는 이 지우기 버튼 없음, 직접 선택");
+          await receiverInput.click({ clickCount: 3 });
+        }
+
+        // 입력
+        await popupPage.type("#receiver", receiverName, { delay: 30 });
+        console.log(`[naver] 받는 이 입력: ${receiverName}`);
+      } else {
+        console.log("[naver] #receiver 필드를 찾을 수 없음");
+      }
+    }
+
+    // 연락처: 지우기 → 입력
+    if (phone) {
+      const contactInput = await popupPage.$("#contact-1");
+      if (contactInput) {
+        await contactInput.click();
+        await delay(300);
+
+        // 전체 지우기 버튼 클릭
+        try {
+          const clearBtn = await popupPage.$(clearBtnSelectors.contact);
+          if (clearBtn) {
+            await clearBtn.click();
+            console.log("[naver] 연락처 지우기 버튼 클릭");
+            await delay(300);
+          }
+        } catch (e) {
+          console.log("[naver] 연락처 지우기 버튼 없음, 직접 선택");
+          await contactInput.click({ clickCount: 3 });
+        }
+
+        // 전화번호 정규화 (국가코드 제거, 하이픈 제거)
+        let cleanPhone = phone.replace(/^\+82/, "0").replace(/[^0-9]/g, "");
+        await popupPage.type("#contact-1", cleanPhone, { delay: 30 });
+        console.log(`[naver] 연락처 입력: ${cleanPhone}`);
+      } else {
+        console.log("[naver] #contact-1 필드를 찾을 수 없음");
+      }
+    }
+
+    // 배송지 명: 지우기 → 입력 (받는이와 동일)
+    if (deliveryName) {
+      const deliveryNameInput = await popupPage.$("#delivery-name");
+      if (deliveryNameInput) {
+        await deliveryNameInput.click();
+        await delay(300);
+
+        // 전체 지우기 버튼 클릭
+        try {
+          const clearBtn = await popupPage.$(clearBtnSelectors.deliveryName);
+          if (clearBtn) {
+            await clearBtn.click();
+            console.log("[naver] 배송지 명 지우기 버튼 클릭");
+            await delay(300);
+          }
+        } catch (e) {
+          console.log("[naver] 배송지 명 지우기 버튼 없음, 직접 선택");
+          await deliveryNameInput.click({ clickCount: 3 });
+        }
+
+        // 입력
+        await popupPage.type("#delivery-name", deliveryName, { delay: 30 });
+        console.log(`[naver] 배송지 명 입력: ${deliveryName}`);
+      } else {
+        console.log("[naver] #delivery-name 필드를 찾을 수 없음");
+      }
+    }
+
+    // 3. 주소 검색
+    const postalCode = shippingAddress.postalCode;
+    const streetAddress1 = shippingAddress.streetAddress1; // 검색용 주소
+    const streetAddress2 = shippingAddress.streetAddress2; // 상세 주소
+
+    if (streetAddress1) {
+      // 주소 검색 버튼 클릭
+      const addressSearchBtnSelector = "#content > div > div.InputDeliveryAddress_article__W6zIG > div.LabelLineBasic_article__IC2hu > div > div > button";
+      const addressSearchBtn = await popupPage.$(addressSearchBtnSelector);
+      if (addressSearchBtn) {
+        await addressSearchBtn.click();
+        console.log("[naver] 주소 검색 버튼 클릭");
+        await delay(2000); // React DOM 업데이트 대기
+
+        // 주소 검색 input
+        const searchInputSelector = "#content > div > div.article > div > div > div > div.InputBoxSearch_section-input__PU\\+ri > div > div > input";
+        const searchInput = await popupPage.$(searchInputSelector);
+        if (searchInput) {
+          await searchInput.type(streetAddress1, { delay: 30 });
+          console.log(`[naver] 주소 검색어 입력: ${streetAddress1}`);
+          await delay(500);
+
+          // 검색 버튼 클릭
+          const searchBtnSelector = "#content > div > div.article > div > div > div > div.InputBoxSearch_section-button__l0JLE > button";
+          const searchBtn = await popupPage.$(searchBtnSelector);
+          if (searchBtn) {
+            await searchBtn.click();
+            console.log("[naver] 주소 검색 버튼 클릭");
+            await delay(2000); // 검색 결과 대기
+
+            // 주소 목록에서 주소 포함 여부 확인
+            const addressSelected = await popupPage.evaluate(({ targetPostalCode, targetAddress }) => {
+              const items = document.querySelectorAll("ul.article li.AddressSearchList_item__1SQUD, li[class*='AddressSearchList_item']");
+              console.log(`[DEBUG] 주소 검색 결과: ${items.length}개`);
+
+              for (const item of items) {
+                // 도로명 주소
+                const roadAddressEl = item.querySelector("p.AddressSearchList_address__35JSF, p[class*='address']");
+                const roadAddress = roadAddressEl?.textContent?.trim() || "";
+
+                // 지번/우편번호 (dd 요소들)
+                const ddElements = item.querySelectorAll("dd.AddressSearchList_value__pzlIB, dd[class*='value']");
+                const jibunAddress = ddElements[0]?.textContent?.trim() || "";
+                const itemPostalCode = ddElements[1]?.textContent?.trim() || "";
+
+                console.log(`[DEBUG] 비교: "${targetAddress}" in "${roadAddress}" or "${jibunAddress}"`);
+                console.log(`[DEBUG] 우편번호: ${itemPostalCode} vs ${targetPostalCode}`);
+
+                // targetAddress가 도로명/지번 주소에 포함되는지 확인
+                const addressMatch = roadAddress.includes(targetAddress) || jibunAddress.includes(targetAddress);
+                const postalMatch = itemPostalCode === targetPostalCode;
+
+                if (addressMatch && postalMatch) {
+                  console.log(`[DEBUG] 주소+우편번호 매칭 성공!`);
+                  const selectBtn = item.querySelector("button.AddressSearchList_button-address__dddyA, button[class*='button-address']");
+                  if (selectBtn) {
+                    selectBtn.click();
+                    return { found: true, method: "exact_match", address: roadAddress, postalCode: itemPostalCode };
+                  }
+                }
+              }
+
+              // 주소만 매칭 (우편번호 불일치)
+              for (const item of items) {
+                const roadAddressEl = item.querySelector("p.AddressSearchList_address__35JSF, p[class*='address']");
+                const roadAddress = roadAddressEl?.textContent?.trim() || "";
+                const ddElements = item.querySelectorAll("dd.AddressSearchList_value__pzlIB, dd[class*='value']");
+                const jibunAddress = ddElements[0]?.textContent?.trim() || "";
+
+                if (roadAddress.includes(targetAddress) || jibunAddress.includes(targetAddress)) {
+                  console.log(`[DEBUG] 주소만 매칭 (우편번호 불일치)`);
+                  const selectBtn = item.querySelector("button.AddressSearchList_button-address__dddyA, button[class*='button-address']");
+                  if (selectBtn) {
+                    selectBtn.click();
+                    return { found: true, method: "address_only", address: roadAddress };
+                  }
+                }
+              }
+
+              // 매칭 실패 시 첫 번째 선택
+              if (items.length > 0) {
+                const firstBtn = items[0].querySelector("button[class*='button-address']");
+                if (firstBtn) {
+                  firstBtn.click();
+                  return { found: true, method: "first_item" };
+                }
+              }
+
+              return { found: false };
+            }, { targetPostalCode: postalCode, targetAddress: streetAddress1 });
+
+            if (addressSelected.found) {
+              console.log(`[naver] 주소 선택됨:`, addressSelected);
+              await delay(1000);
+
+              // 상세 주소 입력
+              if (streetAddress2) {
+                const detailInput = await popupPage.$("#address-detail");
+                if (detailInput) {
+                  await detailInput.type(streetAddress2, { delay: 30 });
+                  console.log(`[naver] 상세 주소 입력: ${streetAddress2}`);
+                }
+              }
+
+              // 확인 버튼 클릭
+              const confirmBtnSelector = "#content > div > div.ButtonRegister_article__W3rjR > button";
+              const confirmBtn = await popupPage.$(confirmBtnSelector);
+              if (confirmBtn) {
+                await confirmBtn.click();
+                console.log("[naver] 주소 확인 버튼 클릭");
+                await delay(1000);
+              }
+            } else {
+              console.log("[naver] 주소 검색 결과에서 매칭 실패");
+            }
+          }
+        }
+      } else {
+        console.log("[naver] 주소 검색 버튼을 찾을 수 없음");
+      }
+    }
+
+    // 4. 저장 버튼 클릭
+    await delay(500);
+    const saveBtnSelector = "#content > div > div.ButtonRegister_article__W3rjR > button";
+    const saveBtn = await popupPage.$(saveBtnSelector);
+    if (saveBtn) {
+      await saveBtn.click();
+      console.log("[naver] 저장 버튼 클릭");
+      await delay(1000);
+
+      // 저장 버튼이 아직 있으면 (동일 데이터로 disabled 상태) 뒤로가기 버튼으로 목록 복귀
+      const saveBtnStillExists = await popupPage.$(saveBtnSelector);
+      if (saveBtnStillExists) {
+        console.log("[naver] 저장 버튼 아직 존재 (동일 데이터) - 뒤로가기 버튼 클릭");
+        const backBtnSelector = "#root > div > div.FlexibleLayout-module_row__P4p6X > header > div > div > button";
+        const backBtn = await popupPage.$(backBtnSelector);
+        if (backBtn) {
+          await backBtn.click();
+          console.log("[naver] 뒤로가기 버튼 클릭 - 배송지 목록으로 복귀");
+          await delay(1500);
+        } else {
+          console.log("[naver] 뒤로가기 버튼을 찾을 수 없음");
+        }
+      } else {
+        console.log("[naver] 저장 완료 - 배송지 목록으로 자동 이동");
+        await delay(1000);
+      }
+    } else {
+      console.log("[naver] 저장 버튼을 찾을 수 없음");
+    }
+
+    return { success: true };
+  } catch (error) {
+    console.error("[naver] 배송지 수정 에러:", error.message);
+    return { success: false, reason: error.message };
+  }
+}
+
+/**
+ * 배송지 모달에서 주소 선택
+ * @param {Page} page
+ * @param {Object} shippingAddress - 배송지 정보
+ */
+async function selectDeliveryAddress(page, shippingAddress) {
+  console.log("[naver] 배송지 선택 시작...");
+
+  // 배송지 변경 버튼 셀렉터 (우선순위 순)
+  const changeBtnSelectors = [
+    // 사용자 제공 정확한 셀렉터
+    "#root > div > div.DoubleTemplate_container__5LG6a > div.DoubleTemplate_content__KzCZb > div.DoubleTemplate_content-left__lMo44 > div > div:nth-child(1) > div.ContentWrapper_article__Bg6i8.ContentWrapper_bg-white__lpLoa > div > div.DeliveryContent_article__enYD0 > div.DeliveryContent_area-button__jrUnt > button",
+    // 클래스 기반 폴백
+    "div.DeliveryContent_area-button__jrUnt > button",
+    "[class*='DeliveryContent'] [class*='area-button'] button",
+    "[class*='delivery'] button",
+  ];
+
+  let changeBtn = null;
+  for (const selector of changeBtnSelectors) {
+    try {
+      changeBtn = await page.$(selector);
+      if (changeBtn) {
+        console.log(`[naver] 배송지 변경 버튼 찾음: ${selector.substring(0, 50)}...`);
+        break;
+      }
+    } catch (e) {
+      console.log(`[naver] 셀렉터 오류: ${e.message}`);
+    }
+  }
+
+  // 텍스트 기반 검색 폴백
+  if (!changeBtn) {
+    console.log("[naver] 텍스트 기반으로 변경 버튼 검색...");
+    const jsHandle = await page.evaluateHandle(() => {
+      const buttons = document.querySelectorAll("button");
+      for (const btn of buttons) {
+        const text = btn.textContent || "";
+        if (text.trim() === "변경") {
+          return btn;
+        }
+      }
+      return null;
+    });
+    // JSHandle을 ElementHandle로 변환
+    changeBtn = jsHandle.asElement();
+  }
+
+  // 새 창(팝업) 대기 설정
+  const browser = page.browser();
+  const popupPromise = new Promise((resolve) => {
+    browser.once("targetcreated", async (target) => {
+      if (target.type() === "page") {
+        const newPage = await target.page();
+        console.log("[naver] 새 창(팝업) 감지:", target.url());
+        resolve(newPage);
+      }
+    });
+    // 5초 후 타임아웃 (팝업이 안 열리면 null)
+    setTimeout(() => resolve(null), 5000);
+  });
+
+  // 버튼 클릭
+  if (changeBtn) {
+    await changeBtn.click();
+    console.log("[naver] 배송지 변경 버튼 클릭");
+  } else {
+    console.log("[naver] 배송지 변경 버튼을 찾을 수 없음");
+    return { success: false, reason: "change_button_not_found" };
+  }
+
+  // 팝업 창 대기
+  console.log("[naver] 팝업 창 대기 중...");
+  const popupPage = await popupPromise;
+
+  if (popupPage) {
+    console.log("[naver] 팝업 창 열림, 팝업에서 주소 선택 진행...");
+    await delay(3000); // 팝업 로딩 대기
+
+    // 스크린샷 저장 (디버깅용)
+    try {
+      await popupPage.screenshot({ path: "/tmp/naver_popup_debug.png", fullPage: true });
+      console.log("[naver] 팝업 스크린샷 저장: /tmp/naver_popup_debug.png");
+    } catch (e) {
+      console.log("[naver] 스크린샷 실패:", e.message);
+    }
+
+    // 팝업 페이지에서 주소 리스트 확인
+    const popupDebug = await popupPage.evaluate(() => {
+      return {
+        url: window.location.href,
+        title: document.title,
+        bodyLength: document.body.innerHTML.length,
+        listItems: document.querySelectorAll("li").length,
+        addressItems: document.querySelectorAll("[class*='address'] li, [class*='Address'] li").length,
+      };
+    });
+    console.log("[naver] 팝업 디버깅:", JSON.stringify(popupDebug, null, 2));
+
+    // 팝업에서 주소 리스트 대기 (최대 10초)
+    let addressListRendered = false;
+    for (let i = 0; i < 10; i++) {
+      await delay(1000);
+      const listCount = await popupPage.evaluate(() => {
+        const items = document.querySelectorAll("li");
+        return items.length;
+      });
+      console.log(`[naver] 팝업 주소 리스트 확인 ${i + 1}/10: ${listCount}개`);
+      if (listCount > 0) {
+        addressListRendered = true;
+        break;
+      }
+    }
+
+    if (!addressListRendered) {
+      console.log("[naver] 팝업에서 주소 리스트가 렌더링되지 않음");
+      return { success: false, reason: "popup_address_list_not_rendered" };
+    }
+
+    // 주소 선택 - 첫 번째 주소 선택 후 수정
+    console.log("[naver] shippingAddress 객체:", JSON.stringify(shippingAddress, null, 2));
+    console.log("[naver] 첫 번째 주소 선택 후 수정 방식으로 진행...");
+
+    // 먼저 첫 번째 주소의 "수정" 버튼 클릭하여 주소 수정
+    const modifyResult = await modifyDeliveryAddress(popupPage, shippingAddress);
+
+    if (!modifyResult.success) {
+      console.log(`[naver] 배송지 수정 실패: ${modifyResult.reason}`);
+      return { success: false, reason: modifyResult.reason };
+    }
+
+    console.log("[naver] 배송지 수정 완료, 첫 번째 주소 선택 버튼 클릭...");
+    await delay(2000);
+
+    // 디버깅: 저장 후 팝업 상태 스크린샷
+    try {
+      await popupPage.screenshot({ path: "/tmp/naver_after_save.png", fullPage: true });
+      console.log("[naver] 저장 후 스크린샷 저장: /tmp/naver_after_save.png");
+    } catch (e) {
+      console.log("[naver] 스크린샷 실패:", e.message);
+    }
+
+    // 팝업 상태 확인
+    try {
+      const popupState = await popupPage.evaluate(() => ({
+        url: window.location.href,
+        listItems: document.querySelectorAll("li").length,
+        buttons: document.querySelectorAll("button").length,
+        bodyText: document.body.innerText.substring(0, 500),
+      }));
+      console.log("[naver] 저장 후 팝업 상태:", JSON.stringify(popupState, null, 2));
+    } catch (e) {
+      console.log("[naver] 팝업 상태 확인 실패 (팝업 닫힘?):", e.message);
+      // 팝업이 닫혔다면 성공으로 처리 (저장 완료 후 자동으로 닫힌 경우)
+      return { success: true, note: "popup_closed_after_save" };
+    }
+
+    // 첫 번째 주소 선택 버튼 클릭 (재시도 로직)
+    const selectBtnSelector = "#content > div > ul > li:nth-child(1) > div > div.DeliveryList_area-address__oaMRW > button";
+
+    let selectBtn = null;
+    for (let retry = 0; retry < 5; retry++) {
+      selectBtn = await popupPage.$(selectBtnSelector);
+      if (selectBtn) {
+        console.log(`[naver] 주소 선택 버튼 발견 (시도 ${retry + 1}/5)`);
+        break;
+      }
+      console.log(`[naver] 주소 선택 버튼 대기 중... (시도 ${retry + 1}/5)`);
+      await delay(1000);
+    }
+
+    if (selectBtn) {
+      await selectBtn.click();
+      console.log("[naver] 첫 번째 주소 선택 버튼 클릭 완료");
+      await delay(2000);
+      return { success: true };
+    }
+
+    console.log("[naver] 첫 번째 주소 선택 버튼을 찾을 수 없음");
+    return { success: false, reason: "first_address_select_button_not_found" };
+  }
+
+  // 팝업이 아닌 경우 (모달인 경우) - 기존 로직
+  console.log("[naver] 팝업 없음, 모달 확인 중...");
+  await delay(2000);
+
+  // 주소 리스트가 렌더링될 때까지 대기 (최대 5초)
+  let addressListRendered = false;
+  for (let i = 0; i < 5; i++) {
+    await delay(1000);
+    const listCount = await page.evaluate(() => {
+      const items = document.querySelectorAll("li");
+      return items.length;
+    });
+    console.log(`[naver] 모달 주소 리스트 확인 ${i + 1}/5: ${listCount}개`);
+    if (listCount > 0) {
+      addressListRendered = true;
+      break;
+    }
+  }
+
+  if (!addressListRendered) {
+    console.log("[naver] 주소 리스트가 렌더링되지 않음 - 수동 처리 필요");
+    return { success: false, reason: "address_list_not_rendered" };
+  }
+
+  // 수령인 이름으로 주소 선택 (다양한 필드명 지원)
+  const receiverName = shippingAddress.receiverName
+    || shippingAddress.name
+    || shippingAddress.recipient
+    || shippingAddress.receiver
+    || shippingAddress.customerName;
+  console.log(`[naver] 수령인 이름으로 주소 검색: ${receiverName}`);
+
+  const selected = await page.evaluate((name) => {
+    const items = document.querySelectorAll("li");
+    for (const item of items) {
+      const text = item.textContent || "";
+      if (text.includes(name)) {
+        const selectBtn = item.querySelector("button, input[type='radio'], a");
+        if (selectBtn) {
+          selectBtn.click();
+          return { found: true, text: text.substring(0, 100) };
+        }
+        item.click();
+        return { found: true, text: text.substring(0, 100) };
+      }
+    }
+    return { found: false };
+  }, receiverName);
+
+  if (selected.found) {
+    console.log(`[naver] 주소 선택됨: ${selected.text}`);
+    await delay(1000);
+
+    const confirmBtn = await page.evaluate(() => {
+      const buttons = document.querySelectorAll("button");
+      for (const btn of buttons) {
+        const text = btn.textContent || "";
+        if (text.includes("확인") || text.includes("적용") || text.includes("선택")) {
+          btn.click();
+          return text;
+        }
+      }
+      return null;
+    });
+
+    if (confirmBtn) {
+      console.log(`[naver] 확인 버튼 클릭: ${confirmBtn}`);
+    }
+
+    return { success: true };
+  }
+
+  console.log("[naver] 일치하는 주소를 찾을 수 없음");
+  return { success: false, reason: "address_not_found" };
+}
+
+/**
  * 장바구니에 상품 담기
  */
 async function addToCart(page) {
@@ -272,10 +879,26 @@ async function processProduct(page, product) {
   await delay(2000);
 
   // 2. 옵션 선택
-  if (openMallOptions && openMallOptions.length > 0) {
-    await selectOptions(page, openMallOptions);
-    await delay(1000);
+  const optionResult = await selectOptions(page, openMallOptions);
+
+  // 옵션 선택 실패 시 조기 반환
+  if (!optionResult.success) {
+    console.log(`[naver] ❌ 상품 스킵 (옵션 선택 실패): ${optionResult.reason}`);
+    return {
+      success: false,
+      productName,
+      quantity,
+      openMallPrice: null,
+      priceMismatch: false,
+      optionFailed: true,
+      optionFailReason: optionResult.reason,
+    };
   }
+
+  await delay(1000);
+
+  // 2.5. 가격 추출 (옵션 선택 후)
+  const openMallPrice = await getProductPrice(page);
 
   // 3. 수량 설정
   await setQuantity(page, quantity || 1);
@@ -284,14 +907,224 @@ async function processProduct(page, product) {
   // 4. 장바구니에 담기
   const addedToCart = await addToCart(page);
 
-  // TODO: 테스트 완료 후 아래 주석 해제
-  // 장바구니 담기까지만 테스트 - 여기서 멈춤
-  console.log("[naver] 장바구니 담기 완료 - 테스트 중지점");
+  // 5. 가격 비교 (위탁가와 오픈몰 가격)
+  // 부가세(10%) 추가하여 예상 단가 계산 (VAT 포함)
+  const vendorPriceExcludeVat = product.vendorPriceExcludeVat || 0;
+  const expectedPrice = Math.round(vendorPriceExcludeVat * 1.1); // VAT 포함
+  let priceMismatch = false;
+  if (openMallPrice && expectedPrice > 0) {
+    if (openMallPrice !== expectedPrice) {
+      console.log(`[naver] ⚠️ 가격 불일치: 오픈몰 ${openMallPrice}원 vs 예상가 ${expectedPrice}원 (VAT별도 ${vendorPriceExcludeVat}원)`);
+      priceMismatch = true;
+    } else {
+      console.log(`[naver] ✅ 가격 일치: ${openMallPrice}원`);
+    }
+  }
+
+  console.log("[naver] 장바구니 담기 완료");
   return {
     success: addedToCart,
     productName,
     quantity,
-    step: "cart_added",
+    openMallPrice,
+    vendorPriceExcludeVat,  // 협력사 매입가 (VAT 별도)
+    priceMismatch,
+  };
+}
+
+/**
+ * 네이버페이 키패드 OCR 비밀번호 입력
+ * 초록 배경 + 흰색 숫자에 최적화
+ * @param {Page} page - Puppeteer 페이지
+ * @param {string} pin - 6자리 비밀번호
+ * @returns {Object} { success, method, results }
+ */
+async function enterNaverPayPin(page, pin) {
+  console.log("[네이버페이] 비밀번호 입력 시작...");
+
+  // 임시 디렉토리 생성 (OCR용)
+  if (!fs.existsSync(tempDir)) {
+    fs.mkdirSync(tempDir, { recursive: true });
+  }
+
+  // 필요한 숫자 추출
+  const requiredDigits = [...new Set(pin.split(""))];
+  console.log(`[네이버페이] 필요한 숫자: ${requiredDigits.join(", ")}`);
+
+  // 키패드 버튼 찾기 - SecureKeyboard 클래스 사용
+  const keypadSelectors = [
+    "#keyboard button.SecureKeyboard_key__jGpA_",
+    ".SecureKeyboard_article__9VAtS button",
+    "#keyboard button",
+    "[class*='SecureKeyboard'] button",
+  ];
+
+  let buttonHandles = [];
+  for (const sel of keypadSelectors) {
+    buttonHandles = await page.$$(sel);
+    if (buttonHandles.length >= 10) {
+      console.log(`[네이버페이] 키패드 버튼 발견: ${sel}`);
+      break;
+    }
+  }
+
+  if (buttonHandles.length === 0) {
+    console.log("[네이버페이] 키패드 버튼을 찾을 수 없음");
+  }
+
+  console.log(`[네이버페이] 키패드 버튼 ${buttonHandles.length}개 발견`);
+
+  if (buttonHandles.length < 10) {
+    return { success: false, reason: "keypad_buttons_not_found" };
+  }
+
+  // OCR 설정 - 초록 배경 + 흰색 숫자에 최적화
+  // 흰색은 grayscale 후 밝은 값, 초록은 어두운 값
+  // negate: false로 설정 (흰색 숫자를 검정으로 변환)
+  const ocrConfigs = [
+    { threshold: 180, negate: false, psm: "10", blur: 0.3, gamma: 1.0, size: 200 },
+    { threshold: 160, negate: false, psm: "10", blur: 0.5, gamma: 1.2, size: 200 },
+    { threshold: 200, negate: false, psm: "10", blur: 0.3, gamma: 0.8, size: 200 },
+    { threshold: 140, negate: false, psm: "10", blur: 0.7, gamma: 1.0, size: 200 },
+    // negate 시도
+    { threshold: 100, negate: true, psm: "10", blur: 0.5, gamma: 1.0, size: 200 },
+    { threshold: 120, negate: true, psm: "10", blur: 0.3, gamma: 1.2, size: 200 },
+  ];
+
+  let digitMap = {}; // { "1": buttonIndex, ... }
+  let ocrResults = [];
+  const maxOcrRetries = ocrConfigs.length;
+
+  for (let attempt = 1; attempt <= maxOcrRetries; attempt++) {
+    const config = ocrConfigs[attempt - 1];
+    console.log(
+      `[네이버페이] OCR 시도 ${attempt}/${maxOcrRetries} (th:${config.threshold}, neg:${config.negate})`
+    );
+
+    if (attempt === 1) {
+      digitMap = {};
+      ocrResults = [];
+    }
+
+    const mappedButtonIndices = new Set(Object.values(digitMap));
+
+    for (let i = 0; i < buttonHandles.length && i < 12; i++) {
+      if (attempt > 1 && mappedButtonIndices.has(i)) continue;
+
+      try {
+        const btnHandle = buttonHandles[i];
+        const screenshotPath = path.join(tempDir, `btn_${i}_${Date.now()}.png`);
+        const processedPath = path.join(tempDir, `btn_${i}_proc_${Date.now()}.png`);
+
+        await btnHandle.screenshot({ path: screenshotPath });
+
+        // 이미지 전처리 (초록 배경 + 흰색 숫자)
+        let pipeline = sharp(screenshotPath)
+          .grayscale()
+          .resize({ width: config.size, height: config.size, fit: "cover" });
+
+        if (config.gamma !== 1.0) {
+          pipeline = pipeline.gamma(config.gamma);
+        }
+        if (config.blur > 0) {
+          pipeline = pipeline.blur(config.blur);
+        }
+
+        pipeline = pipeline
+          .normalize()
+          .sharpen({ sigma: 1.2 })
+          .threshold(config.threshold);
+
+        if (config.negate) {
+          pipeline = pipeline.negate();
+        }
+
+        await pipeline.toFile(processedPath);
+
+        // Tesseract OCR
+        const { data: { text, confidence } } = await Tesseract.recognize(
+          processedPath,
+          "eng",
+          {
+            logger: () => {},
+            tessedit_char_whitelist: "0123456789",
+            tessedit_pageseg_mode: config.psm,
+          }
+        );
+
+        const cleanText = text.replace(/[^0-9]/g, "").trim();
+        const recognizedDigit = cleanText.length === 1 ? cleanText : null;
+
+        if (attempt === 1) {
+          ocrResults.push({ index: i, rawText: text.trim(), recognizedDigit, confidence });
+        }
+
+        if (recognizedDigit && !digitMap.hasOwnProperty(recognizedDigit)) {
+          digitMap[recognizedDigit] = i;
+          console.log(`[네이버페이] ✅ 버튼 ${i}: "${recognizedDigit}" (신뢰도: ${confidence.toFixed(1)}%)`);
+        }
+
+        // 임시 파일 삭제
+        try { fs.unlinkSync(screenshotPath); } catch (e) {}
+        try { fs.unlinkSync(processedPath); } catch (e) {}
+      } catch (e) {
+        console.log(`[네이버페이] 버튼 ${i} OCR 실패: ${e.message}`);
+      }
+    }
+
+    // 필요한 숫자가 모두 인식되었는지 확인
+    const missingDigits = requiredDigits.filter((d) => !digitMap.hasOwnProperty(d));
+    if (missingDigits.length === 0) {
+      console.log("[네이버페이] 모든 필요 숫자 인식 완료");
+      break;
+    } else {
+      console.log(`[네이버페이] 누락된 숫자: ${missingDigits.join(", ")}`);
+
+      // 추론: 미인식 버튼 1개 = 누락 숫자 1개면 자동 매핑
+      const unmappedIndices = [];
+      for (let i = 0; i < Math.min(buttonHandles.length, 10); i++) {
+        if (!Object.values(digitMap).includes(i)) {
+          unmappedIndices.push(i);
+        }
+      }
+
+      if (unmappedIndices.length === 1 && missingDigits.length === 1) {
+        digitMap[missingDigits[0]] = unmappedIndices[0];
+        console.log(`[네이버페이] 🎯 추론: 버튼 ${unmappedIndices[0]} = "${missingDigits[0]}"`);
+        break;
+      }
+
+      if (attempt < maxOcrRetries) {
+        await delay(300);
+      }
+    }
+  }
+
+  console.log("[네이버페이] 숫자 매핑:", JSON.stringify(digitMap));
+
+  // PIN 입력
+  const pinResults = [];
+  for (const digit of pin.split("")) {
+    const btnIndex = digitMap[digit];
+    if (btnIndex !== undefined && buttonHandles[btnIndex]) {
+      try {
+        await buttonHandles[btnIndex].click();
+        pinResults.push({ digit, index: btnIndex, clicked: true });
+        console.log(`[네이버페이] 숫자 "${digit}" 클릭 (버튼 ${btnIndex})`);
+        await delay(100);
+      } catch (e) {
+        pinResults.push({ digit, index: btnIndex, clicked: false, error: e.message });
+      }
+    } else {
+      pinResults.push({ digit, index: btnIndex, clicked: false, error: "not_mapped" });
+      console.log(`[네이버페이] ❌ 숫자 "${digit}" 매핑 없음`);
+    }
+  }
+
+  const successCount = pinResults.filter((r) => r.clicked).length;
+  return {
+    success: successCount === pin.length,
+    clickedCount: successCount,
   };
 }
 
@@ -327,13 +1160,19 @@ async function processNaverOrder(
       try {
         const result = await processProduct(page, product);
         addedProducts.push({
-          ...product,
+          ...product, // 원본 product의 모든 필드 유지 (orderLineId, purchaseOrderLineId 등)
+          openMallPrice: result.openMallPrice,
+          priceMismatch: result.priceMismatch,
           addedToCart: result.success,
+          // 옵션 선택 실패 정보
+          optionFailed: result.optionFailed || false,
+          optionFailReason: result.optionFailReason || null,
         });
         steps.push({
           step: `product_${i + 1}`,
           productName: product.productName,
           success: result.success,
+          optionFailed: result.optionFailed || false,
         });
       } catch (error) {
         console.error(`[naver] 상품 처리 실패:`, error.message);
@@ -346,42 +1185,253 @@ async function processNaverOrder(
       }
     }
 
-    // TODO: 테스트 완료 후 아래 주석 해제
-    // 옵션 선택까지만 테스트 - 여기서 멈춤
-    console.log("[naver] 상품 처리 완료 - 테스트 중지점");
-    return res.json({
-      success: true,
-      message: "옵션 선택까지 완료 (테스트 모드)",
-      steps,
-      addedProducts,
-      purchaseOrderId,
-    });
+    // 3.5. 장바구니에 담긴 상품이 있는지 확인
+    const successfulProducts = addedProducts.filter((p) => p.addedToCart);
+    const optionFailedProducts = addedProducts.filter((p) => p.optionFailed);
 
-    // // 3. 장바구니로 이동
-    // console.log("\n[naver] 장바구니 확인...");
-    // await page.goto("https://order.pay.naver.com/basket", {
-    //   waitUntil: "networkidle2",
-    //   timeout: 30000,
-    // });
-    // await delay(2000);
-    // steps.push({ step: "cart", success: true });
+    if (successfulProducts.length === 0) {
+      console.log("[naver] ❌ 장바구니에 담긴 상품이 없음 - 주문 중단");
 
-    // // 4. 배송지가 없으면 여기서 중단 (장바구니만 담기)
-    if (!shippingAddress) {
-      console.log("[naver] 배송지 없음 - 장바구니만 담기 완료");
+      // 옵션 실패로 인한 전체 실패인지 확인
+      if (optionFailedProducts.length > 0) {
+        return res.json({
+          success: false,
+          message: `옵션 선택 실패로 주문 불가 (${optionFailedProducts.length}건)`,
+          optionFailedProducts: optionFailedProducts.map((p) => ({
+            // 원본 필드 모두 포함 (orderLineId, purchaseOrderLineId 등)
+            orderLineId: p.orderLineId,
+            purchaseOrderLineId: p.purchaseOrderLineId,
+            productName: p.productName,
+            reason: p.optionFailReason,
+          })),
+          steps,
+          addedProducts,
+          purchaseOrderId,
+        });
+      }
+
       return res.json({
-        success: true,
-        orderNumber: null,
-        message: "장바구니 담기 완료 (배송지 없음)",
+        success: false,
+        message: "장바구니에 담긴 상품이 없음",
         steps,
         addedProducts,
         purchaseOrderId,
       });
     }
 
-    // TODO: 결제 처리 (네이버페이)
-    // 네이버페이는 복잡한 인증 과정이 있어서 일단 장바구니까지만 자동화
-    console.log("[naver] 결제는 수동 처리 필요");
+    console.log(`[naver] 장바구니 담기 완료: ${successfulProducts.length}/${products.length}건`);
+    if (optionFailedProducts.length > 0) {
+      console.log(`[naver] ⚠️ 옵션 선택 실패: ${optionFailedProducts.length}건 (주문 제외)`);
+    }
+
+    // 4. 장바구니 페이지에서 주문하기 버튼 클릭
+    console.log("[naver] 주문하기 버튼 클릭...");
+    const orderBtnSelector =
+      "#app > div > div.floating_wrap--OgE5RZwbz5 > div > div > div.buy_area--1s7Qe73yzk > div > button.link_buy--jXvxZ8Agr-._nlog_click";
+    const orderBtn = await page.$(orderBtnSelector);
+    if (orderBtn) {
+      await orderBtn.click();
+      console.log("[naver] 주문하기 버튼 클릭 완료");
+      await delay(3000);
+      steps.push({ step: "order_button", success: true });
+    } else {
+      console.log("[naver] 주문하기 버튼 없음");
+      steps.push({ step: "order_button", success: false });
+    }
+
+    // 5. 배송지 선택 (배송지 정보가 있는 경우)
+    if (shippingAddress) {
+      console.log("[naver] 배송지 선택 시도...");
+      const addressResult = await selectDeliveryAddress(page, shippingAddress);
+      steps.push({
+        step: "address_selection",
+        success: addressResult.success,
+        reason: addressResult.reason,
+      });
+
+      if (!addressResult.success) {
+        console.log("[naver] 배송지 선택 실패 - 테스트 중지점");
+        return res.json({
+          success: false,
+          message: `배송지 선택 실패: ${addressResult.reason}`,
+          steps,
+          addedProducts,
+          purchaseOrderId,
+          needManualAddressSelection: true,
+        });
+      }
+    }
+
+    // 6. 결제하기 버튼 클릭
+    await delay(2000);
+    const paymentBtnSelector = "#root > div > div.DoubleTemplate_container__5LG6a > div.SubmitButton_article__\\+7E3M.SubmitButton_type-pc__wc4Vy.SubmitButton_type-floating__VRJYZ.SubmitButton_floating__Plj-\\+ > div > div > div.SubmitButton_area-button__1RiID > button";
+
+    const paymentBtn = await page.$(paymentBtnSelector);
+    if (paymentBtn) {
+      // 새 창(팝업) 대기 설정 - 결제 키패드가 새 창으로 열림
+      const browser = page.browser();
+      const paymentPopupPromise = new Promise((resolve) => {
+        browser.once("targetcreated", async (target) => {
+          if (target.type() === "page") {
+            const newPage = await target.page();
+            console.log("[naver] 결제 팝업 감지:", target.url());
+            resolve(newPage);
+          }
+        });
+        // 10초 후 타임아웃
+        setTimeout(() => resolve(null), 10000);
+      });
+
+      console.log("[naver] 결제하기 버튼 클릭...");
+      await paymentBtn.click();
+      steps.push({ step: "payment_button_click", success: true });
+
+      // 8. 네이버페이 결제 팝업 대기
+      console.log("[naver] 네이버페이 결제 팝업 대기...");
+      const paymentPopup = await paymentPopupPromise;
+
+      if (!paymentPopup) {
+        console.log("[naver] 결제 팝업이 열리지 않음");
+        return res.json({
+          success: false,
+          message: "결제 팝업이 열리지 않음",
+          steps,
+          addedProducts,
+          purchaseOrderId,
+        });
+      }
+
+      console.log("[naver] 결제 팝업 열림, 키패드 로딩 대기...");
+      await delay(3000);
+
+      // 7. PIN 입력 (OCR 사용) - 팝업에서 실행
+      const pin = vendor.naverPayPin;
+      if (!pin) {
+        console.log("[naver] 네이버페이 PIN이 설정되지 않음");
+        return res.json({
+          success: false,
+          message: "네이버페이 PIN이 설정되지 않음 (NAVER_PAY_PIN)",
+          steps,
+          addedProducts,
+          purchaseOrderId,
+        });
+      }
+
+      console.log(`[naver] 네이버페이 비밀번호 입력 시작 (${pin.length}자리)`);
+      const pinResult = await enterNaverPayPin(paymentPopup, pin);
+
+      steps.push({
+        step: "naver_pay_pin",
+        success: pinResult.success,
+        method: pinResult.method,
+        clickedCount: pinResult.clickedCount,
+      });
+
+      if (pinResult.success) {
+        console.log("[naver] 네이버페이 비밀번호 입력 완료");
+        await delay(5000); // 결제 처리 및 완료 페이지 로딩 대기
+
+        // 8. 주문번호 추출
+        let orderNumber = null;
+        const orderNumberSelectors = [
+          "button.OrderNumber_button-number__kM0LA",
+          "[class*='OrderNumber_button-number']",
+          "[class*='order-number'] button",
+          "[class*='orderNumber'] button",
+        ];
+
+        // 주문번호가 메인 페이지에 있는지 확인 (최대 10초 대기)
+        for (let retry = 0; retry < 10; retry++) {
+          for (const sel of orderNumberSelectors) {
+            try {
+              const orderNumEl = await page.$(sel);
+              if (orderNumEl) {
+                orderNumber = await page.$eval(sel, (el) => el.textContent.replace("복사하기", "").trim());
+                if (orderNumber && /^\d+$/.test(orderNumber)) {
+                  console.log(`[naver] 주문번호 발견: ${orderNumber}`);
+                  break;
+                }
+              }
+            } catch (e) {}
+          }
+          if (orderNumber) break;
+          console.log(`[naver] 주문번호 대기 중... (${retry + 1}/10)`);
+          await delay(1000);
+        }
+
+        if (!orderNumber) {
+          console.log("[naver] 주문번호를 찾지 못함 - URL에서 추출 시도");
+          // URL에서 주문번호 추출 시도
+          const currentUrl = page.url();
+          const orderMatch = currentUrl.match(/orderNumber=(\d+)/);
+          if (orderMatch) {
+            orderNumber = orderMatch[1];
+            console.log(`[naver] URL에서 주문번호 추출: ${orderNumber}`);
+          }
+        }
+
+        steps.push({
+          step: "order_complete",
+          success: !!orderNumber,
+          orderNumber,
+        });
+
+        // 가격 불일치 상세 데이터 (시스템 저장용)
+        const priceMismatchList = addedProducts.filter((p) => p.priceMismatch);
+        const priceMismatches = priceMismatchList.map((p) => {
+          const vendorPriceExcludeVat = p.vendorPriceExcludeVat || 0;
+          const expectedPrice = Math.round(vendorPriceExcludeVat * 1.1); // VAT 포함
+          const priceDiff = p.openMallPrice - expectedPrice;
+          const priceDiffPercent = expectedPrice > 0 ? ((priceDiff / expectedPrice) * 100).toFixed(2) : 0;
+          return {
+            purchaseOrderLineId: p.purchaseOrderLineId || null,  // PurchaseOrderLine ID (mutation용)
+            productCode: p.productSku,
+            productName: p.productName,
+            quantity: p.quantity,
+            openMallPrice: p.openMallPrice,              // 오픈몰 현재 가격 (VAT 포함)
+            expectedPrice: expectedPrice,                // 예상 가격 (VAT 포함)
+            vendorPriceExcludeVat: vendorPriceExcludeVat,  // 협력사 매입가 (VAT 별도)
+            difference: priceDiff,
+            differencePercent: priceDiffPercent,
+          };
+        });
+
+        return res.json({
+          success: true,
+          message: orderNumber ? "결제 완료" : "결제 완료 (주문번호 확인 필요)",
+          orderNumber,
+          purchaseOrderId,
+          purchaseOrderLineIds: lineIds || [], // PurchaseOrderLinesReceive mutation용
+          // 상품별 결과 (mutation용 orderLineId 포함)
+          products: addedProducts.map((p) => ({
+            orderLineId: p.orderLineId,
+            openMallOrderNumber: orderNumber,
+            productName: p.productName,
+            productSku: p.productSku,
+            quantity: p.quantity,
+            openMallPrice: p.openMallPrice,                    // 오픈몰 현재 가격 (VAT 포함)
+            vendorPriceExcludeVat: p.vendorPriceExcludeVat,    // 협력사 매입가 (VAT 별도)
+            priceMismatch: p.priceMismatch,
+          })),
+          // 가격 불일치 관련
+          priceMismatchCount: priceMismatchList.length,
+          priceMismatches: priceMismatches,
+        });
+      } else {
+        console.log("[naver] 네이버페이 비밀번호 입력 실패");
+        return res.json({
+          success: false,
+          message: "네이버페이 비밀번호 입력 실패",
+          purchaseOrderId,
+        });
+      }
+    } else {
+      console.log("[naver] 결제하기 버튼을 찾을 수 없음");
+      steps.push({ step: "payment_button", success: false, reason: "button_not_found" });
+    }
+
+    // 9. 결제하기 버튼을 못 찾은 경우
+    console.log("[naver] 결제 프로세스 완료 실패");
 
     return res.json({
       success: true,
@@ -412,5 +1462,9 @@ module.exports = {
   setQuantity,
   addToCart,
   processProduct,
+  selectDeliveryAddress,
+  modifyDeliveryAddress,
+  enterNaverPayPin,
+  getProductPrice,
   SELECTORS,
 };

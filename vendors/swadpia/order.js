@@ -705,14 +705,15 @@ async function verifySwadpiaCartItems(page, expectedProducts) {
       }
 
       // 가격 확인 (협력사 매입가와 비교)
-      const expectedUnitPrice =
-        matchedExpected.vendorPriceExcludeVat ||
-        matchedExpected.purchasePrice ||
-        0;
-      if (expectedUnitPrice > 0 && cartItem.unitPrice !== expectedUnitPrice) {
-        const priceDiff = cartItem.unitPrice - expectedUnitPrice;
+      // 부가세(10%) 추가하여 예상 단가 계산 (VAT 포함)
+      const vendorPriceExcludeVat = matchedExpected.vendorPriceExcludeVat || matchedExpected.purchasePrice || 0;
+      const expectedPrice = Math.round(vendorPriceExcludeVat * 1.1);  // VAT 포함
+      const openMallPrice = cartItem.unitPrice;  // 성원애드피아 현재 가격 (VAT 포함)
+
+      if (expectedPrice > 0 && openMallPrice !== expectedPrice) {
+        const priceDiff = openMallPrice - expectedPrice;
         const priceDiffPercent = (
-          (priceDiff / expectedUnitPrice) *
+          (priceDiff / expectedPrice) *
           100
         ).toFixed(2);
         priceMismatches.push({
@@ -720,14 +721,14 @@ async function verifySwadpiaCartItems(page, expectedProducts) {
           productCode: matchedExpected.productSku,
           productName: cartItem.name,
           quantity: cartItem.quantity,
-          currentPrice: cartItem.unitPrice,        // 현재 성원애드피아 가격
-          expectedPrice: expectedUnitPrice,        // 협력사 가격 (VAT 별도)
-          vendorPriceExcludeVat: matchedExpected.vendorPriceExcludeVat || null,
+          openMallPrice: openMallPrice,              // 오픈몰 현재 가격 (VAT 포함)
+          expectedPrice: expectedPrice,              // 예상 가격 (VAT 포함)
+          vendorPriceExcludeVat: vendorPriceExcludeVat,  // 협력사 매입가 (VAT 별도)
           difference: priceDiff,
           differencePercent: priceDiffPercent,
         });
         console.log(
-          `[가격 불일치] ${matchedExpected.productSku} - 기대: ${expectedUnitPrice}원, 실제: ${cartItem.unitPrice}원`
+          `[가격 불일치] ${matchedExpected.productSku} - 기대: ${expectedPrice}원, 실제: ${openMallPrice}원`
         );
       }
 
@@ -2018,10 +2019,12 @@ async function processSwadpiaOrder(
       purchaseOrderLineIds: lineIds || [],  // PurchaseOrderLinesReceive mutation용
       retryCount,
       products: products.map((p) => ({
+        orderLineId: p.orderLineId,
+        openMallOrderNumber: orderResult?.vendorOrderNumber || null,
         productName: p.productName,
         productSku: p.productSku,
         quantity: p.quantity,
-        purchasePrice: p.purchasePrice,
+        vendorPriceExcludeVat: p.vendorPriceExcludeVat,    // 협력사 매입가 (VAT 별도)
       })),
       // 장바구니 검증 결과
       cartVerification: {
