@@ -259,10 +259,10 @@ async function handleProductSearchOrder(
 
     case "baemin":
       return await processBaeminOrder(res, page, vendor, {
-        productUrl: products[0]?.productUrl,
-        productName: products[0]?.productName,
-        quantity: products[0]?.quantity || 1,
-        orderData,
+        products,
+        shippingAddress,
+        lineIds,
+        purchaseOrderId,
       });
 
     case "naver":

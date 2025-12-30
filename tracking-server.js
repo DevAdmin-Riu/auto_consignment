@@ -17,6 +17,7 @@ const { getVendorByKey } = require("./vendors/config");
 // 각 벤더별 tracking 모듈
 const { getCoupangTrackingNumbers } = require("./vendors/coupang/tracking");
 const { getSwadpiaTrackingNumbers } = require("./vendors/swadpia/tracking");
+const { getNaverTrackingNumbers } = require("./vendors/naver/tracking");
 
 const app = express();
 app.use(express.json());
@@ -79,8 +80,7 @@ async function resetBrowser() {
 const trackingHandlers = {
   coupang: getCoupangTrackingNumbers,
   swadpia: getSwadpiaTrackingNumbers,
-  // TODO: 추후 다른 오픈몰 추가
-  // naver: getNaverTrackingNumbers,
+  naver: getNaverTrackingNumbers,
 };
 
 /**
