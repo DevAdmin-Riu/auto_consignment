@@ -12,6 +12,12 @@ const { loginToBaemin } = require("./order");
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+// 셀렉터 상수
+const SELECTORS = {
+  // 배송조회 버튼 (data 속성으로 찾기 - styled-components 클래스보다 안정적)
+  deliveryTrackingBtn: 'button[data-action-button-click-event-label="배송조회"]',
+};
+
 // 택배사명 정규화
 function normalizeCarrier(carrier) {
   if (!carrier) return null;
@@ -25,6 +31,7 @@ function normalizeCarrier(carrier) {
     대한통운: "CJ대한통운",
     CJ: "CJ대한통운",
     롯데택배: "롯데택배",
+    롯데글로벌로지스: "롯데택배",
     롯데: "롯데택배",
     한진택배: "한진택배",
     한진: "한진택배",
@@ -42,6 +49,8 @@ function normalizeCarrier(carrier) {
     건영: "건영택배",
     일양로지스: "일양로지스",
     일양: "일양로지스",
+    대신택배: "대신택배",
+    대신: "대신택배",
   };
 
   if (mappings[normalized]) {
@@ -80,8 +89,8 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
         );
 
         // 주문 상세 페이지로 이동
-        // 배민상회 주문 상세 URL 패턴: https://mart.baemin.com/orders/{주문번호}
-        const orderDetailUrl = `https://mart.baemin.com/orders/${openMallOrderNumber}`;
+        // 배민상회 주문 상세 URL 패턴: https://mart.baemin.com/mymart/order/detail/{주문번호}
+        const orderDetailUrl = `https://mart.baemin.com/mymart/order/detail/${openMallOrderNumber}`;
         await page.goto(orderDetailUrl, {
           waitUntil: "networkidle2",
           timeout: 30000,
@@ -92,16 +101,65 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
         const currentUrl = page.url();
         console.log(`[baemin 송장조회] 현재 URL: ${currentUrl}`);
 
-        // 페이지에서 배송 정보 추출
+        // 배송조회 버튼 찾기
+        let deliveryBtn = await page.$(SELECTORS.deliveryTrackingBtn);
+
+        // 셀렉터로 못찾으면 텍스트로 폴백
+        if (!deliveryBtn) {
+          console.log(`[baemin 송장조회] 셀렉터로 버튼 못찾음, 텍스트로 검색...`);
+          deliveryBtn = await page.evaluateHandle(() => {
+            const buttons = document.querySelectorAll("button");
+            for (const btn of buttons) {
+              const text = (btn.innerText || btn.textContent || "").trim();
+              if (text.includes("배송조회")) {
+                return btn;
+              }
+            }
+            return null;
+          });
+
+          // evaluateHandle 결과가 null이면 버튼 없음
+          const btnValue = await deliveryBtn.jsonValue();
+          if (!btnValue) {
+            deliveryBtn = null;
+          }
+        }
+
+        if (!deliveryBtn) {
+          console.log(
+            `[baemin 송장조회] ${openMallOrderNumber}: 배송조회 버튼 없음 (아직 배송 전)`
+          );
+          continue;
+        }
+
+        // 배송조회 버튼 클릭
+        await deliveryBtn.click();
+        console.log(`[baemin 송장조회] ${openMallOrderNumber}: 배송조회 버튼 클릭`);
+        await delay(2000);
+
+        // 모달에서 송장번호, 택배사 추출
+        // 패턴: "롯데택배 운송장번호: 260798121124"
         const trackingInfo = await page.evaluate(() => {
-          // 방법 1: 배송조회 버튼 또는 송장번호 텍스트 찾기
           const allText = document.body.innerText || "";
 
-          // 송장번호 패턴 찾기 (숫자 10-14자리)
+          // "택배사 운송장번호: 숫자" 패턴 찾기
+          // 예: "롯데택배 운송장번호: 260798121124"
+          const combinedPattern = /(CJ대한통운|대한통운|롯데택배|한진택배|로젠택배|우체국택배|경동택배|합동택배|천일택배|건영택배|일양로지스|대신택배|롯데|대신)\s*운송장번호[:\s]*(\d{10,14})/;
+          const combinedMatch = allText.match(combinedPattern);
+
+          if (combinedMatch) {
+            return {
+              carrier: combinedMatch[1],
+              trackingNumber: combinedMatch[2],
+              pageText: null,
+            };
+          }
+
+          // 폴백: 개별 패턴으로 찾기
           const trackingPatterns = [
+            /운송장번호[:\s]*(\d{10,14})/,
             /송장번호[:\s]*(\d{10,14})/,
-            /운송장[:\s]*(\d{10,14})/,
-            /배송조회[:\s]*(\d{10,14})/,
+            /송장\s*:\s*(\d{10,14})/,
           ];
 
           let trackingNumber = null;
@@ -115,7 +173,7 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
 
           // 택배사 찾기
           const carrierPatterns = [
-            /(CJ대한통운|대한통운|롯데택배|한진택배|로젠택배|우체국택배|경동택배)/,
+            /(CJ대한통운|대한통운|롯데택배|한진택배|로젠택배|우체국택배|경동택배|합동택배|천일택배|건영택배|일양로지스|대신택배|롯데|대신)/,
           ];
 
           let carrier = null;
@@ -127,25 +185,10 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
             }
           }
 
-          // 배송 상태 텍스트 찾기
-          const statusPatterns = [
-            /배송중/,
-            /배송완료/,
-            /배송준비중/,
-          ];
-          let hasDeliveryStatus = false;
-          for (const pattern of statusPatterns) {
-            if (pattern.test(allText)) {
-              hasDeliveryStatus = true;
-              break;
-            }
-          }
-
           return {
             trackingNumber,
             carrier,
-            hasDeliveryStatus,
-            pageText: allText.substring(0, 500), // 디버깅용
+            pageText: allText.substring(0, 1000), // 디버깅용
           };
         });
 
@@ -154,7 +197,6 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
           JSON.stringify({
             trackingNumber: trackingInfo.trackingNumber,
             carrier: trackingInfo.carrier,
-            hasDeliveryStatus: trackingInfo.hasDeliveryStatus,
           })
         );
 
@@ -177,7 +219,7 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
           // 디버깅: 페이지 텍스트 일부 출력
           if (trackingInfo.pageText) {
             console.log(
-              `[baemin 송장조회] 페이지 텍스트: ${trackingInfo.pageText.substring(0, 200)}...`
+              `[baemin 송장조회] 페이지 텍스트: ${trackingInfo.pageText.substring(0, 300)}...`
             );
           }
         }

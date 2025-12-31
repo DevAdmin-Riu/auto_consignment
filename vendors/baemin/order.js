@@ -199,7 +199,7 @@ async function loginToBaemin(page, vendor) {
     if (!idInput) {
       return { success: false, message: "아이디 입력창을 찾을 수 없음" };
     }
-    await idInput.click();
+    await idInput.click({ clickCount: 3 }); // 기존 값 선택 후 덮어쓰기
     await idInput.type(vendor.userId, { delay: 50 });
 
     // 4. 비밀번호 입력
@@ -209,7 +209,7 @@ async function loginToBaemin(page, vendor) {
     if (!pwInput) {
       return { success: false, message: "비밀번호 입력창을 찾을 수 없음" };
     }
-    await pwInput.click();
+    await pwInput.click({ clickCount: 3 }); // 기존 값 선택 후 덮어쓰기
     await pwInput.type(vendor.password, { delay: 50 });
 
     // 5. 로그인 버튼 클릭
