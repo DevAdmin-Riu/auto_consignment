@@ -1368,85 +1368,114 @@ async function processPayment(page) {
     console.log("[baemin] PIN 입력 완료!");
     await delay(3000);
 
-    // 9. 주문내역 상세보기 버튼 클릭
-    console.log("[baemin] 9. 주문내역 상세보기 버튼 클릭...");
+    // 9. 결제 완료 후 처리 - 팝업이 닫히고 원래 배민 페이지로 이동됨
+    console.log("[baemin] 9. 결제 완료 확인 (배민 페이지)...");
+    let orderNumber = null;
+
+    // 팝업이 닫힐 때까지 대기
+    for (let i = 0; i < 10; i++) {
+      try {
+        const isOpen = naverPayPage && !naverPayPage.isClosed();
+        if (!isOpen) {
+          console.log(`[baemin] 네이버페이 팝업 닫힘 확인 (${i + 1}회)`);
+          break;
+        }
+        console.log(`[baemin] 네이버페이 팝업 닫힘 대기... (${i + 1}/10)`);
+        await delay(1000);
+      } catch (e) {
+        console.log(`[baemin] 팝업 닫힘 확인: ${e.message}`);
+        break;
+      }
+    }
+
+    // 배민 페이지로 포커스 전환 및 결제 완료 확인
     await delay(2000);
 
-    const orderDetailBtnSelector =
-      "#root > div > section > div.sc-doGdGr.fdlYoH > div.sc-ctosZL.feYMnx > button.sc-ehvNnt.fxMHfA";
-    const orderDetailBtn = await naverPayPage.$(orderDetailBtnSelector);
+    try {
+      // 배민 페이지 URL 확인
+      const baeminUrl = await page.url();
+      console.log(`[baemin] 배민 페이지 URL: ${baeminUrl}`);
 
-    if (orderDetailBtn) {
-      await orderDetailBtn.click();
-      console.log("[baemin] 주문내역 상세보기 버튼 클릭 완료");
-    } else {
-      // 텍스트로 폴백
-      console.log("[baemin] 셀렉터 실패, 텍스트로 검색...");
-      const detailClicked = await naverPayPage.evaluate(() => {
-        const buttons = document.querySelectorAll("button");
-        for (const btn of buttons) {
-          const text = (btn.innerText || btn.textContent || "").trim();
-          if (text.includes("주문내역") || text.includes("상세보기")) {
-            btn.click();
-            return { clicked: true, text };
-          }
-        }
-        return { clicked: false };
-      });
-      if (detailClicked.clicked) {
-        console.log(
-          `[baemin] 주문내역 상세보기 버튼 클릭 (텍스트): "${detailClicked.text}"`
-        );
+      // 10. "주문내역 상세보기" 버튼 대기 및 클릭 (배민 페이지)
+      console.log("[baemin] 10. 주문내역 상세보기 버튼 대기 (배민 페이지)...");
+
+      const orderDetailBtnSelector = "#root > div > section > div.sc-doGdGr.fdlYoH > div.sc-ctosZL.feYMnx > button.sc-ehvNnt.fxMHfA";
+
+      // 버튼이 나타날 때까지 대기 (최대 30초)
+      const orderDetailBtn = await waitFor(page, orderDetailBtnSelector, 30000);
+
+      if (orderDetailBtn) {
+        await orderDetailBtn.click();
+        console.log("[baemin] 주문내역 상세보기 버튼 클릭 완료");
+        await delay(3000);
       } else {
-        console.log("[baemin] 주문내역 상세보기 버튼 없음");
-      }
-    }
-
-    // 10. 주문번호 추출
-    console.log("[baemin] 10. 주문번호 추출...");
-    await delay(3000);
-
-    const orderNumberSelector =
-      "#root > div > div.sc-kvVhHC.cDSays > div.sc-gLBXkV.Rsxkb > div.sc-jmxFWv.kJriCA > div:nth-child(2) > div.sc-kLrQKW.evIhGF > div > div.sc-iODgfC.taTVJ > div > div > span.sc-dMLRKe.crbOaE";
-
-    let orderNumber = null;
-    const orderNumberSpan = await naverPayPage.$(orderNumberSelector);
-
-    if (orderNumberSpan) {
-      const text = await naverPayPage.evaluate(
-        (el) => el.textContent || "",
-        orderNumberSpan
-      );
-      // "주문번호 1000015262067" → 숫자만 추출
-      const match = text.match(/\d+/);
-      if (match) {
-        orderNumber = match[0];
-        console.log(`[baemin] 주문번호 추출 완료: ${orderNumber}`);
-      }
-    }
-
-    if (!orderNumber) {
-      // 텍스트로 폴백
-      const extracted = await naverPayPage.evaluate(() => {
-        const spans = document.querySelectorAll("span");
-        for (const span of spans) {
-          const text = (span.innerText || span.textContent || "").trim();
-          if (text.includes("주문번호")) {
-            const match = text.match(/\d+/);
-            if (match) {
-              return match[0];
+        // 텍스트로 폴백
+        console.log("[baemin] 셀렉터 실패, 텍스트로 검색...");
+        const detailClicked = await page.evaluate(() => {
+          const buttons = document.querySelectorAll("button, a");
+          for (const btn of buttons) {
+            const text = (btn.innerText || btn.textContent || "").trim();
+            if (text.includes("주문내역") || text.includes("상세보기")) {
+              btn.click();
+              return { clicked: true, text };
             }
           }
+          return { clicked: false };
+        });
+        if (detailClicked.clicked) {
+          console.log(`[baemin] 주문내역 상세보기 버튼 클릭 (텍스트): "${detailClicked.text}"`);
+          await delay(3000);
         }
-        return null;
-      });
-      if (extracted) {
-        orderNumber = extracted;
-        console.log(`[baemin] 주문번호 추출 완료 (텍스트): ${orderNumber}`);
       }
+
+      // 11. 주문번호 추출 (배민 페이지)
+      console.log("[baemin] 11. 주문번호 추출...");
+
+      const orderNumberSelector = "#root > div > div.sc-kvVhHC.cDSays > div.sc-gLBXkV.Rsxkb > div.sc-jmxFWv.kJriCA > div:nth-child(2) > div.sc-kLrQKW.evIhGF > div > div.sc-iODgfC.taTVJ > div > div > span.sc-dMLRKe.crbOaE";
+
+      // 주문번호 셀렉터로 추출 시도
+      const orderNumberSpan = await page.$(orderNumberSelector);
+      if (orderNumberSpan) {
+        const text = await page.evaluate((el) => el.textContent || "", orderNumberSpan);
+        const match = text.match(/\d+/);
+        if (match) {
+          orderNumber = match[0];
+          console.log(`[baemin] 주문번호 추출 완료 (셀렉터): ${orderNumber}`);
+        }
+      }
+
+      // 페이지 텍스트에서 주문번호 추출 (폴백)
+      if (!orderNumber) {
+        console.log("[baemin] 셀렉터 실패, 텍스트로 검색...");
+        const baeminOrderNumber = await page.evaluate(() => {
+          const allText = document.body.innerText || "";
+          const patterns = [
+            /주문번호[:\s]*(\d+)/,
+            /주문\s*번호[:\s]*(\d+)/,
+          ];
+          for (const pattern of patterns) {
+            const match = allText.match(pattern);
+            if (match) return match[1];
+          }
+          return null;
+        });
+
+        if (baeminOrderNumber) {
+          orderNumber = baeminOrderNumber;
+          console.log(`[baemin] 주문번호 추출 완료 (텍스트): ${orderNumber}`);
+        }
+      }
+    } catch (e) {
+      console.log("[baemin] 배민 페이지 확인 실패:", e.message);
     }
 
-    const finalUrl = naverPayPage.url();
+    // 최종 결과 반환
+    let finalUrl = "unknown";
+    try {
+      finalUrl = page.url();
+    } catch (e) {
+      // ignore
+    }
     console.log(`[baemin] 최종 URL: ${finalUrl}`);
 
     if (orderNumber) {
@@ -1456,11 +1485,12 @@ async function processPayment(page) {
         message: "결제 완료",
         orderNumber,
         url: finalUrl,
-        naverPayPage,
       };
     }
 
-    return { success: true, message: "결제 처리 완료", url: finalUrl, naverPayPage };
+    // 주문번호는 못 찾았지만 결제는 완료된 것으로 간주
+    console.log("[baemin] 결제 완료 (주문번호 추출 실패 - 나중에 확인 필요)");
+    return { success: true, message: "결제 완료 (주문번호 확인 필요)", url: finalUrl };
   } catch (error) {
     console.error("[baemin] 결제 처리 실패:", error.message);
     return { success: false, message: error.message };
@@ -1476,17 +1506,18 @@ async function processBaeminOrder(
   res,
   page,
   vendor,
-  { products, purchaseOrderId, shippingAddress }
+  { products, purchaseOrderId, shippingAddress, lineIds }
 ) {
   console.log("\n========================================");
   console.log("[baemin] 배민상회 주문 처리 시작");
   console.log(`[baemin] 상품 수: ${products?.length || 0}`);
+  console.log(`[baemin] lineIds: ${JSON.stringify(lineIds || [])}`);
   console.log("========================================\n");
 
   const steps = [];
   const addedProducts = [];
-  const lineIds =
-    products?.map((p) => p.purchaseOrderLineId).filter(Boolean) || [];
+  // lineIds를 직접 사용 (request body에서 전달됨)
+  const purchaseOrderLineIds = lineIds || [];
 
   try {
     // 1. 로그인
@@ -1632,7 +1663,15 @@ async function processBaeminOrder(
           success: paymentResult.success,
           message: paymentResult.message,
           url: paymentResult.url,
+          orderNumber: paymentResult.orderNumber,
         });
+
+        // 결제 성공 시 주문번호를 각 상품에 설정
+        if (paymentResult.success && paymentResult.orderNumber) {
+          for (const p of addedProducts) {
+            p.openMallOrderNumber = paymentResult.orderNumber;
+          }
+        }
       }
     }
 
@@ -1680,15 +1719,22 @@ async function processBaeminOrder(
         reason: p.optionFailReason,
       }));
 
+    // 결제 결과에서 주문번호 추출
+    const paymentStep = steps.find((s) => s.step === "payment");
+    const finalOrderNumber = paymentStep?.orderNumber || null;
+    const paymentSuccess = paymentStep?.success || false;
+
     return res.json({
       success: true,
-      message: "주문 처리 완료 - 네이버페이 결제 대기",
-      orderNumber: null,
+      message: paymentSuccess && finalOrderNumber
+        ? "주문 완료"
+        : "주문 처리 완료 - 결제 확인 필요",
+      orderNumber: finalOrderNumber,
       purchaseOrderId,
-      purchaseOrderLineIds: lineIds,
+      purchaseOrderLineIds: purchaseOrderLineIds,
       products: addedProducts.map((p) => ({
         orderLineId: p.orderLineId,
-        openMallOrderNumber: null,
+        openMallOrderNumber: p.openMallOrderNumber || finalOrderNumber,
         productName: p.productName,
         productSku: p.productSku,
         quantity: p.quantity,

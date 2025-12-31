@@ -18,6 +18,7 @@ const { getVendorByKey } = require("./vendors/config");
 const { getCoupangTrackingNumbers } = require("./vendors/coupang/tracking");
 const { getSwadpiaTrackingNumbers } = require("./vendors/swadpia/tracking");
 const { getNaverTrackingNumbers } = require("./vendors/naver/tracking");
+const { getBaeminTrackingNumbers } = require("./vendors/baemin/tracking");
 
 const app = express();
 app.use(express.json());
@@ -81,6 +82,7 @@ const trackingHandlers = {
   coupang: getCoupangTrackingNumbers,
   swadpia: getSwadpiaTrackingNumbers,
   naver: getNaverTrackingNumbers,
+  baemin: getBaeminTrackingNumbers,
 };
 
 /**

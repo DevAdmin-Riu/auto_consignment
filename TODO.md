@@ -68,4 +68,5 @@ mutation UpdatePurchaseOrderLineOptionStatus($id: ID!, $needsOptionSelection: Bo
 - [ ] 쿠팡 옵션 선택 실패 처리 확인
 - [ ] 성원애드피아 옵션 선택 실패 처리 확인
 - [x] 송장 조회 기능 네이버 구현 ✅
-- [ ] 송장 조회 테스트: 네이버 + 성원애드피아 협력사 그룹핑 테스트 필요
+- [x] 송장 조회 기능 배민 구현 ✅
+- [ ] 송장 조회 테스트: 네이버 + 성원애드피아 + 배민 협력사 그룹핑 테스트 필요

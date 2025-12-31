@@ -9,9 +9,12 @@ const {
   resetLoginStatus,
 } = require("./order");
 
+const { getBaeminTrackingNumbers } = require("./tracking");
+
 module.exports = {
   processBaeminOrder,
   loginToBaemin,
   getLoginStatus,
   resetLoginStatus,
+  getBaeminTrackingNumbers,
 };
