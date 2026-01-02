@@ -73,8 +73,8 @@ const VENDORS = {
   // 냅킨코리아 - 카드 결제
   냅킨코리아: {
     key: "napkin",
-    loginUrl: "https://napkinkorea.com/member/login.html",
-    siteUrl: "https://napkinkorea.com",
+    loginUrl: "https://www.napkinkorea.co.kr/member/login.html",
+    siteUrl: "https://www.napkinkorea.co.kr",
     get userId() { return getEnv("NAPKIN_USER_ID"); },
     get password() { return getEnv("NAPKIN_PASSWORD"); },
     paymentMethod: "card",

@@ -252,9 +252,10 @@ async function handleProductSearchOrder(
 
     case "napkin":
       return await processNapkinOrder(res, page, vendor, {
-        productUrl: products[0]?.productUrl,
-        productName: products[0]?.productName,
-        quantity: products[0]?.quantity || 1,
+        products,
+        shippingAddress,
+        lineIds,
+        purchaseOrderId,
       });
 
     case "baemin":

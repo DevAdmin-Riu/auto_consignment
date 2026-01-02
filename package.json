@@ -18,9 +18,9 @@
     "win:stop": "taskkill /F /IM node.exe || exit 0",
     "mac:stop": "pkill -f 'node server' || true",
     "logs": "tail -f server.log",
-    "docker:start": "docker compose up -d",
-    "docker:stop": "docker compose down",
-    "docker:restart": "docker compose restart",
+    "docker:start": "docker compose -f ./docker-compose.yml up -d",
+    "docker:stop": "docker compose -f ./docker-compose.yml down",
+    "docker:restart": "docker compose -f ./docker-compose.yml restart",
     "docker:logs": "docker logs -f n8n"
   },
   "keywords": [],
