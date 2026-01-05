@@ -76,7 +76,7 @@ const SELECTORS = {
     daumSearchButton: '#searchForm > fieldset > div > button.btn_search',
     daumAddressItem: 'li.list_post_item',
     // 결제
-    payBtn: '.btn_payment, #btn_payment, a.btn_payment',
+    payBtn: '#orderFixItem > div',
     agreeAll: 'input[name="agree_all"], input.agree_all',
     // 결제 수단
     cardPayment: 'input[value="card"], input[name="payment_method"][value*="card"]',
@@ -717,14 +717,80 @@ async function processNapkinOrder(
       console.log("[napkin] 배송지 정보 입력 완료");
     }
 
-    // 현재 URL 반환 (주문서 페이지)
+    // 결제하기 버튼 클릭
+    console.log("[napkin] 결제하기 버튼 클릭...");
+    await delay(1000);
+
+    const payBtn = await waitFor(page, SELECTORS.order.payBtn, 5000);
+    if (payBtn) {
+      await payBtn.click();
+      console.log("[napkin] ✅ 결제하기 버튼 클릭 완료");
+      await delay(3000);
+
+      // 토스페이먼츠 iframe 대기 및 전환
+      console.log("[napkin] 토스페이먼츠 결제창 대기...");
+      const iframeSelector = 'iframe#_lguplus_popup__iframe';
+      const iframeEl = await waitFor(page, iframeSelector, 10000);
+
+      if (iframeEl) {
+        const frame = await iframeEl.contentFrame();
+        if (frame) {
+          console.log("[napkin] 토스페이먼츠 iframe 진입");
+          await delay(2000);
+
+          // 비씨 카드 찾아서 클릭 (텍스트 기반)
+          const bcCardClicked = await frame.evaluate(() => {
+            const links = document.querySelectorAll('a[data-focus-item="true"]');
+            for (const link of links) {
+              const text = link.textContent || '';
+              if (text.includes('비씨')) {
+                link.click();
+                return true;
+              }
+            }
+            return false;
+          });
+
+          if (bcCardClicked) {
+            console.log("[napkin] ✅ 비씨카드 선택 완료");
+            await delay(2000);
+
+            // 필수 동의 버튼 클릭
+            const agreeSelector = '#__next > div > main > section.payment-gateway-cache-pwjxn4 > form > div.payment-gateway-cache-1elpzgm > div > div.payment-gateway-cache-pi74h5 > div';
+            const agreeBtn = await frame.$(agreeSelector);
+            if (agreeBtn) {
+              await agreeBtn.click();
+              console.log("[napkin] ✅ 필수 동의 클릭");
+              await delay(1000);
+            }
+
+            // 다음 버튼 클릭
+            const nextSelector = '#__next > div > main > section.payment-gateway-cache-pwjxn4 > form > div.payment-gateway-cache-1elpzgm > button';
+            const nextBtn = await frame.$(nextSelector);
+            if (nextBtn) {
+              await nextBtn.click();
+              console.log("[napkin] ✅ 다음 버튼 클릭");
+              await delay(2000);
+            }
+          } else {
+            console.log("[napkin] ⚠️ 비씨카드를 찾을 수 없음");
+          }
+        }
+      } else {
+        console.log("[napkin] ⚠️ 토스페이먼츠 iframe을 찾을 수 없음");
+      }
+    } else {
+      console.log("[napkin] ⚠️ 결제하기 버튼을 찾을 수 없음");
+    }
+
+    // 현재 URL 반환
     const currentUrl = page.url();
 
     return res.json({
       success: true,
       vendor: vendor.name,
       purchaseOrderId,
-      message: `장바구니 담기 완료 (${successCount}/${products.length}) - 결제는 수동으로 진행해주세요`,
+      message: `주문 완료 (${successCount}/${products.length})`,
       cartUrl: currentUrl,
       results,
       lineIds: purchaseOrderLineIds,
