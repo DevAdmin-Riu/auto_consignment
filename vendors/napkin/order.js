@@ -816,6 +816,17 @@ async function processNapkinOrder(
         : 0,
     }));
 
+    // 옵션 실패 상품 필터링
+    const optionFailedProducts = results
+      .filter(r => !r.success && r.message?.includes('옵션'))
+      .map(r => ({
+        purchaseOrderLineId: r.lineId,
+        productVariantVendorId: r.productVariantVendorId,
+        productSku: r.productSku,
+        productName: r.productName,
+        reason: r.message,
+      }));
+
     return res.json({
       success: true,
       vendor: vendor.name,
@@ -826,6 +837,8 @@ async function processNapkinOrder(
       lineIds: purchaseOrderLineIds,
       priceMismatchCount: priceMismatchList.length,
       priceMismatches,
+      optionFailedCount: optionFailedProducts.length,
+      optionFailedProducts,
     });
 
   } catch (error) {
