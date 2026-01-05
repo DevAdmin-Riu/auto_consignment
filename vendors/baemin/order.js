@@ -1716,6 +1716,8 @@ async function processBaeminOrder(
       .map((p) => ({
         orderLineId: p.orderLineId,
         purchaseOrderLineId: p.purchaseOrderLineId,
+        productVariantVendorId: p.productVariantVendorId,
+        productSku: p.productSku,
         productName: p.productName,
         reason: p.optionFailReason,
       }));

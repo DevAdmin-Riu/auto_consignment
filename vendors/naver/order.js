@@ -1198,9 +1198,10 @@ async function processNaverOrder(
           success: false,
           message: `옵션 선택 실패로 주문 불가 (${optionFailedProducts.length}건)`,
           optionFailedProducts: optionFailedProducts.map((p) => ({
-            // 원본 필드 모두 포함 (orderLineId, purchaseOrderLineId 등)
             orderLineId: p.orderLineId,
             purchaseOrderLineId: p.purchaseOrderLineId,
+            productVariantVendorId: p.productVariantVendorId,
+            productSku: p.productSku,
             productName: p.productName,
             reason: p.optionFailReason,
           })),
