@@ -1698,6 +1698,7 @@ async function processBaeminOrder(
         expectedPrice > 0 ? ((priceDiff / expectedPrice) * 100).toFixed(2) : 0;
       return {
         purchaseOrderLineId: p.purchaseOrderLineId || null,
+        productVariantVendorId: p.productVariantVendorId || null,
         productCode: p.productSku,
         productName: p.productName,
         quantity: p.quantity,

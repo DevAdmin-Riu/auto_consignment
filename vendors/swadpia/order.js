@@ -718,6 +718,7 @@ async function verifySwadpiaCartItems(page, expectedProducts) {
         ).toFixed(2);
         priceMismatches.push({
           purchaseOrderLineId: matchedExpected.lineId || null,  // PurchaseOrderLine ID (mutation용)
+          productVariantVendorId: matchedExpected.productVariantVendorId || null,  // ProductVariantVendor ID
           productCode: matchedExpected.productSku,
           productName: cartItem.name,
           quantity: cartItem.quantity,

@@ -465,17 +465,21 @@ async function processNapkinOrder(
         }
 
         let hasOptions = options && options.length > 0;
+        let priceInfo = null;
         if (hasOptions) {
           const optionResult = await selectOptions(page, options, product.quantity || 1, product.vendorPriceExcludeVat);
           if (!optionResult.success) {
             results.push({
               lineId,
               productName: product.productName,
+              productSku: product.productSku,
+              productVariantVendorId: product.productVariantVendorId,
               success: false,
               message: optionResult.message,
             });
             continue; // 다음 상품으로
           }
+          priceInfo = optionResult.priceInfo;
         }
 
         // 3-3. 수량 설정 (옵션이 없는 경우에만)
@@ -489,6 +493,8 @@ async function processNapkinOrder(
           results.push({
             lineId,
             productName: product.productName,
+            productSku: product.productSku,
+            productVariantVendorId: product.productVariantVendorId,
             success: false,
             message: cartResult.message,
           });
@@ -498,8 +504,13 @@ async function processNapkinOrder(
         results.push({
           lineId,
           productName: product.productName,
+          productSku: product.productSku,
+          productVariantVendorId: product.productVariantVendorId,
+          quantity: product.quantity,
+          vendorPriceExcludeVat: product.vendorPriceExcludeVat,
           success: true,
           message: "장바구니 담기 완료",
+          priceInfo,
         });
 
       } catch (productError) {
@@ -507,6 +518,8 @@ async function processNapkinOrder(
         results.push({
           lineId,
           productName: product.productName,
+          productSku: product.productSku,
+          productVariantVendorId: product.productVariantVendorId,
           success: false,
           message: productError.message,
         });
@@ -786,6 +799,23 @@ async function processNapkinOrder(
     // 현재 URL 반환
     const currentUrl = page.url();
 
+    // 가격 불일치 상세 데이터 (시스템 저장용)
+    const priceMismatchList = results.filter(r => r.priceInfo?.priceMismatch);
+    const priceMismatches = priceMismatchList.map(r => ({
+      purchaseOrderLineId: r.lineId,
+      productVariantVendorId: r.productVariantVendorId || null,
+      productCode: r.productSku,
+      productName: r.productName,
+      quantity: r.quantity,
+      openMallPrice: r.priceInfo?.unitPrice,
+      expectedPrice: r.priceInfo?.expectedUnitPrice,
+      vendorPriceExcludeVat: r.priceInfo?.vendorPriceExcludeVat,
+      difference: r.priceInfo?.difference,
+      differencePercent: r.priceInfo?.expectedUnitPrice > 0
+        ? ((r.priceInfo?.difference / r.priceInfo?.expectedUnitPrice) * 100).toFixed(2)
+        : 0,
+    }));
+
     return res.json({
       success: true,
       vendor: vendor.name,
@@ -794,6 +824,8 @@ async function processNapkinOrder(
       cartUrl: currentUrl,
       results,
       lineIds: purchaseOrderLineIds,
+      priceMismatchCount: priceMismatchList.length,
+      priceMismatches,
     });
 
   } catch (error) {

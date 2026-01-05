@@ -1385,6 +1385,7 @@ async function processNaverOrder(
           const priceDiffPercent = expectedPrice > 0 ? ((priceDiff / expectedPrice) * 100).toFixed(2) : 0;
           return {
             purchaseOrderLineId: p.purchaseOrderLineId || null,  // PurchaseOrderLine ID (mutation용)
+            productVariantVendorId: p.productVariantVendorId || null,  // ProductVariantVendor ID
             productCode: p.productSku,
             productName: p.productName,
             quantity: p.quantity,

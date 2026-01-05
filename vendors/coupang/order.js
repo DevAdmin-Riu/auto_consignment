@@ -817,6 +817,7 @@ async function processCoupangOrder(
       quantity: quantity,
       orderLineId: product.orderLineId || null,  // OrderLine ID (mutation용)
       lineId: lineIds?.[i] || null,  // PurchaseOrderLine ID
+      productVariantVendorId: product.productVariantVendorId || null,  // ProductVariantVendor ID
       orderNumber: paymentStep?.orderNumber || null,
       orderAmount: paymentStep?.orderAmount || null,
       priceMismatch: priceMismatch,
@@ -831,6 +832,7 @@ async function processCoupangOrder(
   // 가격 불일치 상세 데이터 (시스템 저장용)
   const priceMismatches = priceMismatchList.map(p => ({
     purchaseOrderLineId: p.lineId,  // PurchaseOrderLine ID (mutation용)
+    productVariantVendorId: p.productVariantVendorId || null,  // ProductVariantVendor ID
     productCode: p.priceMismatch?.productUrl?.match(/vendorItemId=(\d+)/)?.[1] || null,
     productName: p.priceMismatch?.productName || p.productName,
     quantity: p.priceMismatch?.quantity || p.quantity,
