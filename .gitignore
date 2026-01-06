@@ -36,4 +36,4 @@ data/
 .*/
 
 # Tesseract OCR 데이터
-*.traineddata
+*.traineddata*.xlsx
