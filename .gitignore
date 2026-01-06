@@ -33,6 +33,9 @@ build/
 # n8n 데이터 (Docker volume)
 data/
 
+# n8n 백업 데이터 (백업 파일)
+data_/
+
 .*/
 
 # Tesseract OCR 데이터

@@ -230,4 +230,5 @@ module.exports = {
   AUTOMATION_TYPES,
   getVendorByName,
   getVendorByKey,
+  getEnv,
 };

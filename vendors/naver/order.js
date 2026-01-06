@@ -1418,6 +1418,16 @@ async function processNaverOrder(
           // 가격 불일치 관련
           priceMismatchCount: priceMismatchList.length,
           priceMismatches: priceMismatches,
+          // 옵션 실패 관련
+          optionFailedCount: optionFailedProducts.length,
+          optionFailedProducts: optionFailedProducts.map((p) => ({
+            orderLineId: p.orderLineId,
+            purchaseOrderLineId: p.purchaseOrderLineId,
+            productVariantVendorId: p.productVariantVendorId,
+            productSku: p.productSku,
+            productName: p.productName,
+            reason: p.optionFailReason,
+          })),
         });
       } else {
         console.log("[naver] 네이버페이 비밀번호 입력 실패");

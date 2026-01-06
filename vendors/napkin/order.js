@@ -10,8 +10,291 @@
  * 6. 주문/결제
  */
 
+const fs = require("fs");
+const path = require("path");
+const { spawn } = require("child_process");
+const { getEnv } = require("../config");
+
+// 임시 파일 저장 경로
+const TEMP_DIR = path.join(__dirname, "../../temp");
+
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * PowerShell 명령 실행 (Promise) - 파일로 저장 후 실행
+ */
+function runPowerShell(script, silent = false) {
+  return new Promise((resolve, reject) => {
+    // temp 폴더가 없으면 생성
+    if (!fs.existsSync(TEMP_DIR)) {
+      fs.mkdirSync(TEMP_DIR, { recursive: true });
+    }
+
+    // 임시 스크립트 파일 생성
+    const scriptPath = path.join(TEMP_DIR, `ps_${Date.now()}.ps1`);
+    fs.writeFileSync(scriptPath, script, "utf8");
+
+    const ps = spawn(
+      "powershell",
+      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath],
+      {
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: false, // 창을 숨기지 않음
+      }
+    );
+
+    let stdout = "";
+    let stderr = "";
+
+    ps.stdout.on("data", (data) => {
+      stdout += data.toString();
+    });
+
+    ps.stderr.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    ps.on("close", (code) => {
+      // 임시 파일 삭제
+      try {
+        fs.unlinkSync(scriptPath);
+      } catch (e) {}
+
+      const output = stdout.trim();
+      if (output) {
+        if (!silent) console.log("[PowerShell]", output);
+        resolve(output);
+      } else if (code !== 0) {
+        if (!silent) console.log("[PowerShell] 실패:", stderr);
+        reject(new Error(stderr || `Exit code: ${code}`));
+      } else {
+        resolve("");
+      }
+    });
+
+    ps.on("error", (err) => {
+      try {
+        fs.unlinkSync(scriptPath);
+      } catch (e) {}
+      reject(err);
+    });
+  });
+}
+
+/**
+ * ISP/페이북 네이티브 윈도우 자동화
+ * VPWalletLauncherC 프로세스의 창을 찾아서 자동화
+ * - 이미 PC/ISP 선택되어 있으므로 비밀번호 입력 + 결제 버튼만 클릭
+ */
+async function automateISPPayment(ispPassword) {
+  console.log("[ISP] 네이티브 윈도우 자동화 시작...");
+
+  try {
+    // 1. VPWalletLauncherC 프로세스 창이 열릴 때까지 대기 (최대 60초)
+    console.log("[ISP] 페이북 창 대기 중...");
+
+    const findWindowScript = `$proc = Get-Process -Name VPWalletLauncherC -ErrorAction SilentlyContinue | Select-Object -First 1; if ($proc -and $proc.MainWindowHandle -ne 0) { Write-Output $proc.MainWindowHandle.ToInt64() }`;
+
+    let hwnd = null;
+    for (let i = 0; i < 60; i++) {
+      try {
+        const result = await runPowerShell(findWindowScript, true); // silent 모드
+        if (result && result.length > 0 && result !== "0") {
+          // 숫자만 추출 (HWND)
+          const lines = result.trim().split("\n");
+          const hwndLine = lines[lines.length - 1].trim();
+          if (/^\d+$/.test(hwndLine)) {
+            hwnd = hwndLine;
+            console.log("[ISP] 페이북 창 발견, HWND:", hwnd);
+            break;
+          }
+        }
+      } catch (e) {
+        // 무시하고 계속 대기
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+      if (i % 5 === 0) {
+        console.log(`[ISP] 창 대기 중... ${i}초`);
+      }
+    }
+
+    if (!hwnd) {
+      console.log("[ISP] 페이북 창을 찾을 수 없음 - 수동 결제 필요");
+      return { success: false, error: "페이북 창을 찾을 수 없음" };
+    }
+
+    // 2. 창 활성화 및 위치 가져오기
+    console.log("[ISP] 창 활성화 및 위치 확인...");
+    const activateAndGetRectScript = `
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+
+public class Win32 {
+    [DllImport("user32.dll")]
+    public static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT {
+        public int Left, Top, Right, Bottom;
+    }
+}
+'@
+
+$hwnd = [IntPtr]::new(${hwnd})
+[Win32]::ShowWindow($hwnd, 5)
+[Win32]::SetForegroundWindow($hwnd)
+Start-Sleep -Milliseconds 500
+
+$rect = New-Object Win32+RECT
+[Win32]::GetWindowRect($hwnd, [ref]$rect)
+Write-Output "$($rect.Left),$($rect.Top),$($rect.Right),$($rect.Bottom)"
+    `;
+
+    const rectResult = await runPowerShell(activateAndGetRectScript);
+    // 출력에 True/False 불리언 값이 포함될 수 있으므로 마지막 줄(좌표)만 파싱
+    const lines = rectResult.trim().split("\n");
+    const rectLine = lines[lines.length - 1].trim();
+    const [winLeft, winTop, winRight, winBottom] = rectLine
+      .split(",")
+      .map(Number);
+    const winWidth = winRight - winLeft;
+    const winHeight = winBottom - winTop;
+    console.log(
+      `[ISP] 창 위치: Left=${winLeft}, Top=${winTop}, Size=${winWidth}x${winHeight}`
+    );
+
+    await new Promise((r) => setTimeout(r, 1000));
+
+    // 3. 비밀번호 입력 필드 클릭 후 입력
+    if (ispPassword) {
+      console.log("[ISP] 비밀번호 필드 클릭 및 입력...");
+
+      // 비밀번호 필드: 절대 좌표 x=960, y=650
+      const pwdX = 960;
+      const pwdY = 650;
+
+      const passwordScript = `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+
+public class MouseKeyboard {
+    [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int X, int Y);
+
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, IntPtr dwExtraInfo);
+
+    [DllImport("user32.dll")]
+    public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, IntPtr dwExtraInfo);
+
+    public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+    public const uint MOUSEEVENTF_LEFTUP = 0x0004;
+    public const uint KEYEVENTF_KEYUP = 0x0002;
+
+    public static void Click(int x, int y) {
+        SetCursorPos(x, y);
+        System.Threading.Thread.Sleep(50);
+        mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, IntPtr.Zero);
+        System.Threading.Thread.Sleep(30);
+        mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, IntPtr.Zero);
+    }
+
+    public static void TypeKey(byte vk) {
+        keybd_event(vk, 0, 0, IntPtr.Zero);
+        System.Threading.Thread.Sleep(30);
+        keybd_event(vk, 0, KEYEVENTF_KEYUP, IntPtr.Zero);
+        System.Threading.Thread.Sleep(50);
+    }
+}
+'@
+
+$x = ${pwdX}
+$y = ${pwdY}
+
+# 클릭 3번
+[MouseKeyboard]::Click($x, $y)
+Start-Sleep -Milliseconds 300
+[MouseKeyboard]::Click($x, $y)
+Start-Sleep -Milliseconds 300
+[MouseKeyboard]::Click($x, $y)
+Start-Sleep -Milliseconds 500
+
+# 숫자 키 입력
+$password = '${ispPassword}'
+foreach ($char in $password.ToCharArray()) {
+    $vk = [byte][char]$char
+    [MouseKeyboard]::TypeKey($vk)
+}
+
+Write-Output "Done at $x, $y"
+      `;
+
+      await runPowerShell(passwordScript);
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+
+    // 4. 결제진행 버튼 클릭
+    console.log("[ISP] 결제진행 버튼 클릭...");
+
+    // 결제 버튼: 절대 좌표 x=960, y=720
+    const payX = 960;
+    const payY = 720;
+
+    const clickPayScript = `
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+
+public class MouseHelper2 {
+    [DllImport("user32.dll")]
+    public static extern bool SetCursorPos(int X, int Y);
+
+    [DllImport("user32.dll")]
+    public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, IntPtr dwExtraInfo);
+
+    public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
+    public const uint MOUSEEVENTF_LEFTUP = 0x0004;
+
+    public static void Click(int x, int y) {
+        SetCursorPos(x, y);
+        System.Threading.Thread.Sleep(50);
+        mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, IntPtr.Zero);
+        System.Threading.Thread.Sleep(30);
+        mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, IntPtr.Zero);
+    }
+}
+'@
+
+# 클릭 3번
+[MouseHelper2]::Click(${payX}, ${payY})
+Start-Sleep -Milliseconds 300
+[MouseHelper2]::Click(${payX}, ${payY})
+Start-Sleep -Milliseconds 300
+[MouseHelper2]::Click(${payX}, ${payY})
+Write-Output "Pay button clicked at ${payX}, ${payY}"
+    `;
+
+    await runPowerShell(clickPayScript);
+    await new Promise((r) => setTimeout(r, 3000));
+
+    console.log("[ISP] 네이티브 윈도우 자동화 완료");
+    return { success: true };
+  } catch (error) {
+    console.error("[ISP] 자동화 실패:", error.message);
+    return { success: false, error: error.message };
+  }
+}
 
 // waitFor 함수
 async function waitFor(page, selector, timeout = 10000) {
@@ -748,7 +1031,7 @@ async function processNapkinOrder(
       // 토스페이먼츠 iframe 대기 및 전환
       console.log("[napkin] 토스페이먼츠 결제창 대기...");
       const iframeSelector = 'iframe#_lguplus_popup__iframe';
-      const iframeEl = await waitFor(page, iframeSelector, 10000);
+      const iframeEl = await waitFor(page, iframeSelector, 60000);
 
       if (iframeEl) {
         const frame = await iframeEl.contentFrame();
@@ -782,13 +1065,97 @@ async function processNapkinOrder(
               await delay(1000);
             }
 
+            // 다음 버튼 클릭 전 현재 페이지 목록 저장
+            const browser = page.browser();
+            const pagesBeforeNext = await browser.pages();
+            const pagesBeforeNextSet = new Set(pagesBeforeNext);
+            console.log("[napkin] 현재 페이지 수:", pagesBeforeNext.length);
+
             // 다음 버튼 클릭
             const nextSelector = '#__next > div > main > section.payment-gateway-cache-pwjxn4 > form > div.payment-gateway-cache-1elpzgm > button';
             const nextBtn = await frame.$(nextSelector);
             if (nextBtn) {
               await nextBtn.click();
               console.log("[napkin] ✅ 다음 버튼 클릭");
-              await delay(2000);
+              await delay(3000);
+
+              // BC카드 결제창 (새 창) 찾기
+              console.log("[napkin] BC카드 결제창 대기...");
+              let paymentPopup = null;
+
+              // 최대 60초 대기 (3초마다 체크)
+              for (let i = 0; i < 20; i++) {
+                const pagesAfterNext = await browser.pages();
+                for (const p of pagesAfterNext) {
+                  // 이전에 없던 페이지 찾기
+                  if (!pagesBeforeNextSet.has(p)) {
+                    const url = p.url();
+                    // DevTools 제외
+                    if (url.startsWith("devtools://")) continue;
+                    paymentPopup = p;
+                    console.log("[napkin] BC카드 결제창 발견:", url);
+                    break;
+                  }
+                }
+                if (paymentPopup) break;
+                console.log(`[napkin] BC카드 결제창 대기 중... (${(i + 1) * 3}/60초)`);
+                await delay(3000);
+              }
+
+              if (paymentPopup) {
+                // 결제창 dialog 핸들러 등록 (설치 안내, ISP 안내 등 alert 자동 처리)
+                const paymentDialogHandler = async (dialog) => {
+                  console.log("[napkin] 결제창 Dialog:", dialog.type(), dialog.message());
+                  await dialog.accept();
+                };
+                paymentPopup.on("dialog", paymentDialogHandler);
+
+                // 결제창 로드 대기
+                await delay(2000);
+
+                // 기타결제 버튼 클릭
+                console.log("[napkin] 기타결제 버튼 클릭...");
+                const otherPaymentBtn = "#inapppay-dap1 > div.block2 > div.left > a";
+
+                try {
+                  await paymentPopup.waitForSelector(otherPaymentBtn, { timeout: 60000 });
+                  await paymentPopup.click(otherPaymentBtn);
+                  console.log("[napkin] ✅ 기타결제 버튼 클릭 완료");
+                  await delay(3000);
+
+                  // 인증서 등록/결제 버튼 클릭
+                  console.log("[napkin] 인증서 등록/결제 버튼 클릭...");
+                  const certPaymentBtn = "#inapppay-dap2 > div.block1 > div.left > a.pay-item-s.pay-ctf";
+
+                  try {
+                    await paymentPopup.waitForSelector(certPaymentBtn, { timeout: 60000 });
+                    await paymentPopup.click(certPaymentBtn);
+                    console.log("[napkin] ✅ 인증서 등록/결제 버튼 클릭 완료");
+                    await delay(3000);
+
+                    // ISP/페이북 네이티브 윈도우 자동화
+                    const ispPassword = vendor.ispPassword || getEnv("BC_ISP_PASSWORD") || "";
+                    if (ispPassword) {
+                      console.log("[napkin] ISP 네이티브 결제창 자동화 시작...");
+                      const ispResult = await automateISPPayment(ispPassword);
+                      if (ispResult.success) {
+                        console.log("[napkin] ✅ ISP 결제 자동화 완료");
+                      } else {
+                        console.log("[napkin] ⚠️ ISP 결제 자동화 실패:", ispResult.error);
+                        console.log("[napkin] 수동 결제가 필요합니다.");
+                      }
+                    } else {
+                      console.log("[napkin] ⚠️ ISP 비밀번호 미설정 - 수동 결제 필요");
+                    }
+                  } catch (certError) {
+                    console.log("[napkin] ⚠️ 인증서 등록/결제 버튼 클릭 실패:", certError.message);
+                  }
+                } catch (e) {
+                  console.log("[napkin] ⚠️ 기타결제 버튼 클릭 실패:", e.message);
+                }
+              } else {
+                console.log("[napkin] ⚠️ BC카드 결제창 팝업을 찾을 수 없음");
+              }
             }
           } else {
             console.log("[napkin] ⚠️ 비씨카드를 찾을 수 없음");
@@ -799,6 +1166,21 @@ async function processNapkinOrder(
       }
     } else {
       console.log("[napkin] ⚠️ 결제하기 버튼을 찾을 수 없음");
+    }
+
+    // 결제 완료 대기 (ISP 결제 완료까지 충분히 대기)
+    await delay(10000);
+
+    // 주문번호 추출
+    let vendorOrderNumber = null;
+    const orderNumberSelector = "#mCafe24Order > div.resultArea > div > div > table > tbody > tr:nth-child(1) > td > span";
+
+    try {
+      await page.waitForSelector(orderNumberSelector, { timeout: 60000 });
+      vendorOrderNumber = await page.$eval(orderNumberSelector, (el) => el.textContent.trim());
+      console.log("[napkin] ✅ 주문번호:", vendorOrderNumber);
+    } catch (orderNumError) {
+      console.log("[napkin] ⚠️ 주문번호 추출 실패:", orderNumError.message);
     }
 
     // 현재 URL 반환
@@ -834,14 +1216,31 @@ async function processNapkinOrder(
 
     return res.json({
       success: true,
+      message: vendorOrderNumber
+        ? `${products.length}개 상품 주문 완료`
+        : `${products.length}개 상품 장바구니 담기 완료`,
       vendor: vendor.name,
-      purchaseOrderId,
-      message: `주문 완료 (${successCount}/${products.length})`,
-      cartUrl: currentUrl,
-      results,
-      lineIds: purchaseOrderLineIds,
+      purchaseOrderId: purchaseOrderId || null,
+      purchaseOrderLineIds: purchaseOrderLineIds || [],
+      products: products.map((p) => ({
+        orderLineId: p.orderLineId,
+        openMallOrderNumber: vendorOrderNumber || null,
+        productName: p.productName,
+        productSku: p.productSku,
+        quantity: p.quantity,
+        vendorPriceExcludeVat: p.vendorPriceExcludeVat,
+      })),
+      // 주문 결과
+      orderResult: {
+        placed: !!vendorOrderNumber,
+        orderPageUrl: currentUrl,
+        vendorOrderNumber: vendorOrderNumber || null,
+      },
+      // 가격 불일치 관련
+      hasPriceMismatch: priceMismatchList.length > 0,
       priceMismatchCount: priceMismatchList.length,
       priceMismatches,
+      // 옵션 실패 관련
       optionFailedCount: optionFailedProducts.length,
       optionFailedProducts,
     });
