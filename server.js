@@ -33,6 +33,7 @@ const { processBaeminOrder } = require("./vendors/baemin");
 const { processNaverOrder } = require("./vendors/naver");
 const { processWowpressOrder } = require("./vendors/wowpress");
 const { router: swadpiaRouter, processSwadpiaOrder } = require("./vendors/swadpia");
+const { processAdpiaOrder } = require("./vendors/adpia");
 
 const app = express();
 app.use(express.json());
@@ -289,6 +290,9 @@ async function handleProductSearchOrder(
         lineIds,
         purchaseOrderId,
       });
+
+    case "adpia":
+      return await processAdpiaOrder(page, vendor, products, shippingAddress, res);
 
     default:
       return res.json({

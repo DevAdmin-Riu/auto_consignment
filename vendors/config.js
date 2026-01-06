@@ -145,11 +145,11 @@ const VENDORS = {
     paymentMethod: "card",
     automationType: "product_search",
   },
-  // 애드피아몰 - 교정확인 필요
+  // 애드피아몰
   애드피아몰: {
     key: "adpia",
-    loginUrl: "https://www.adpiamall.co.kr/member/login.html",
-    siteUrl: "https://www.adpiamall.co.kr",
+    loginUrl: "https://www.adpiamall.com/login",
+    siteUrl: "https://www.adpiamall.com",
     get userId() {
       return getEnv("ADPIA_USER_ID");
     },
@@ -159,7 +159,7 @@ const VENDORS = {
     paymentMethod: "card",
     requiresProofing: true,
     hideSender: true,
-    automationType: "needs_confirmation",
+    automationType: "product_search",
   },
   // 와우프레스
   와우프레스: {
