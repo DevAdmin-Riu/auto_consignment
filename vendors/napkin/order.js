@@ -243,12 +243,17 @@ async function selectOptions(page, openMallOptions, quantity = 1, vendorPriceExc
     let optionSelected = false;
     for (const selectEl of selectElements) {
       try {
-        // select 내에서 옵션 찾기
+        // select 내에서 옵션 찾기 (띄어쓰기 제거 후 비교)
         const optionExists = await page.evaluate(
           (select, searchValue) => {
+            const normalize = (str) => str.replace(/\s+/g, '');
+            const normalizedSearch = normalize(searchValue);
             const options = select.querySelectorAll("option");
             for (const opt of options) {
-              if (opt.textContent.includes(searchValue) || opt.value.includes(searchValue)) {
+              const normalizedText = normalize(opt.textContent);
+              const normalizedValue = normalize(opt.value);
+              if (normalizedText.includes(normalizedSearch) || normalizedSearch.includes(normalizedText) ||
+                  normalizedValue.includes(normalizedSearch) || normalizedSearch.includes(normalizedValue)) {
                 select.value = opt.value;
                 select.dispatchEvent(new Event("change", { bubbles: true }));
                 return true;
