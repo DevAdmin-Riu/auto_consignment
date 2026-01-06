@@ -24,7 +24,10 @@ function loadEnvFile() {
     const currentModified = stats.mtimeMs;
 
     // 파일이 변경되었거나 캐시가 비어있으면 다시 로드
-    if (currentModified !== lastModified || Object.keys(envCache).length === 0) {
+    if (
+      currentModified !== lastModified ||
+      Object.keys(envCache).length === 0
+    ) {
       const content = fs.readFileSync(ENV_FILE_PATH, "utf8");
       envCache = {};
 
@@ -42,7 +45,11 @@ function loadEnvFile() {
       });
 
       lastModified = currentModified;
-      console.log("[config] .env 파일 로드됨:", Object.keys(envCache).length, "개 항목");
+      console.log(
+        "[config] .env 파일 로드됨:",
+        Object.keys(envCache).length,
+        "개 항목"
+      );
     }
   } catch (error) {
     console.error("[config] .env 파일 로드 실패:", error.message);
@@ -64,9 +71,15 @@ const VENDORS = {
     key: "coupang",
     loginUrl: "https://login.coupang.com/login/login.pang",
     siteUrl: "https://www.coupang.com",
-    get email() { return getEnv("COUPANG_EMAIL"); },
-    get password() { return getEnv("COUPANG_PASSWORD"); },
-    get paymentPin() { return getEnv("COUPANG_PAYMENT_PIN"); },
+    get email() {
+      return getEnv("COUPANG_EMAIL");
+    },
+    get password() {
+      return getEnv("COUPANG_PASSWORD");
+    },
+    get paymentPin() {
+      return getEnv("COUPANG_PAYMENT_PIN");
+    },
     paymentMethod: "coupang_pay",
     automationType: "product_search",
   },
@@ -75,8 +88,12 @@ const VENDORS = {
     key: "napkin",
     loginUrl: "https://www.napkinkorea.co.kr/member/login.html",
     siteUrl: "https://www.napkinkorea.co.kr",
-    get userId() { return getEnv("NAPKIN_USER_ID"); },
-    get password() { return getEnv("NAPKIN_PASSWORD"); },
+    get userId() {
+      return getEnv("NAPKIN_USER_ID");
+    },
+    get password() {
+      return getEnv("NAPKIN_PASSWORD");
+    },
     paymentMethod: "card",
     automationType: "product_search",
   },
@@ -85,10 +102,16 @@ const VENDORS = {
     key: "baemin",
     loginUrl: "https://mart.baemin.com/login",
     siteUrl: "https://mart.baemin.com",
-    get userId() { return getEnv("BAEMIN_USER_ID"); },
-    get password() { return getEnv("BAEMIN_PASSWORD"); },
+    get userId() {
+      return getEnv("BAEMIN_USER_ID");
+    },
+    get password() {
+      return getEnv("BAEMIN_PASSWORD");
+    },
     paymentMethod: "naver_pay",
-    get phone() { return getEnv("BAEMIN_PHONE"); },
+    get phone() {
+      return getEnv("BAEMIN_PHONE");
+    },
     automationType: "product_search",
   },
   // 네이버 스마트스토어 - 네이버페이 결제
@@ -96,9 +119,15 @@ const VENDORS = {
     key: "naver",
     loginUrl: "https://nid.naver.com/nidlogin.login",
     siteUrl: "https://smartstore.naver.com",
-    get userId() { return getEnv("NAVER_USER_ID"); },
-    get password() { return getEnv("NAVER_PASSWORD"); },
-    get naverPayPin() { return getEnv("NAVER_PAY_PIN"); },
+    get userId() {
+      return getEnv("NAVER_USER_ID");
+    },
+    get password() {
+      return getEnv("NAVER_PASSWORD");
+    },
+    get naverPayPin() {
+      return getEnv("NAVER_PAY_PIN");
+    },
     paymentMethod: "naver_pay",
     automationType: "product_search",
   },
@@ -107,8 +136,12 @@ const VENDORS = {
     key: "swadpia",
     loginUrl: "https://www.swadpia.co.kr/member/re_login",
     siteUrl: "https://www.swadpia.co.kr",
-    get email() { return getEnv("SWADPIA_EMAIL"); },
-    get password() { return getEnv("SWADPIA_PASSWORD"); },
+    get email() {
+      return getEnv("SWADPIA_EMAIL");
+    },
+    get password() {
+      return getEnv("SWADPIA_PASSWORD");
+    },
     paymentMethod: "card",
     automationType: "product_search",
   },
@@ -117,8 +150,12 @@ const VENDORS = {
     key: "adpia",
     loginUrl: "https://www.adpiamall.co.kr/member/login.html",
     siteUrl: "https://www.adpiamall.co.kr",
-    get userId() { return getEnv("ADPIA_USER_ID"); },
-    get password() { return getEnv("ADPIA_PASSWORD"); },
+    get userId() {
+      return getEnv("ADPIA_USER_ID");
+    },
+    get password() {
+      return getEnv("ADPIA_PASSWORD");
+    },
     paymentMethod: "card",
     requiresProofing: true,
     hideSender: true,
@@ -129,37 +166,15 @@ const VENDORS = {
     key: "wowpress",
     loginUrl: "https://www.wowpress.co.kr/member/login.html",
     siteUrl: "https://www.wowpress.co.kr",
-    get userId() { return getEnv("WOWPRESS_USER_ID"); },
-    get password() { return getEnv("WOWPRESS_PASSWORD"); },
+    get userId() {
+      return getEnv("WOWPRESS_USER_ID");
+    },
+    get password() {
+      return getEnv("WOWPRESS_PASSWORD");
+    },
     paymentMethod: "card",
     hideSender: true,
     automationType: "product_search",
-  },
-  // 티엠데코
-  티엠데코: {
-    key: "tmdeco",
-    siteUrl: "https://smartstore.naver.com/tmdeco",
-    paymentMethod: "naver_pay",
-    requiresKakaoDesign: true,
-    automationType: "needs_kakao",
-  },
-  // 다원
-  다원: {
-    key: "dawon",
-    siteUrl: "https://smartstore.naver.com/dawon",
-    paymentMethod: "bank_transfer",
-    requiresKakaoFile: true,
-    automationType: "needs_kakao",
-  },
-  // 마플
-  마플: {
-    key: "marpple",
-    loginUrl: "https://www.marpple.com/kr/login",
-    siteUrl: "https://www.marpple.com",
-    get email() { return getEnv("MARPPLE_EMAIL"); },
-    get password() { return getEnv("MARPPLE_PASSWORD"); },
-    paymentMethod: "card",
-    automationType: "reorder",
   },
 };
 
@@ -191,7 +206,7 @@ function wrapVendorConfig(name, config) {
  * 위탁용 협력사 등 실제 오픈몰과 다른 이름으로 등록된 경우
  */
 const VENDOR_ALIASES = {
-  "위탁전용_임시협력사": "네이버",
+  위탁전용_임시협력사: "네이버",
   // 추후 다른 별칭 추가
 };
 
