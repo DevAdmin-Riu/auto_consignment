@@ -40,3 +40,5 @@ data_/
 
 # Tesseract OCR 데이터
 *.traineddata*.xlsx
+
+n8n-data.zip
