@@ -8,6 +8,7 @@
  */
 
 const { loginToBaemin } = require("./order");
+const { normalizeCarrier } = require("../../lib/carrier");
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -17,48 +18,6 @@ const SELECTORS = {
   // 배송조회 버튼 (data 속성으로 찾기 - styled-components 클래스보다 안정적)
   deliveryTrackingBtn: 'button[data-action-button-click-event-label="배송조회"]',
 };
-
-// 택배사명 정규화
-function normalizeCarrier(carrier) {
-  if (!carrier) return null;
-
-  // 띄어쓰기 제거
-  let normalized = carrier.replace(/\s+/g, "");
-
-  // 택배사 매핑
-  const mappings = {
-    CJ대한통운: "CJ대한통운",
-    대한통운: "CJ대한통운",
-    CJ: "CJ대한통운",
-    롯데택배: "롯데택배",
-    롯데글로벌로지스: "롯데택배",
-    롯데: "롯데택배",
-    한진택배: "한진택배",
-    한진: "한진택배",
-    로젠택배: "로젠택배",
-    로젠: "로젠택배",
-    우체국택배: "우체국택배",
-    우체국: "우체국택배",
-    경동택배: "경동택배",
-    경동: "경동택배",
-    합동택배: "합동택배",
-    합동: "합동택배",
-    천일택배: "천일택배",
-    천일: "천일택배",
-    건영택배: "건영택배",
-    건영: "건영택배",
-    일양로지스: "일양로지스",
-    일양: "일양로지스",
-    대신택배: "대신택배",
-    대신: "대신택배",
-  };
-
-  if (mappings[normalized]) {
-    normalized = mappings[normalized];
-  }
-
-  return normalized;
-}
 
 /**
  * 배민상회 송장번호 조회

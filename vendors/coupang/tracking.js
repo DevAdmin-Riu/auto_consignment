@@ -5,36 +5,10 @@
  */
 
 const { coupangLogin } = require("./login");
+const { normalizeCarrier } = require("../../lib/carrier");
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * 택배사 이름 정규화
- * - 띄어쓰기 제거
- * - 특수 케이스 처리 (우체국택배 → 우체국)
- */
-function normalizeCarrier(carrier) {
-  if (!carrier) return "자체배송";
-
-  // 띄어쓰기 제거
-  let normalized = carrier.replace(/\s+/g, "");
-
-  // 특수 케이스 처리
-  const mappings = {
-    "우체국택배": "우체국",
-    "우체국소포": "우체국",
-    "쿠팡로켓배송": "쿠팡",
-    "로켓배송": "쿠팡",
-    "쿠팡로켓": "쿠팡",
-  };
-
-  if (mappings[normalized]) {
-    normalized = mappings[normalized];
-  }
-
-  return normalized;
-}
 
 /**
  * 쿠팡 송장번호 조회

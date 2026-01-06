@@ -10,55 +10,10 @@
  */
 
 const { login } = require("./login");
+const { normalizeCarrier } = require("../../lib/carrier");
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-// 택배사명 정규화 (띄어쓰기 제거 후 매핑)
-function normalizeCarrier(carrier) {
-  if (!carrier) return null;
-
-  // 띄어쓰기 제거
-  let normalized = carrier.replace(/\s+/g, "");
-
-  // 택배사 매핑
-  const mappings = {
-    CJ대한통운: "CJ대한통운",
-    대한통운: "CJ대한통운",
-    CJ: "CJ대한통운",
-    롯데택배: "롯데택배",
-    롯데: "롯데택배",
-    한진택배: "한진택배",
-    한진: "한진택배",
-    로젠택배: "로젠택배",
-    로젠: "로젠택배",
-    우체국택배: "우체국택배",
-    우체국: "우체국택배",
-    경동택배: "경동택배",
-    경동: "경동택배",
-    합동택배: "합동택배",
-    합동: "합동택배",
-    천일택배: "천일택배",
-    천일: "천일택배",
-    건영택배: "건영택배",
-    건영: "건영택배",
-    일양로지스: "일양로지스",
-    일양: "일양로지스",
-    CVSnet편의점택배: "CVSnet편의점택배",
-    편의점택배: "CVSnet편의점택배",
-    GS편의점택배: "GS편의점택배",
-    GS: "GS편의점택배",
-    CU편의점택배: "CU편의점택배",
-    CU: "CU편의점택배",
-  };
-
-  // 정규화된 이름으로 매핑
-  if (mappings[normalized]) {
-    normalized = mappings[normalized];
-  }
-
-  return normalized;
-}
 
 // 셀렉터 상수
 const SELECTORS = {
