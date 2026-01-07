@@ -20,6 +20,7 @@ const { getSwadpiaTrackingNumbers } = require("./vendors/swadpia/tracking");
 const { getNaverTrackingNumbers } = require("./vendors/naver/tracking");
 const { getBaeminTrackingNumbers } = require("./vendors/baemin/tracking");
 const { getNapkinTrackingNumbers } = require("./vendors/napkin/tracking");
+const { getAdpiaTrackingNumbers } = require("./vendors/adpia/tracking");
 
 const app = express();
 app.use(express.json());
@@ -85,6 +86,7 @@ const trackingHandlers = {
   naver: getNaverTrackingNumbers,
   baemin: getBaeminTrackingNumbers,
   napkin: getNapkinTrackingNumbers,
+  adpia: getAdpiaTrackingNumbers,
 };
 
 /**
