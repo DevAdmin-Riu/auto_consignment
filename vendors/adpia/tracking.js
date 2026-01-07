@@ -31,7 +31,7 @@ const SELECTORS = {
 };
 
 // 택배사 (롯데택배 고정)
-const DEFAULT_CARRIER = "LOTTE";
+const DEFAULT_CARRIER = "롯데택배";
 
 /**
  * 애드피아몰 송장번호 조회
