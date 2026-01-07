@@ -1071,6 +1071,27 @@ async function processNapkinOrder(
             const pagesBeforeNextSet = new Set(pagesBeforeNext);
             console.log("[napkin] 현재 페이지 수:", pagesBeforeNext.length);
 
+            // 새 페이지 생성 시 즉시 dialog 핸들러 등록 (alert 놓치지 않도록)
+            let paymentPopup = null;
+            const paymentDialogHandler = async (dialog) => {
+              console.log("[napkin] 결제창 Dialog:", dialog.type(), dialog.message());
+              await dialog.accept();
+            };
+            const targetCreatedHandler = async (target) => {
+              if (target.type() === "page") {
+                const newPage = await target.page();
+                if (newPage && !pagesBeforeNextSet.has(newPage)) {
+                  const url = newPage.url();
+                  if (!url.startsWith("devtools://")) {
+                    console.log("[napkin] 새 결제창 감지:", url);
+                    paymentPopup = newPage;
+                    newPage.on("dialog", paymentDialogHandler);
+                  }
+                }
+              }
+            };
+            browser.on("targetcreated", targetCreatedHandler);
+
             // 다음 버튼 클릭
             const nextSelector = '#__next > div > main > section.payment-gateway-cache-pwjxn4 > form > div.payment-gateway-cache-1elpzgm > button';
             const nextBtn = await frame.$(nextSelector);
@@ -1079,37 +1100,32 @@ async function processNapkinOrder(
               console.log("[napkin] ✅ 다음 버튼 클릭");
               await delay(3000);
 
-              // BC카드 결제창 (새 창) 찾기
+              // BC카드 결제창 (새 창) 찾기 (이미 targetcreated에서 잡았을 수 있음)
               console.log("[napkin] BC카드 결제창 대기...");
-              let paymentPopup = null;
 
               // 최대 60초 대기 (3초마다 체크)
-              for (let i = 0; i < 20; i++) {
-                const pagesAfterNext = await browser.pages();
-                for (const p of pagesAfterNext) {
-                  // 이전에 없던 페이지 찾기
-                  if (!pagesBeforeNextSet.has(p)) {
-                    const url = p.url();
-                    // DevTools 제외
-                    if (url.startsWith("devtools://")) continue;
-                    paymentPopup = p;
-                    console.log("[napkin] BC카드 결제창 발견:", url);
-                    break;
+              if (!paymentPopup) {
+                for (let i = 0; i < 20; i++) {
+                  const pagesAfterNext = await browser.pages();
+                  for (const p of pagesAfterNext) {
+                    // 이전에 없던 페이지 찾기
+                    if (!pagesBeforeNextSet.has(p)) {
+                      const url = p.url();
+                      // DevTools 제외
+                      if (url.startsWith("devtools://")) continue;
+                      paymentPopup = p;
+                      console.log("[napkin] BC카드 결제창 발견:", url);
+                      paymentPopup.on("dialog", paymentDialogHandler);
+                      break;
+                    }
                   }
+                  if (paymentPopup) break;
+                  console.log(`[napkin] BC카드 결제창 대기 중... (${(i + 1) * 3}/60초)`);
+                  await delay(3000);
                 }
-                if (paymentPopup) break;
-                console.log(`[napkin] BC카드 결제창 대기 중... (${(i + 1) * 3}/60초)`);
-                await delay(3000);
               }
 
               if (paymentPopup) {
-                // 결제창 dialog 핸들러 등록 (설치 안내, ISP 안내 등 alert 자동 처리)
-                const paymentDialogHandler = async (dialog) => {
-                  console.log("[napkin] 결제창 Dialog:", dialog.type(), dialog.message());
-                  await dialog.accept();
-                };
-                paymentPopup.on("dialog", paymentDialogHandler);
-
                 // 결제창 로드 대기
                 await delay(2000);
 
@@ -1156,6 +1172,9 @@ async function processNapkinOrder(
               } else {
                 console.log("[napkin] ⚠️ BC카드 결제창 팝업을 찾을 수 없음");
               }
+
+              // targetcreated 핸들러 제거
+              browser.off("targetcreated", targetCreatedHandler);
             }
           } else {
             console.log("[napkin] ⚠️ 비씨카드를 찾을 수 없음");
