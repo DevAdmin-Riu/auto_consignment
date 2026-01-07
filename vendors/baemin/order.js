@@ -322,28 +322,9 @@ async function navigateToProduct(page, productUrl) {
 }
 
 /**
- * 옵션 선택
+ * 옵션 선택 (단일)
  */
-async function selectOption(page, optionValue) {
-  if (!optionValue) {
-    console.log("[baemin] 옵션값 없음, 옵션 선택 스킵");
-    return { success: true, selectedOption: null };
-  }
-
-  // JSON 배열 형식인 경우 파싱하여 value 추출
-  let targetValue = optionValue;
-  try {
-    const parsed = JSON.parse(optionValue);
-    if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].value) {
-      targetValue = parsed[0].value;
-      console.log(`[baemin] JSON 옵션 파싱 완료: "${targetValue}"`);
-    }
-  } catch (e) {
-    // JSON이 아닌 경우 원래 값 그대로 사용
-  }
-
-  console.log(`[baemin] 옵션 선택 시작: "${targetValue}"`);
-
+async function selectSingleOption(page, targetValue) {
   try {
     // 1. 옵션 드롭다운 버튼 클릭
     const dropdownBtn = await waitFor(
@@ -356,7 +337,7 @@ async function selectOption(page, optionValue) {
       console.log(
         "[baemin] 옵션 드롭다운 버튼 없음 - 옵션이 없는 상품일 수 있음"
       );
-      return { success: true, selectedOption: null };
+      return { success: true, selectedOption: null, price: 0 };
     }
 
     console.log("[baemin] 옵션 드롭다운 버튼 클릭...");
@@ -377,6 +358,7 @@ async function selectOption(page, optionValue) {
     // 3. 옵션 텍스트들 추출 및 매칭
     let matchedOption = null;
     let matchedIndex = -1;
+    let optionPrice = 0;
 
     for (let i = 0; i < optionItems.length; i++) {
       const optionText = await page.evaluate(
@@ -392,7 +374,14 @@ async function selectOption(page, optionValue) {
       ) {
         matchedOption = optionText;
         matchedIndex = i;
-        console.log(`[baemin] ✅ 매칭된 옵션: "${optionText}"`);
+
+        // 옵션 텍스트에서 가격 추출 (예: "옵션명 (+1,000원)" 또는 "옵션명 1,000원")
+        const priceMatch = optionText.match(/[\+\-]?\s*([\d,]+)\s*원/);
+        if (priceMatch) {
+          optionPrice = parseInt(priceMatch[1].replace(/,/g, ""), 10);
+        }
+
+        console.log(`[baemin] ✅ 매칭된 옵션: "${optionText}" (가격: ${optionPrice}원)`);
         break;
       }
     }
@@ -409,11 +398,78 @@ async function selectOption(page, optionValue) {
     await delay(1100);
 
     console.log(`[baemin] 옵션 선택 완료: "${matchedOption}"`);
-    return { success: true, selectedOption: matchedOption };
+    return { success: true, selectedOption: matchedOption, price: optionPrice };
   } catch (error) {
     console.error("[baemin] 옵션 선택 에러:", error.message);
     return { success: false, reason: error.message };
   }
+}
+
+/**
+ * 옵션 선택 (복수 옵션 지원)
+ * - 배민상회는 한 상품에서 2개 옵션을 선택할 수 있음
+ * - 옵션 가격들을 합산하여 반환
+ */
+async function selectOption(page, optionValue) {
+  if (!optionValue) {
+    console.log("[baemin] 옵션값 없음, 옵션 선택 스킵");
+    return { success: true, selectedOption: null, selectedOptions: [], totalOptionPrice: 0 };
+  }
+
+  // JSON 배열 형식인 경우 파싱하여 모든 옵션 처리
+  let targetValues = [];
+  try {
+    const parsed = JSON.parse(optionValue);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      // 배열의 모든 옵션 추출
+      targetValues = parsed.map((opt) => opt.value || opt).filter(Boolean);
+      console.log(`[baemin] JSON 옵션 파싱 완료: ${targetValues.length}개 옵션`);
+      targetValues.forEach((v, i) => console.log(`[baemin]   옵션 ${i + 1}: "${v}"`));
+    }
+  } catch (e) {
+    // JSON이 아닌 경우 단일 옵션으로 처리
+    targetValues = [optionValue];
+  }
+
+  if (targetValues.length === 0) {
+    console.log("[baemin] 파싱된 옵션값 없음");
+    return { success: true, selectedOption: null, selectedOptions: [], totalOptionPrice: 0 };
+  }
+
+  console.log(`[baemin] 옵션 선택 시작: ${targetValues.length}개`);
+
+  const selectedOptions = [];
+  let totalOptionPrice = 0;
+
+  // 각 옵션을 순차적으로 선택
+  for (let i = 0; i < targetValues.length; i++) {
+    const targetValue = targetValues[i];
+    console.log(`\n[baemin] === 옵션 ${i + 1}/${targetValues.length} 선택: "${targetValue}" ===`);
+
+    const result = await selectSingleOption(page, targetValue);
+
+    if (!result.success) {
+      return {
+        success: false,
+        reason: result.reason,
+        selectedOptions,
+        totalOptionPrice,
+      };
+    }
+
+    if (result.selectedOption) {
+      selectedOptions.push(result.selectedOption);
+      totalOptionPrice += result.price || 0;
+    }
+  }
+
+  console.log(`\n[baemin] 옵션 선택 완료: ${selectedOptions.length}개, 총 옵션가격: ${totalOptionPrice}원`);
+  return {
+    success: true,
+    selectedOption: selectedOptions.join(" / "),
+    selectedOptions,
+    totalOptionPrice,
+  };
 }
 
 /**
@@ -1598,9 +1654,17 @@ async function processBaeminOrder(
         const addedToCart = await addToCart(page);
 
         // 3.6 가격 비교
-        const vendorPriceExcludeVat = product.vendorPriceExcludeVat || 0;
+        // 배민상회: 옵션 가격 합산 = 협력사 가격 (VAT 제외)
+        const totalOptionPrice = optionResult.totalOptionPrice || 0;
+        const vendorPriceExcludeVat = totalOptionPrice > 0 ? totalOptionPrice : (product.vendorPriceExcludeVat || 0);
         const expectedPrice = Math.round(vendorPriceExcludeVat * 1.1);
         let priceMismatch = false;
+
+        if (totalOptionPrice > 0) {
+          console.log(`[baemin] 옵션 가격 합계: ${totalOptionPrice}원 (VAT 제외 협력사 가격)`);
+          console.log(`[baemin] 예상 판매가 (VAT 포함): ${expectedPrice}원`);
+        }
+
         if (openMallPrice && expectedPrice > 0) {
           if (openMallPrice !== expectedPrice) {
             console.log(
@@ -1616,6 +1680,8 @@ async function processBaeminOrder(
           ...product,
           openMallPrice,
           vendorPriceExcludeVat,
+          totalOptionPrice,
+          selectedOptions: optionResult.selectedOptions || [],
           priceMismatch,
           addedToCart,
           selectedOption: optionResult.selectedOption,
@@ -1743,6 +1809,8 @@ async function processBaeminOrder(
         quantity: p.quantity,
         openMallPrice: p.openMallPrice,
         vendorPriceExcludeVat: p.vendorPriceExcludeVat,
+        totalOptionPrice: p.totalOptionPrice || 0,
+        selectedOptions: p.selectedOptions || [],
         priceMismatch: p.priceMismatch,
         selectedOption: p.selectedOption || null,
         optionFailed: p.optionFailed || false,
