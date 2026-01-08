@@ -87,16 +87,80 @@ async function getProductPrice(page) {
 }
 
 /**
- * 옵션 선택
+ * 단일 옵션 선택 (내부 헬퍼 함수)
  * @param {Page} page
- * @param {Array} openMallOptions - [{ title: "상품선택", value: "EH-158파이 소 400세트" }, ...]
+ * @param {Object} option - { title: "상품선택", value: "..." }
  * @returns {Object} { success: boolean, reason?: string }
  */
-async function selectOptions(page, openMallOptions) {
+async function selectSingleOption(page, option) {
+  // 네이버 스마트스토어 옵션 버튼 찾기 (data-shp-contents-type 속성으로 매칭)
+  const optionBtn = await page.$(
+    `a._yGBCMWCWu[data-shp-contents-type="${option.title}"]`
+  );
+
+  if (optionBtn) {
+    // 옵션 드롭다운 버튼 클릭
+    await optionBtn.click();
+    console.log(`[naver] 옵션 드롭다운 열기: ${option.title}`);
+    await delay(1000);
+
+    // 드롭다운에서 옵션 값 선택 (li 항목 중 텍스트 매칭)
+    const selected = await page.evaluate((targetValue) => {
+      const items = document.querySelectorAll(
+        "ul[role='listbox'] li a, div[role='listbox'] li a, .option_list li a"
+      );
+      for (const item of items) {
+        const rawText = item.textContent?.trim() || "";
+        // 가격 부분 제거: "무지긴팔 (-3,500원)" → "무지긴팔"
+        const text = rawText.replace(/\s*\([+-]?[\d,]+원\)\s*$/, "").trim();
+        if (
+          text === targetValue ||
+          text.includes(targetValue) ||
+          targetValue.includes(text)
+        ) {
+          item.click();
+          return rawText;
+        }
+      }
+      return null;
+    }, option.value);
+
+    if (selected) {
+      console.log(`[naver] 옵션 선택됨: ${selected}`);
+      await delay(1000);
+      return { success: true, selectedValue: selected };
+    } else {
+      // 옵션 값 매칭 실패 → 실패 반환
+      console.log(`[naver] ❌ 옵션 값 매칭 실패: ${option.value}`);
+      return { success: false, reason: `옵션 값 매칭 실패: ${option.title} = ${option.value}` };
+    }
+  } else {
+    // 옵션 버튼 없음 → 실패 반환
+    console.log(`[naver] ❌ 옵션 버튼 없음: ${option.title}`);
+    return { success: false, reason: `옵션 버튼 없음: ${option.title}` };
+  }
+}
+
+/**
+ * 옵션 선택 (그룹화 패턴 지원)
+ * @param {Page} page
+ * @param {Array} openMallOptions - [{ title: "상품선택", value: "EH-158파이 소 400세트" }, ...]
+ * @param {number} quantity - 수량 (각 그룹 선택 후 설정)
+ * @returns {Object} { success: boolean, reason?: string, groupsProcessed?: number }
+ *
+ * 그룹화 패턴 예시:
+ * [{title: "박스 옵션", value: "1"}, {title: "테이프 옵션", value: "1"},
+ *  {title: "박스 옵션", value: "2"}, {title: "테이프 옵션", value: "2"}]
+ *
+ * → 고유 title 2개 → 2개씩 그룹화
+ * → 그룹1: 박스 옵션=1, 테이프 옵션=1 → 수량 설정
+ * → 그룹2: 박스 옵션=2, 테이프 옵션=2 → 수량 설정
+ */
+async function selectOptions(page, openMallOptions, quantity = 1) {
   // 옵션이 없으면 성공으로 처리 (옵션 선택 불필요)
   if (!openMallOptions || openMallOptions.length === 0) {
     console.log("[naver] 옵션 없음, 스킵");
-    return { success: true, skipped: true };
+    return { success: true, skipped: true, quantityHandled: false };
   }
 
   // 문자열이면 JSON 파싱
@@ -116,67 +180,81 @@ async function selectOptions(page, openMallOptions) {
     return { success: false, reason: `옵션 데이터 오류: ${JSON.stringify(firstOption)}` };
   }
 
-  console.log("[naver] 옵션 선택 시작:", options.length, "개");
-
-  for (let i = 0; i < options.length; i++) {
-    const option = options[i];
-
-    // 각 옵션 유효성 검사
-    if (!option || !option.title || !option.value) {
-      return { success: false, reason: `옵션 ${i + 1} 데이터 오류: ${JSON.stringify(option)}` };
-    }
-
-    console.log(`[naver] 옵션 ${i + 1}: ${option.title} = ${option.value}`);
-    await delay(500);
-
-    // 네이버 스마트스토어 옵션 버튼 찾기 (data-shp-contents-type 속성으로 매칭)
-    const optionBtn = await page.$(
-      `a._yGBCMWCWu[data-shp-contents-type="${option.title}"]`
-    );
-
-    if (optionBtn) {
-      // 옵션 드롭다운 버튼 클릭
-      await optionBtn.click();
-      console.log(`[naver] 옵션 드롭다운 열기: ${option.title}`);
-      await delay(1000);
-
-      // 드롭다운에서 옵션 값 선택 (li 항목 중 텍스트 매칭)
-      const selected = await page.evaluate((targetValue) => {
-        const items = document.querySelectorAll(
-          "ul[role='listbox'] li a, div[role='listbox'] li a, .option_list li a"
-        );
-        for (const item of items) {
-          const rawText = item.textContent?.trim() || "";
-          // 가격 부분 제거: "무지긴팔 (-3,500원)" → "무지긴팔"
-          const text = rawText.replace(/\s*\([+-]?[\d,]+원\)\s*$/, "").trim();
-          if (
-            text === targetValue ||
-            text.includes(targetValue) ||
-            targetValue.includes(text)
-          ) {
-            item.click();
-            return rawText;
-          }
-        }
-        return null;
-      }, option.value);
-
-      if (selected) {
-        console.log(`[naver] 옵션 선택됨: ${selected}`);
-        await delay(1000);
-      } else {
-        // 옵션 값 매칭 실패 → 실패 반환
-        console.log(`[naver] ❌ 옵션 값 매칭 실패: ${option.value}`);
-        return { success: false, reason: `옵션 값 매칭 실패: ${option.title} = ${option.value}` };
-      }
-    } else {
-      // 옵션 버튼 없음 → 실패 반환
-      console.log(`[naver] ❌ 옵션 버튼 없음: ${option.title}`);
-      return { success: false, reason: `옵션 버튼 없음: ${option.title}` };
+  // 고유 title 추출 (순서 유지)
+  const uniqueTitles = [];
+  for (const opt of options) {
+    if (!uniqueTitles.includes(opt.title)) {
+      uniqueTitles.push(opt.title);
     }
   }
+  const titleCount = uniqueTitles.length;
 
-  return { success: true };
+  console.log(`[naver] 옵션 선택 시작: 총 ${options.length}개, 고유 타이틀 ${titleCount}개`);
+  console.log(`[naver] 고유 타이틀: ${uniqueTitles.join(", ")}`);
+
+  // 그룹화 여부 판단: 옵션 개수가 타이틀 개수의 배수이고, 2개 이상의 그룹이 있을 때
+  const isGrouped = options.length > titleCount && options.length % titleCount === 0;
+  const groupCount = isGrouped ? options.length / titleCount : 1;
+
+  if (isGrouped) {
+    console.log(`[naver] 그룹화 패턴 감지: ${groupCount}개 그룹 (각 ${titleCount}개 옵션)`);
+
+    // 그룹별로 처리
+    for (let g = 0; g < groupCount; g++) {
+      const groupStart = g * titleCount;
+      const groupEnd = groupStart + titleCount;
+      const groupOptions = options.slice(groupStart, groupEnd);
+
+      console.log(`[naver] --- 그룹 ${g + 1}/${groupCount} 처리 시작 ---`);
+
+      // 그룹 내 모든 옵션 선택
+      for (let i = 0; i < groupOptions.length; i++) {
+        const option = groupOptions[i];
+
+        // 옵션 유효성 검사
+        if (!option || !option.title || !option.value) {
+          return { success: false, reason: `그룹 ${g + 1} 옵션 ${i + 1} 데이터 오류: ${JSON.stringify(option)}` };
+        }
+
+        console.log(`[naver] 그룹 ${g + 1}, 옵션 ${i + 1}: ${option.title} = ${option.value}`);
+        await delay(500);
+
+        const result = await selectSingleOption(page, option);
+        if (!result.success) {
+          return result;
+        }
+      }
+
+      // 그룹 내 모든 옵션 선택 후 수량 설정
+      console.log(`[naver] 그룹 ${g + 1} 옵션 선택 완료, 수량 설정: ${quantity}개`);
+      await setQuantity(page, quantity);
+      await delay(500);
+    }
+
+    return { success: true, groupsProcessed: groupCount, quantityHandled: true };
+  } else {
+    // 단일 그룹 (기존 방식)
+    console.log("[naver] 단일 그룹 패턴: 순차적 옵션 선택");
+
+    for (let i = 0; i < options.length; i++) {
+      const option = options[i];
+
+      // 옵션 유효성 검사
+      if (!option || !option.title || !option.value) {
+        return { success: false, reason: `옵션 ${i + 1} 데이터 오류: ${JSON.stringify(option)}` };
+      }
+
+      console.log(`[naver] 옵션 ${i + 1}: ${option.title} = ${option.value}`);
+      await delay(500);
+
+      const result = await selectSingleOption(page, option);
+      if (!result.success) {
+        return result;
+      }
+    }
+
+    return { success: true, quantityHandled: false };
+  }
 }
 
 /**
@@ -878,8 +956,16 @@ async function processProduct(page, product) {
   });
   await delay(2000);
 
-  // 2. 옵션 선택
-  const optionResult = await selectOptions(page, openMallOptions);
+  // 2. 수량 계산 (openMallQtyPerUnit 적용)
+  const baseQuantity = quantity || 1;
+  const qtyPerUnit = product.openMallQtyPerUnit || 1;
+  const actualQuantity = baseQuantity * qtyPerUnit;
+  if (qtyPerUnit > 1) {
+    console.log(`[naver] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`);
+  }
+
+  // 3. 옵션 선택 (그룹화 패턴인 경우 수량도 함께 처리)
+  const optionResult = await selectOptions(page, openMallOptions, actualQuantity);
 
   // 옵션 선택 실패 시 조기 반환
   if (!optionResult.success) {
@@ -897,23 +983,22 @@ async function processProduct(page, product) {
 
   await delay(1000);
 
-  // 2.5. 가격 추출 (옵션 선택 후)
+  // 3.5. 가격 추출 (옵션 선택 후)
   const openMallPrice = await getProductPrice(page);
 
-  // 3. 수량 설정 (openMallQtyPerUnit 적용)
-  const baseQuantity = quantity || 1;
-  const qtyPerUnit = product.openMallQtyPerUnit || 1;
-  const actualQuantity = baseQuantity * qtyPerUnit;
-  if (qtyPerUnit > 1) {
-    console.log(`[naver] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`);
+  // 4. 수량 설정 (옵션에서 수량 처리 안 한 경우에만)
+  if (!optionResult.quantityHandled) {
+    console.log(`[naver] 수량 설정: ${actualQuantity}개`);
+    await setQuantity(page, actualQuantity);
+    await delay(500);
+  } else {
+    console.log(`[naver] 수량 설정 스킵 (그룹화 옵션에서 이미 처리됨)`);
   }
-  await setQuantity(page, actualQuantity);
-  await delay(500);
 
-  // 4. 장바구니에 담기
+  // 5. 장바구니에 담기
   const addedToCart = await addToCart(page);
 
-  // 5. 가격 비교 (위탁가와 오픈몰 가격)
+  // 6. 가격 비교 (위탁가와 오픈몰 가격)
   // 부가세(10%) 추가하여 예상 단가 계산 (VAT 포함)
   const vendorPriceExcludeVat = product.vendorPriceExcludeVat || 0;
   const expectedPrice = Math.round(vendorPriceExcludeVat * 1.1); // VAT 포함
