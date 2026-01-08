@@ -408,9 +408,10 @@ async function selectSingleOption(page, targetValue) {
 /**
  * 옵션 선택 (복수 옵션 지원)
  * - 배민상회는 한 상품에서 2개 옵션을 선택할 수 있음
+ * - 각 옵션 선택 후 수량을 설정해야 함
  * - 옵션 가격들을 합산하여 반환
  */
-async function selectOption(page, optionValue) {
+async function selectOption(page, optionValue, quantity = 1) {
   if (!optionValue) {
     console.log("[baemin] 옵션값 없음, 옵션 선택 스킵");
     return { success: true, selectedOption: null, selectedOptions: [], totalOptionPrice: 0 };
@@ -436,12 +437,12 @@ async function selectOption(page, optionValue) {
     return { success: true, selectedOption: null, selectedOptions: [], totalOptionPrice: 0 };
   }
 
-  console.log(`[baemin] 옵션 선택 시작: ${targetValues.length}개`);
+  console.log(`[baemin] 옵션 선택 시작: ${targetValues.length}개 (각 수량: ${quantity})`);
 
   const selectedOptions = [];
   let totalOptionPrice = 0;
 
-  // 각 옵션을 순차적으로 선택
+  // 각 옵션을 순차적으로 선택 + 수량 설정
   for (let i = 0; i < targetValues.length; i++) {
     const targetValue = targetValues[i];
     console.log(`\n[baemin] === 옵션 ${i + 1}/${targetValues.length} 선택: "${targetValue}" ===`);
@@ -460,6 +461,10 @@ async function selectOption(page, optionValue) {
     if (result.selectedOption) {
       selectedOptions.push(result.selectedOption);
       totalOptionPrice += result.price || 0;
+
+      // 각 옵션 선택 후 수량 설정
+      console.log(`[baemin] 옵션 "${result.selectedOption}" 수량 설정: ${quantity}개`);
+      await setQuantity(page, quantity);
     }
   }
 
@@ -1620,12 +1625,20 @@ async function processBaeminOrder(
           continue;
         }
 
-        // 3.2 옵션 선택 (openMallOptions가 있는 경우)
+        // 3.2 수량 계산 (openMallQtyPerUnit 적용)
+        const baseQuantity = product.quantity || 1;
+        const qtyPerUnit = product.openMallQtyPerUnit || 1;
+        const actualQuantity = baseQuantity * qtyPerUnit;
+        if (qtyPerUnit > 1) {
+          console.log(`[baemin] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`);
+        }
+
+        // 3.3 옵션 선택 (openMallOptions가 있는 경우) - 각 옵션마다 수량 설정
         const optionValue = product.openMallOptions || null;
-        let optionResult = { success: true, selectedOption: null };
+        let optionResult = { success: true, selectedOption: null, selectedOptions: [], totalOptionPrice: 0 };
 
         if (optionValue) {
-          optionResult = await selectOption(page, optionValue);
+          optionResult = await selectOption(page, optionValue, actualQuantity);
           if (!optionResult.success) {
             console.log(`[baemin] ⚠️ 옵션 선택 실패: ${optionResult.reason}`);
             addedProducts.push({
@@ -1642,19 +1655,13 @@ async function processBaeminOrder(
             });
             continue;
           }
+        } else {
+          // 옵션이 없는 경우에만 수량 설정
+          await setQuantity(page, actualQuantity);
         }
 
-        // 3.3 가격 추출
+        // 3.4 가격 추출
         const openMallPrice = await getProductPrice(page);
-
-        // 3.4 수량 설정 (openMallQtyPerUnit 적용)
-        const baseQuantity = product.quantity || 1;
-        const qtyPerUnit = product.openMallQtyPerUnit || 1;
-        const actualQuantity = baseQuantity * qtyPerUnit;
-        if (qtyPerUnit > 1) {
-          console.log(`[baemin] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`);
-        }
-        await setQuantity(page, actualQuantity);
 
         // 3.5 장바구니 담기
         const addedToCart = await addToCart(page);
