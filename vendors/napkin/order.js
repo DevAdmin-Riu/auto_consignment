@@ -489,7 +489,8 @@ async function clearCart(page) {
 }
 
 /**
- * 옵션 선택
+ * 옵션 선택 (SELECT/INPUT_TEXT 타입 지원)
+ * - tr > th로 title 찾고 → td에서 input/select 처리
  * @returns { success, unitPrice, totalPrice }
  */
 async function selectOptions(page, openMallOptions, quantity = 1, vendorPriceExcludeVat = null) {
@@ -510,128 +511,183 @@ async function selectOptions(page, openMallOptions, quantity = 1, vendorPriceExc
   await delay(500);
 
   let optionIndex = 1;
+  let priceInfo = null;
+
   for (const option of openMallOptions) {
-    const { title, value } = option;
-    console.log(`[napkin] 옵션 선택: ${title} = ${value}`);
+    const { title, value, type = "SELECT" } = option;
+    console.log(`[napkin] 옵션 처리 [${type}]: ${title} = ${value}`);
 
-    // 옵션 셀렉트 박스 찾기
-    const selectElements = await page.$$(SELECTORS.product.optionSelect);
-
-    if (selectElements.length === 0) {
-      console.log("[napkin] 옵션 셀렉트 박스 없음");
-      continue;
-    }
-
-    // 옵션 선택 시도
-    let optionSelected = false;
-    for (const selectEl of selectElements) {
-      try {
-        // select 내에서 옵션 찾기 (띄어쓰기 제거 후 비교)
-        const optionExists = await page.evaluate(
-          (select, searchValue) => {
-            const normalize = (str) => str.replace(/\s+/g, '');
-            const normalizedSearch = normalize(searchValue);
-            const options = select.querySelectorAll("option");
-            for (const opt of options) {
-              const normalizedText = normalize(opt.textContent);
-              const normalizedValue = normalize(opt.value);
-              if (normalizedText.includes(normalizedSearch) || normalizedSearch.includes(normalizedText) ||
-                  normalizedValue.includes(normalizedSearch) || normalizedSearch.includes(normalizedValue)) {
-                select.value = opt.value;
-                select.dispatchEvent(new Event("change", { bubbles: true }));
-                return true;
+    if (type === "INPUT_TEXT") {
+      // INPUT_TEXT: tr > th에서 title 찾고 → td에서 input에 텍스트 입력
+      const inputResult = await page.evaluate((optTitle, optValue) => {
+        // 모든 tr에서 th 텍스트로 찾기
+        const rows = document.querySelectorAll("tr");
+        for (const row of rows) {
+          const th = row.querySelector("th");
+          if (th) {
+            const thText = (th.textContent || "").trim();
+            if (thText.includes(optTitle)) {
+              // 같은 tr의 td에서 input 찾기
+              const td = row.querySelector("td");
+              if (td) {
+                const input = td.querySelector("input[type='text'], input:not([type]), textarea");
+                if (input) {
+                  input.focus();
+                  input.value = "";
+                  input.dispatchEvent(new Event("input", { bubbles: true }));
+                  input.value = optValue;
+                  input.dispatchEvent(new Event("input", { bubbles: true }));
+                  input.dispatchEvent(new Event("change", { bubbles: true }));
+                  return { found: true, thText };
+                }
               }
             }
-            return false;
-          },
-          selectEl,
-          value
-        );
-
-        if (optionExists) {
-          console.log(`[napkin] 옵션 "${value}" 선택 완료`);
-          optionSelected = true;
-
-          // 수량 입력 필드 대기 및 수량 설정
-          const quantitySelector = `#option_box${optionIndex}_quantity`;
-          console.log(`[napkin] 수량 필드 대기: ${quantitySelector}`);
-          await delay(1000);
-
-          const quantityInput = await page.$(quantitySelector);
-          if (quantityInput && quantity > 1) {
-            console.log(`[napkin] 수량 입력: ${quantity}`);
-            // 트리플클릭으로 전체 선택 후 입력
-            await quantityInput.click();
-            await delay(100);
-            await quantityInput.click({ clickCount: 3 });
-            await delay(200);
-            await page.keyboard.type(String(quantity), { delay: 50 });
-            // change 이벤트 발생시켜서 가격 업데이트
-            await page.evaluate(el => {
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-              el.dispatchEvent(new Event('blur', { bubbles: true }));
-            }, quantityInput);
-            await delay(2000); // 가격 업데이트 대기
           }
-
-          // 가격 정보 가져오기
-          const priceSelector = `#option_box${optionIndex}_price input.option_box_price`;
-          const priceInput = await page.$(priceSelector);
-          let priceInfo = null;
-
-          if (priceInput) {
-            // option_box_price의 value는 총액 (단가 * 수량)
-            const totalPrice = await page.evaluate(el => parseInt(el.value) || 0, priceInput);
-            const unitPrice = Math.round(totalPrice / quantity);
-            console.log(`[napkin] 가격 정보 - 총액: ${totalPrice}원, 수량: ${quantity}, 단가: ${unitPrice}원`);
-
-            // 가격 비교 (vendorPriceExcludeVat가 있으면)
-            if (vendorPriceExcludeVat) {
-              const expectedUnitPrice = Math.round(vendorPriceExcludeVat * 1.1); // VAT 10% 추가
-              const priceDifference = Math.abs(unitPrice - expectedUnitPrice);
-              const PRICE_TOLERANCE = 3; // 허용 오차 3원
-
-              if (priceDifference > PRICE_TOLERANCE) {
-                console.log(`[napkin] ⚠️ 가격 불일치: 냅킨 ${unitPrice}원 vs 협력사 ${expectedUnitPrice}원 (차이: ${unitPrice - expectedUnitPrice}원)`);
-                priceInfo = {
-                  unitPrice,
-                  totalPrice,
-                  expectedUnitPrice,
-                  vendorPriceExcludeVat,
-                  priceMismatch: true,
-                  difference: unitPrice - expectedUnitPrice,
-                };
-              } else {
-                console.log(`[napkin] ✓ 가격 일치: 냅킨 ${unitPrice}원, 협력사 ${expectedUnitPrice}원 (오차: ${priceDifference}원)`);
-                priceInfo = {
-                  unitPrice,
-                  totalPrice,
-                  expectedUnitPrice,
-                  vendorPriceExcludeVat,
-                  priceMismatch: false,
-                  difference: unitPrice - expectedUnitPrice,
-                };
-              }
-            } else {
-              priceInfo = { unitPrice, totalPrice };
-            }
-          }
-
-          optionIndex++;
-          return { success: true, priceInfo };
         }
-      } catch (e) {
-        console.error(`[napkin] 옵션 선택 에러:`, e.message);
-      }
-    }
+        return { found: false };
+      }, title, value);
 
-    if (!optionSelected) {
-      console.log(`[napkin] 옵션 "${value}" 찾기 실패 - 중단`);
-      return { success: false, message: `옵션 "${value}" 선택 실패` };
+      if (inputResult.found) {
+        console.log(`[napkin] ✅ INPUT_TEXT 입력 완료: "${title}" = "${value}"`);
+        await delay(800); // 페이지 업데이트 대기
+      } else {
+        console.log(`[napkin] ❌ INPUT_TEXT 입력창 못찾음: "${title}"`);
+        return { success: false, message: `텍스트 입력창 못찾음: ${title}` };
+      }
+
+    } else {
+      // SELECT: tr > th에서 title 찾고 → td에서 select 선택
+      const selectResult = await page.evaluate((optTitle, optValue) => {
+        const normalize = (str) => str.replace(/\s+/g, '');
+        const normalizedValue = normalize(optValue);
+
+        // 모든 tr에서 th 텍스트로 찾기
+        const rows = document.querySelectorAll("tr");
+        for (const row of rows) {
+          const th = row.querySelector("th");
+          if (th) {
+            const thText = (th.textContent || "").trim();
+            if (thText.includes(optTitle)) {
+              // 같은 tr의 td에서 select 찾기
+              const td = row.querySelector("td");
+              if (td) {
+                const select = td.querySelector("select");
+                if (select) {
+                  // select 내에서 옵션 찾기
+                  const options = select.querySelectorAll("option");
+                  for (const opt of options) {
+                    const normalizedText = normalize(opt.textContent);
+                    const normalizedOptValue = normalize(opt.value);
+                    if (normalizedText.includes(normalizedValue) || normalizedValue.includes(normalizedText) ||
+                        normalizedOptValue.includes(normalizedValue) || normalizedValue.includes(normalizedOptValue)) {
+                      select.value = opt.value;
+                      select.dispatchEvent(new Event("change", { bubbles: true }));
+                      return { found: true, thText, selectedValue: opt.value, selectedText: opt.textContent };
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // title로 못 찾으면 기존 방식 (모든 select에서 value로 검색)
+        const allSelects = document.querySelectorAll('select[id^="product_option_id"], select[class^="ProductOption"]');
+        for (const select of allSelects) {
+          const options = select.querySelectorAll("option");
+          for (const opt of options) {
+            const normalizedText = normalize(opt.textContent);
+            const normalizedOptValue = normalize(opt.value);
+            if (normalizedText.includes(normalizedValue) || normalizedValue.includes(normalizedText) ||
+                normalizedOptValue.includes(normalizedValue) || normalizedValue.includes(normalizedOptValue)) {
+              select.value = opt.value;
+              select.dispatchEvent(new Event("change", { bubbles: true }));
+              return { found: true, fallback: true, selectedValue: opt.value, selectedText: opt.textContent };
+            }
+          }
+        }
+
+        return { found: false };
+      }, title, value);
+
+      if (selectResult.found) {
+        console.log(`[napkin] ✅ SELECT 선택 완료: "${title}" = "${selectResult.selectedText || value}"`);
+        await delay(2000); // 페이지 업데이트 대기
+      } else {
+        console.log(`[napkin] ❌ SELECT 옵션 못찾음: "${title}" = "${value}"`);
+        return { success: false, message: `옵션 "${value}" 선택 실패` };
+      }
     }
   }
 
-  return { success: true };
+  console.log("[napkin] 모든 옵션 처리 완료, 수량 필드 대기...");
+  await delay(2000);
+
+  // 모든 옵션 선택 후 수량 필드 찾기 및 수량 설정
+  const quantitySelector = '#option_box1_quantity';
+  console.log(`[napkin] 수량 필드 대기: ${quantitySelector} (수량: ${quantity})`);
+
+  const quantityInput = await waitFor(page, quantitySelector, 10000);
+  if (!quantityInput) {
+    console.log(`[napkin] ⚠️ 수량 필드 못찾음: ${quantitySelector}`);
+  }
+
+  if (quantityInput && quantity > 1) {
+    console.log(`[napkin] 수량 입력: ${quantity}`);
+    await quantityInput.click();
+    await delay(100);
+    await quantityInput.click({ clickCount: 3 });
+    await delay(200);
+    await page.keyboard.type(String(quantity), { delay: 50 });
+    await page.evaluate(el => {
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      el.dispatchEvent(new Event('blur', { bubbles: true }));
+    }, quantityInput);
+    await delay(2000);
+  }
+
+  // 가격 정보 가져오기
+  const priceSelector = '#option_box1_price input.option_box_price';
+  const priceInput = await page.$(priceSelector);
+
+  if (priceInput) {
+    const totalPrice = await page.evaluate(el => parseInt(el.value) || 0, priceInput);
+    const unitPrice = Math.round(totalPrice / quantity);
+    console.log(`[napkin] 가격 정보 - 총액: ${totalPrice}원, 수량: ${quantity}, 단가: ${unitPrice}원`);
+
+    if (vendorPriceExcludeVat) {
+      const expectedUnitPrice = Math.round(vendorPriceExcludeVat * 1.1);
+      const priceDifference = Math.abs(unitPrice - expectedUnitPrice);
+      const PRICE_TOLERANCE = 3;
+
+      if (priceDifference > PRICE_TOLERANCE) {
+        console.log(`[napkin] ⚠️ 가격 불일치: 냅킨 ${unitPrice}원 vs 협력사 ${expectedUnitPrice}원 (차이: ${unitPrice - expectedUnitPrice}원)`);
+        priceInfo = {
+          unitPrice,
+          totalPrice,
+          expectedUnitPrice,
+          vendorPriceExcludeVat,
+          priceMismatch: true,
+          difference: unitPrice - expectedUnitPrice,
+        };
+      } else {
+        console.log(`[napkin] ✓ 가격 일치: 냅킨 ${unitPrice}원, 협력사 ${expectedUnitPrice}원 (오차: ${priceDifference}원)`);
+        priceInfo = {
+          unitPrice,
+          totalPrice,
+          expectedUnitPrice,
+          vendorPriceExcludeVat,
+          priceMismatch: false,
+          difference: unitPrice - expectedUnitPrice,
+        };
+      }
+    } else {
+      priceInfo = { unitPrice, totalPrice };
+    }
+  }
+
+  await delay(1000);
+  return { success: true, priceInfo };
 }
 
 /**
@@ -672,12 +728,39 @@ async function addToCart(page) {
   // 버튼 대기
   const cartBtn = await waitFor(page, SELECTORS.product.addToCartBtn, 5000);
   if (!cartBtn) {
-    return { success: false, message: "장바구니 버튼을 찾을 수 없음" };
+    console.log("[napkin] #cartBtn 없음, 대체 셀렉터 시도...");
+    // 대체 셀렉터 시도
+    const altBtn = await waitFor(page, 'a[href*="basket"], .btn_cart, #btn_cart, .addToCart', 3000);
+    if (!altBtn) {
+      return { success: false, message: "장바구니 버튼을 찾을 수 없음" };
+    }
   }
 
   try {
-    await cartBtn.click();
-    await delay(1000);
+    // JavaScript로 클릭 시도 (더 안정적)
+    const clicked = await page.evaluate((selector) => {
+      const btn = document.querySelector(selector);
+      if (btn) {
+        btn.click();
+        return true;
+      }
+      // 대체 셀렉터들 시도
+      const altSelectors = ['a[href*="basket"]', '.btn_cart', '#btn_cart', '.addToCart', '#cartBtn'];
+      for (const sel of altSelectors) {
+        const altBtn = document.querySelector(sel);
+        if (altBtn) {
+          altBtn.click();
+          return true;
+        }
+      }
+      return false;
+    }, SELECTORS.product.addToCartBtn);
+
+    if (!clicked) {
+      return { success: false, message: "장바구니 버튼 클릭 실패" };
+    }
+
+    await delay(1500);
   } catch (e) {
     console.log("[napkin] 장바구니 버튼 클릭 실패:", e.message);
     return { success: false, message: "장바구니 버튼 클릭 실패" };
@@ -752,10 +835,18 @@ async function processNapkinOrder(
           }
         }
 
+        // 실제 주문 수량 계산 (openMallQtyPerUnit 적용)
+        const baseQuantity = product.quantity || 1;
+        const qtyPerUnit = product.openMallQtyPerUnit || 1;
+        const actualQuantity = baseQuantity * qtyPerUnit;
+        if (qtyPerUnit > 1) {
+          console.log(`[napkin] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`);
+        }
+
         let hasOptions = options && options.length > 0;
         let priceInfo = null;
         if (hasOptions) {
-          const optionResult = await selectOptions(page, options, product.quantity || 1, product.vendorPriceExcludeVat);
+          const optionResult = await selectOptions(page, options, actualQuantity, product.vendorPriceExcludeVat);
           if (!optionResult.success) {
             results.push({
               lineId,
@@ -772,7 +863,7 @@ async function processNapkinOrder(
 
         // 3-3. 수량 설정 (옵션이 없는 경우에만)
         if (!hasOptions) {
-          await setQuantity(page, product.quantity || 1);
+          await setQuantity(page, actualQuantity);
         }
 
         // 3-4. 장바구니 담기
