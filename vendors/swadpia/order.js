@@ -865,8 +865,13 @@ async function addProductsToCart(page, products, downloadedFiles) {
       // 페이지 이동 대기 (주문 페이지 로드에 시간이 걸림)
       await new Promise((resolve) => setTimeout(resolve, 3000));
 
-      // 6. 주문 수량 선택 (select 드롭다운)
-      const quantity = product.quantity || 1;
+      // 6. 주문 수량 선택 (openMallQtyPerUnit 적용)
+      const baseQuantity = product.quantity || 1;
+      const qtyPerUnit = product.openMallQtyPerUnit || 1;
+      const quantity = baseQuantity * qtyPerUnit;
+      if (qtyPerUnit > 1) {
+        console.log(`[swadpia] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${quantity}개`);
+      }
       console.log("[swadpia] 주문 수량 선택:", quantity);
       await page.waitForSelector(SELECTORS.orderPage.quantity, {
         timeout: 60000,
@@ -1063,14 +1068,16 @@ async function addProductsToCart(page, products, downloadedFiles) {
             await page.reload({ waitUntil: "networkidle2", timeout: 60000 });
             await new Promise((resolve) => setTimeout(resolve, 2000));
 
-            // 수량 다시 설정
-            const quantity = product.quantity || 1;
-            console.log("[swadpia] 수량 재설정:", quantity);
+            // 수량 다시 설정 (openMallQtyPerUnit 적용)
+            const retryBaseQty = product.quantity || 1;
+            const retryQtyPerUnit = product.openMallQtyPerUnit || 1;
+            const retryQuantity = retryBaseQty * retryQtyPerUnit;
+            console.log("[swadpia] 수량 재설정:", retryQuantity);
             try {
               await page.waitForSelector(SELECTORS.orderPage.quantity, {
                 timeout: 60000,
               });
-              await page.select(SELECTORS.orderPage.quantity, String(quantity));
+              await page.select(SELECTORS.orderPage.quantity, String(retryQuantity));
             } catch (qtyError) {
               console.log("[swadpia] 수량 재설정 실패:", qtyError.message);
             }

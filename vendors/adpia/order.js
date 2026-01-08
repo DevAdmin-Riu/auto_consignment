@@ -626,7 +626,14 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
 
   // 1. 수량 입력 (트리플 클릭 후 타이핑) - 재시도가 아닐 때만
   if (retryCount === 0) {
-    console.log(`[adpia] 수량 입력: ${product.quantity}`);
+    // openMallQtyPerUnit 적용: 우리 1개 → 오픈몰 N개
+    const baseQuantity = product.quantity || 1;
+    const qtyPerUnit = product.openMallQtyPerUnit || 1;
+    const actualQuantity = baseQuantity * qtyPerUnit;
+    if (qtyPerUnit > 1) {
+      console.log(`[adpia] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`);
+    }
+    console.log(`[adpia] 수량 입력: ${actualQuantity}`);
     const quantityInput = await waitFor(
       page,
       SELECTORS.orderPage.quantityInput,
@@ -635,7 +642,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
     if (quantityInput) {
       await quantityInput.click({ clickCount: 3 });
       await delay(500);
-      await quantityInput.type(String(product.quantity), { delay: 100 });
+      await quantityInput.type(String(actualQuantity), { delay: 100 });
       await delay(1000);
     } else {
       console.log("[adpia] 수량 입력 필드를 찾을 수 없음");

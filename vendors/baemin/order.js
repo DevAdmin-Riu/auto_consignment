@@ -1647,8 +1647,14 @@ async function processBaeminOrder(
         // 3.3 가격 추출
         const openMallPrice = await getProductPrice(page);
 
-        // 3.4 수량 설정
-        await setQuantity(page, product.quantity || 1);
+        // 3.4 수량 설정 (openMallQtyPerUnit 적용)
+        const baseQuantity = product.quantity || 1;
+        const qtyPerUnit = product.openMallQtyPerUnit || 1;
+        const actualQuantity = baseQuantity * qtyPerUnit;
+        if (qtyPerUnit > 1) {
+          console.log(`[baemin] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`);
+        }
+        await setQuantity(page, actualQuantity);
 
         // 3.5 장바구니 담기
         const addedToCart = await addToCart(page);

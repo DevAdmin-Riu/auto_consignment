@@ -900,8 +900,14 @@ async function processProduct(page, product) {
   // 2.5. 가격 추출 (옵션 선택 후)
   const openMallPrice = await getProductPrice(page);
 
-  // 3. 수량 설정
-  await setQuantity(page, quantity || 1);
+  // 3. 수량 설정 (openMallQtyPerUnit 적용)
+  const baseQuantity = quantity || 1;
+  const qtyPerUnit = product.openMallQtyPerUnit || 1;
+  const actualQuantity = baseQuantity * qtyPerUnit;
+  if (qtyPerUnit > 1) {
+    console.log(`[naver] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`);
+  }
+  await setQuantity(page, actualQuantity);
   await delay(500);
 
   // 4. 장바구니에 담기

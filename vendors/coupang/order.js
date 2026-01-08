@@ -66,7 +66,13 @@ async function processCoupangOrder(
     for (let productIndex = 0; productIndex < products.length; productIndex++) {
       const product = products[productIndex];
       const productUrl = product.productUrl;
-      const quantity = product.quantity || 1;
+      // openMallQtyPerUnit 적용: 우리 1개 → 오픈몰 N개
+      const baseQuantity = product.quantity || 1;
+      const qtyPerUnit = product.openMallQtyPerUnit || 1;
+      const quantity = baseQuantity * qtyPerUnit;
+      if (qtyPerUnit > 1) {
+        console.log(`[coupang] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${quantity}개`);
+      }
       const productName = product.productName;
 
       console.log(
@@ -750,7 +756,10 @@ async function processCoupangOrder(
 
   for (let i = 0; i < products.length; i++) {
     const product = products[i];
-    const quantity = product.quantity || 1;
+    // openMallQtyPerUnit 적용: 우리 1개 → 오픈몰 N개
+    const baseQuantity = product.quantity || 1;
+    const qtyPerUnit = product.openMallQtyPerUnit || 1;
+    const quantity = baseQuantity * qtyPerUnit;
     let priceMismatch = null;
 
     if (isPaymentComplete && product.vendorPriceExcludeVat) {
