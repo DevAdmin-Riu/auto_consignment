@@ -675,12 +675,10 @@ async function setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat) {
 }
 
 /**
- * 옵션 선택 (SELECT/INPUT_TEXT 타입 지원 + 2D 세트 구조)
+ * 옵션 선택 (SELECT/INPUT_TEXT 타입 지원, 2D 세트 구조)
  * - tr > th로 title 찾고 → td에서 input/select 처리
  *
- * 지원 구조:
- * - 2D (새 구조): [{options: [{title, value, type}, ...]}, ...]
- * - 1D (레거시): [{title, value, type}, ...]
+ * 구조: [{options: [{title, value, type}, ...]}, ...]
  *
  * @returns { success, priceInfo }
  */
@@ -703,12 +701,11 @@ async function selectOptions(page, openMallOptions, quantity = 1, vendorPriceExc
 
   let priceInfo = null;
 
-  // 새로운 2D 구조 감지: [{options: [{title, value}, ...]}, ...]
+  // 2D 구조 검증: [{options: [{title, value}, ...]}, ...]
   const is2DStructure = openMallOptions[0] && Array.isArray(openMallOptions[0].options);
 
   if (is2DStructure) {
-    // === 새로운 2D 구조 처리 ===
-    console.log(`[napkin] 2D 옵션 구조 감지: ${openMallOptions.length}개 세트`);
+    console.log(`[napkin] 옵션 세트 처리: ${openMallOptions.length}개 세트`);
 
     for (let s = 0; s < openMallOptions.length; s++) {
       const set = openMallOptions[s];
@@ -738,23 +735,8 @@ async function selectOptions(page, openMallOptions, quantity = 1, vendorPriceExc
     return { success: true, priceInfo };
   }
 
-  // === 기존 1D 구조 처리 (하위 호환) ===
-  console.log(`[napkin] 1D 옵션 구조 (레거시): ${openMallOptions.length}개 옵션`);
-
-  for (const option of openMallOptions) {
-    const result = await processSingleOption(page, option);
-    if (!result.success) {
-      return result;
-    }
-  }
-
-  console.log("[napkin] 모든 옵션 처리 완료, 수량 필드 대기...");
-  await delay(2000);
-
-  priceInfo = await setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat);
-  await delay(1000);
-
-  return { success: true, priceInfo };
+  // 2D 구조가 아닌 경우 에러
+  return { success: false, message: "잘못된 옵션 구조: 2D 구조 [{options: [...]}] 형식이어야 합니다" };
 }
 
 /**

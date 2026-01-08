@@ -142,19 +142,18 @@ async function selectSingleOption(page, option) {
 }
 
 /**
- * 옵션 선택 (그룹화 패턴 지원)
+ * 옵션 선택 (2D 세트 구조)
  * @param {Page} page
- * @param {Array} openMallOptions - [{ title: "상품선택", value: "EH-158파이 소 400세트" }, ...]
- * @param {number} quantity - 수량 (각 그룹 선택 후 설정)
+ * @param {Array} openMallOptions - [{options: [{title, value}, ...]}, ...]
+ * @param {number} quantity - 수량 (각 세트 선택 후 설정)
  * @returns {Object} { success: boolean, reason?: string, groupsProcessed?: number }
  *
- * 그룹화 패턴 예시:
- * [{title: "박스 옵션", value: "1"}, {title: "테이프 옵션", value: "1"},
- *  {title: "박스 옵션", value: "2"}, {title: "테이프 옵션", value: "2"}]
+ * 2D 구조 예시:
+ * [{options: [{title: "박스 옵션", value: "1"}, {title: "테이프 옵션", value: "1"}]},
+ *  {options: [{title: "박스 옵션", value: "2"}, {title: "테이프 옵션", value: "2"}]}]
  *
- * → 고유 title 2개 → 2개씩 그룹화
- * → 그룹1: 박스 옵션=1, 테이프 옵션=1 → 수량 설정
- * → 그룹2: 박스 옵션=2, 테이프 옵션=2 → 수량 설정
+ * → 세트1: 박스 옵션=1, 테이프 옵션=1 → 수량 설정
+ * → 세트2: 박스 옵션=2, 테이프 옵션=2 → 수량 설정
  */
 async function selectOptions(page, openMallOptions, quantity = 1) {
   // 옵션이 없으면 성공으로 처리 (옵션 선택 불필요)
@@ -174,12 +173,11 @@ async function selectOptions(page, openMallOptions, quantity = 1) {
     }
   }
 
-  // 새로운 2D 구조 감지: [{options: [{title, value}, ...]}, ...]
+  // 2D 구조 검증: [{options: [{title, value}, ...]}, ...]
   const is2DStructure = options[0] && Array.isArray(options[0].options);
 
   if (is2DStructure) {
-    // === 새로운 2D 구조 처리 ===
-    console.log(`[naver] 2D 옵션 구조 감지: ${options.length}개 세트`);
+    console.log(`[naver] 옵션 세트 처리: ${options.length}개 세트`);
 
     for (let s = 0; s < options.length; s++) {
       const set = options[s];
@@ -214,88 +212,8 @@ async function selectOptions(page, openMallOptions, quantity = 1) {
     return { success: true, groupsProcessed: options.length, quantityHandled: true };
   }
 
-  // === 기존 1D 구조 처리 (하위 호환) ===
-  // 첫 번째 옵션 유효성 검사
-  const firstOption = options[0];
-  if (!firstOption || !firstOption.title || !firstOption.value) {
-    return { success: false, reason: `옵션 데이터 오류: ${JSON.stringify(firstOption)}` };
-  }
-
-  // 고유 title 추출 (순서 유지)
-  const uniqueTitles = [];
-  for (const opt of options) {
-    if (!uniqueTitles.includes(opt.title)) {
-      uniqueTitles.push(opt.title);
-    }
-  }
-  const titleCount = uniqueTitles.length;
-
-  console.log(`[naver] 1D 옵션 구조 (레거시): 총 ${options.length}개, 고유 타이틀 ${titleCount}개`);
-  console.log(`[naver] 고유 타이틀: ${uniqueTitles.join(", ")}`);
-
-  // 그룹화 여부 판단: 옵션 개수가 타이틀 개수의 배수이고, 2개 이상의 그룹이 있을 때
-  const isGrouped = options.length > titleCount && options.length % titleCount === 0;
-  const groupCount = isGrouped ? options.length / titleCount : 1;
-
-  if (isGrouped) {
-    console.log(`[naver] 그룹화 패턴 감지: ${groupCount}개 그룹 (각 ${titleCount}개 옵션)`);
-
-    // 그룹별로 처리
-    for (let g = 0; g < groupCount; g++) {
-      const groupStart = g * titleCount;
-      const groupEnd = groupStart + titleCount;
-      const groupOptions = options.slice(groupStart, groupEnd);
-
-      console.log(`[naver] --- 그룹 ${g + 1}/${groupCount} 처리 시작 ---`);
-
-      // 그룹 내 모든 옵션 선택
-      for (let i = 0; i < groupOptions.length; i++) {
-        const option = groupOptions[i];
-
-        // 옵션 유효성 검사
-        if (!option || !option.title || !option.value) {
-          return { success: false, reason: `그룹 ${g + 1} 옵션 ${i + 1} 데이터 오류: ${JSON.stringify(option)}` };
-        }
-
-        console.log(`[naver] 그룹 ${g + 1}, 옵션 ${i + 1}: ${option.title} = ${option.value}`);
-        await delay(500);
-
-        const result = await selectSingleOption(page, option);
-        if (!result.success) {
-          return result;
-        }
-      }
-
-      // 그룹 내 모든 옵션 선택 후 수량 설정
-      console.log(`[naver] 그룹 ${g + 1} 옵션 선택 완료, 수량 설정: ${quantity}개`);
-      await setQuantity(page, quantity);
-      await delay(500);
-    }
-
-    return { success: true, groupsProcessed: groupCount, quantityHandled: true };
-  } else {
-    // 단일 그룹 (기존 방식)
-    console.log("[naver] 단일 그룹 패턴: 순차적 옵션 선택");
-
-    for (let i = 0; i < options.length; i++) {
-      const option = options[i];
-
-      // 옵션 유효성 검사
-      if (!option || !option.title || !option.value) {
-        return { success: false, reason: `옵션 ${i + 1} 데이터 오류: ${JSON.stringify(option)}` };
-      }
-
-      console.log(`[naver] 옵션 ${i + 1}: ${option.title} = ${option.value}`);
-      await delay(500);
-
-      const result = await selectSingleOption(page, option);
-      if (!result.success) {
-        return result;
-      }
-    }
-
-    return { success: true, quantityHandled: false };
-  }
+  // 2D 구조가 아닌 경우 에러
+  return { success: false, reason: "잘못된 옵션 구조: 2D 구조 [{options: [...]}] 형식이어야 합니다" };
 }
 
 /**

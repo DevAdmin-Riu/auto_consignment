@@ -406,14 +406,12 @@ async function selectSingleOption(page, targetValue) {
 }
 
 /**
- * 옵션 선택 (복수 옵션 지원 + 2D 세트 구조)
+ * 옵션 선택 (2D 세트 구조)
  * - 배민상회는 한 상품에서 여러 옵션을 선택할 수 있음
- * - 각 옵션(세트) 선택 후 수량을 설정해야 함
+ * - 각 세트 선택 후 수량을 설정해야 함
  * - 옵션 가격들을 합산하여 반환
  *
- * 지원 구조:
- * - 2D (새 구조): [{options: [{value: "검정"}]}, {options: [{value: "노랑"}]}]
- * - 1D (레거시): [{value: "검정"}, {value: "노랑"}]
+ * 구조: [{options: [{value: "검정"}]}, {options: [{value: "노랑"}]}]
  */
 async function selectOption(page, optionValue, quantity = 1) {
   if (!optionValue) {
@@ -437,15 +435,14 @@ async function selectOption(page, optionValue, quantity = 1) {
     return { success: true, selectedOption: null, selectedOptions: [], totalOptionPrice: 0 };
   }
 
-  // 새로운 2D 구조 감지: [{options: [{value}, ...]}, ...]
+  // 2D 구조 검증: [{options: [{value}, ...]}, ...]
   const is2DStructure = parsed[0] && Array.isArray(parsed[0].options);
 
   const selectedOptions = [];
   let totalOptionPrice = 0;
 
   if (is2DStructure) {
-    // === 새로운 2D 구조 처리 ===
-    console.log(`[baemin] 2D 옵션 구조 감지: ${parsed.length}개 세트 (각 수량: ${quantity})`);
+    console.log(`[baemin] 옵션 세트 처리: ${parsed.length}개 세트 (각 수량: ${quantity})`);
 
     for (let s = 0; s < parsed.length; s++) {
       const set = parsed[s];
@@ -482,36 +479,13 @@ async function selectOption(page, optionValue, quantity = 1) {
       await setQuantity(page, quantity);
     }
   } else {
-    // === 기존 1D 구조 처리 (하위 호환) ===
-    const targetValues = parsed.map((opt) => opt.value || opt).filter(Boolean);
-    console.log(`[baemin] 1D 옵션 구조 (레거시): ${targetValues.length}개 옵션 (각 수량: ${quantity})`);
-    targetValues.forEach((v, i) => console.log(`[baemin]   옵션 ${i + 1}: "${v}"`));
-
-    // 각 옵션을 순차적으로 선택 + 수량 설정
-    for (let i = 0; i < targetValues.length; i++) {
-      const targetValue = targetValues[i];
-      console.log(`\n[baemin] === 옵션 ${i + 1}/${targetValues.length} 선택: "${targetValue}" ===`);
-
-      const result = await selectSingleOption(page, targetValue);
-
-      if (!result.success) {
-        return {
-          success: false,
-          reason: result.reason,
-          selectedOptions,
-          totalOptionPrice,
-        };
-      }
-
-      if (result.selectedOption) {
-        selectedOptions.push(result.selectedOption);
-        totalOptionPrice += result.price || 0;
-
-        // 각 옵션 선택 후 수량 설정
-        console.log(`[baemin] 옵션 "${result.selectedOption}" 수량 설정: ${quantity}개`);
-        await setQuantity(page, quantity);
-      }
-    }
+    // 2D 구조가 아닌 경우 에러
+    return {
+      success: false,
+      reason: "잘못된 옵션 구조: 2D 구조 [{options: [...]}] 형식이어야 합니다",
+      selectedOptions: [],
+      totalOptionPrice: 0,
+    };
   }
 
   console.log(`\n[baemin] 옵션 선택 완료: ${selectedOptions.length}개, 총 옵션가격: ${totalOptionPrice}원`);
