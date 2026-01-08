@@ -406,10 +406,14 @@ async function selectSingleOption(page, targetValue) {
 }
 
 /**
- * 옵션 선택 (복수 옵션 지원)
- * - 배민상회는 한 상품에서 2개 옵션을 선택할 수 있음
- * - 각 옵션 선택 후 수량을 설정해야 함
+ * 옵션 선택 (복수 옵션 지원 + 2D 세트 구조)
+ * - 배민상회는 한 상품에서 여러 옵션을 선택할 수 있음
+ * - 각 옵션(세트) 선택 후 수량을 설정해야 함
  * - 옵션 가격들을 합산하여 반환
+ *
+ * 지원 구조:
+ * - 2D (새 구조): [{options: [{value: "검정"}]}, {options: [{value: "노랑"}]}]
+ * - 1D (레거시): [{value: "검정"}, {value: "노랑"}]
  */
 async function selectOption(page, optionValue, quantity = 1) {
   if (!optionValue) {
@@ -417,54 +421,96 @@ async function selectOption(page, optionValue, quantity = 1) {
     return { success: true, selectedOption: null, selectedOptions: [], totalOptionPrice: 0 };
   }
 
-  // JSON 배열 형식인 경우 파싱하여 모든 옵션 처리
-  let targetValues = [];
-  try {
-    const parsed = JSON.parse(optionValue);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      // 배열의 모든 옵션 추출
-      targetValues = parsed.map((opt) => opt.value || opt).filter(Boolean);
-      console.log(`[baemin] JSON 옵션 파싱 완료: ${targetValues.length}개 옵션`);
-      targetValues.forEach((v, i) => console.log(`[baemin]   옵션 ${i + 1}: "${v}"`));
+  // JSON 파싱
+  let parsed = optionValue;
+  if (typeof optionValue === "string") {
+    try {
+      parsed = JSON.parse(optionValue);
+    } catch (e) {
+      // JSON이 아닌 경우 단일 옵션으로 처리
+      parsed = [{ value: optionValue }];
     }
-  } catch (e) {
-    // JSON이 아닌 경우 단일 옵션으로 처리
-    targetValues = [optionValue];
   }
 
-  if (targetValues.length === 0) {
+  if (!Array.isArray(parsed) || parsed.length === 0) {
     console.log("[baemin] 파싱된 옵션값 없음");
     return { success: true, selectedOption: null, selectedOptions: [], totalOptionPrice: 0 };
   }
 
-  console.log(`[baemin] 옵션 선택 시작: ${targetValues.length}개 (각 수량: ${quantity})`);
+  // 새로운 2D 구조 감지: [{options: [{value}, ...]}, ...]
+  const is2DStructure = parsed[0] && Array.isArray(parsed[0].options);
 
   const selectedOptions = [];
   let totalOptionPrice = 0;
 
-  // 각 옵션을 순차적으로 선택 + 수량 설정
-  for (let i = 0; i < targetValues.length; i++) {
-    const targetValue = targetValues[i];
-    console.log(`\n[baemin] === 옵션 ${i + 1}/${targetValues.length} 선택: "${targetValue}" ===`);
+  if (is2DStructure) {
+    // === 새로운 2D 구조 처리 ===
+    console.log(`[baemin] 2D 옵션 구조 감지: ${parsed.length}개 세트 (각 수량: ${quantity})`);
 
-    const result = await selectSingleOption(page, targetValue);
+    for (let s = 0; s < parsed.length; s++) {
+      const set = parsed[s];
+      const setOptions = set.options || [];
 
-    if (!result.success) {
-      return {
-        success: false,
-        reason: result.reason,
-        selectedOptions,
-        totalOptionPrice,
-      };
-    }
+      console.log(`\n[baemin] --- 세트 ${s + 1}/${parsed.length} 처리 시작 (${setOptions.length}개 옵션) ---`);
 
-    if (result.selectedOption) {
-      selectedOptions.push(result.selectedOption);
-      totalOptionPrice += result.price || 0;
+      // 세트 내 모든 옵션 선택
+      for (let i = 0; i < setOptions.length; i++) {
+        const option = setOptions[i];
+        const targetValue = option.value || option;
 
-      // 각 옵션 선택 후 수량 설정
-      console.log(`[baemin] 옵션 "${result.selectedOption}" 수량 설정: ${quantity}개`);
+        console.log(`[baemin] 세트 ${s + 1}, 옵션 ${i + 1}: "${targetValue}"`);
+
+        const result = await selectSingleOption(page, targetValue);
+
+        if (!result.success) {
+          return {
+            success: false,
+            reason: result.reason,
+            selectedOptions,
+            totalOptionPrice,
+          };
+        }
+
+        if (result.selectedOption) {
+          selectedOptions.push(result.selectedOption);
+          totalOptionPrice += result.price || 0;
+        }
+      }
+
+      // 세트 내 모든 옵션 선택 후 수량 설정
+      console.log(`[baemin] 세트 ${s + 1} 옵션 선택 완료, 수량 설정: ${quantity}개`);
       await setQuantity(page, quantity);
+    }
+  } else {
+    // === 기존 1D 구조 처리 (하위 호환) ===
+    const targetValues = parsed.map((opt) => opt.value || opt).filter(Boolean);
+    console.log(`[baemin] 1D 옵션 구조 (레거시): ${targetValues.length}개 옵션 (각 수량: ${quantity})`);
+    targetValues.forEach((v, i) => console.log(`[baemin]   옵션 ${i + 1}: "${v}"`));
+
+    // 각 옵션을 순차적으로 선택 + 수량 설정
+    for (let i = 0; i < targetValues.length; i++) {
+      const targetValue = targetValues[i];
+      console.log(`\n[baemin] === 옵션 ${i + 1}/${targetValues.length} 선택: "${targetValue}" ===`);
+
+      const result = await selectSingleOption(page, targetValue);
+
+      if (!result.success) {
+        return {
+          success: false,
+          reason: result.reason,
+          selectedOptions,
+          totalOptionPrice,
+        };
+      }
+
+      if (result.selectedOption) {
+        selectedOptions.push(result.selectedOption);
+        totalOptionPrice += result.price || 0;
+
+        // 각 옵션 선택 후 수량 설정
+        console.log(`[baemin] 옵션 "${result.selectedOption}" 수량 설정: ${quantity}개`);
+        await setQuantity(page, quantity);
+      }
     }
   }
 

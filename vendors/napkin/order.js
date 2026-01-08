@@ -489,141 +489,126 @@ async function clearCart(page) {
 }
 
 /**
- * 옵션 선택 (SELECT/INPUT_TEXT 타입 지원)
- * - tr > th로 title 찾고 → td에서 input/select 처리
- * @returns { success, unitPrice, totalPrice }
+ * 단일 옵션 처리 (SELECT/INPUT_TEXT 타입 지원)
+ * @returns { success, message? }
  */
-async function selectOptions(page, openMallOptions, quantity = 1, vendorPriceExcludeVat = null) {
-  if (!openMallOptions || openMallOptions.length === 0) {
-    console.log("[napkin] 옵션 없음, 스킵");
-    return { success: true, skipped: true };
-  }
+async function processSingleOption(page, option) {
+  const { title, value, type = "SELECT" } = option;
+  console.log(`[napkin] 옵션 처리 [${type}]: ${title} = ${value}`);
 
-  console.log("[napkin] 옵션 선택 시작:", JSON.stringify(openMallOptions));
-
-  // 옵션 탭 로딩 대기
-  console.log("[napkin] 옵션 탭 로딩 대기...");
-  const optionTab = await waitFor(page, '#sp-detail-optiontab > div > div', 10000);
-  if (!optionTab) {
-    console.log("[napkin] 옵션 탭 로딩 실패");
-    return { success: false, message: "옵션 탭 로딩 실패" };
-  }
-  await delay(500);
-
-  let optionIndex = 1;
-  let priceInfo = null;
-
-  for (const option of openMallOptions) {
-    const { title, value, type = "SELECT" } = option;
-    console.log(`[napkin] 옵션 처리 [${type}]: ${title} = ${value}`);
-
-    if (type === "INPUT_TEXT") {
-      // INPUT_TEXT: tr > th에서 title 찾고 → td에서 input에 텍스트 입력
-      const inputResult = await page.evaluate((optTitle, optValue) => {
-        // 모든 tr에서 th 텍스트로 찾기
-        const rows = document.querySelectorAll("tr");
-        for (const row of rows) {
-          const th = row.querySelector("th");
-          if (th) {
-            const thText = (th.textContent || "").trim();
-            if (thText.includes(optTitle)) {
-              // 같은 tr의 td에서 input 찾기
-              const td = row.querySelector("td");
-              if (td) {
-                const input = td.querySelector("input[type='text'], input:not([type]), textarea");
-                if (input) {
-                  input.focus();
-                  input.value = "";
-                  input.dispatchEvent(new Event("input", { bubbles: true }));
-                  input.value = optValue;
-                  input.dispatchEvent(new Event("input", { bubbles: true }));
-                  input.dispatchEvent(new Event("change", { bubbles: true }));
-                  return { found: true, thText };
-                }
+  if (type === "INPUT_TEXT") {
+    // INPUT_TEXT: tr > th에서 title 찾고 → td에서 input에 텍스트 입력
+    const inputResult = await page.evaluate((optTitle, optValue) => {
+      // 모든 tr에서 th 텍스트로 찾기
+      const rows = document.querySelectorAll("tr");
+      for (const row of rows) {
+        const th = row.querySelector("th");
+        if (th) {
+          const thText = (th.textContent || "").trim();
+          if (thText.includes(optTitle)) {
+            // 같은 tr의 td에서 input 찾기
+            const td = row.querySelector("td");
+            if (td) {
+              const input = td.querySelector("input[type='text'], input:not([type]), textarea");
+              if (input) {
+                input.focus();
+                input.value = "";
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+                input.value = optValue;
+                input.dispatchEvent(new Event("input", { bubbles: true }));
+                input.dispatchEvent(new Event("change", { bubbles: true }));
+                return { found: true, thText };
               }
             }
           }
         }
-        return { found: false };
-      }, title, value);
-
-      if (inputResult.found) {
-        console.log(`[napkin] ✅ INPUT_TEXT 입력 완료: "${title}" = "${value}"`);
-        await delay(800); // 페이지 업데이트 대기
-      } else {
-        console.log(`[napkin] ❌ INPUT_TEXT 입력창 못찾음: "${title}"`);
-        return { success: false, message: `텍스트 입력창 못찾음: ${title}` };
       }
+      return { found: false };
+    }, title, value);
 
+    if (inputResult.found) {
+      console.log(`[napkin] ✅ INPUT_TEXT 입력 완료: "${title}" = "${value}"`);
+      await delay(800); // 페이지 업데이트 대기
+      return { success: true };
     } else {
-      // SELECT: tr > th에서 title 찾고 → td에서 select 선택
-      const selectResult = await page.evaluate((optTitle, optValue) => {
-        const normalize = (str) => str.replace(/\s+/g, '');
-        const normalizedValue = normalize(optValue);
+      console.log(`[napkin] ❌ INPUT_TEXT 입력창 못찾음: "${title}"`);
+      return { success: false, message: `텍스트 입력창 못찾음: ${title}` };
+    }
 
-        // 모든 tr에서 th 텍스트로 찾기
-        const rows = document.querySelectorAll("tr");
-        for (const row of rows) {
-          const th = row.querySelector("th");
-          if (th) {
-            const thText = (th.textContent || "").trim();
-            if (thText.includes(optTitle)) {
-              // 같은 tr의 td에서 select 찾기
-              const td = row.querySelector("td");
-              if (td) {
-                const select = td.querySelector("select");
-                if (select) {
-                  // select 내에서 옵션 찾기
-                  const options = select.querySelectorAll("option");
-                  for (const opt of options) {
-                    const normalizedText = normalize(opt.textContent);
-                    const normalizedOptValue = normalize(opt.value);
-                    if (normalizedText.includes(normalizedValue) || normalizedValue.includes(normalizedText) ||
-                        normalizedOptValue.includes(normalizedValue) || normalizedValue.includes(normalizedOptValue)) {
-                      select.value = opt.value;
-                      select.dispatchEvent(new Event("change", { bubbles: true }));
-                      return { found: true, thText, selectedValue: opt.value, selectedText: opt.textContent };
-                    }
+  } else {
+    // SELECT: tr > th에서 title 찾고 → td에서 select 선택
+    const selectResult = await page.evaluate((optTitle, optValue) => {
+      const normalize = (str) => str.replace(/\s+/g, '');
+      const normalizedValue = normalize(optValue);
+
+      // 모든 tr에서 th 텍스트로 찾기
+      const rows = document.querySelectorAll("tr");
+      for (const row of rows) {
+        const th = row.querySelector("th");
+        if (th) {
+          const thText = (th.textContent || "").trim();
+          if (thText.includes(optTitle)) {
+            // 같은 tr의 td에서 select 찾기
+            const td = row.querySelector("td");
+            if (td) {
+              const select = td.querySelector("select");
+              if (select) {
+                // select 내에서 옵션 찾기
+                const options = select.querySelectorAll("option");
+                for (const opt of options) {
+                  const normalizedText = normalize(opt.textContent);
+                  const normalizedOptValue = normalize(opt.value);
+                  if (normalizedText.includes(normalizedValue) || normalizedValue.includes(normalizedText) ||
+                      normalizedOptValue.includes(normalizedValue) || normalizedValue.includes(normalizedOptValue)) {
+                    select.value = opt.value;
+                    select.dispatchEvent(new Event("change", { bubbles: true }));
+                    return { found: true, thText, selectedValue: opt.value, selectedText: opt.textContent };
                   }
                 }
               }
             }
           }
         }
+      }
 
-        // title로 못 찾으면 기존 방식 (모든 select에서 value로 검색)
-        const allSelects = document.querySelectorAll('select[id^="product_option_id"], select[class^="ProductOption"]');
-        for (const select of allSelects) {
-          const options = select.querySelectorAll("option");
-          for (const opt of options) {
-            const normalizedText = normalize(opt.textContent);
-            const normalizedOptValue = normalize(opt.value);
-            if (normalizedText.includes(normalizedValue) || normalizedValue.includes(normalizedText) ||
-                normalizedOptValue.includes(normalizedValue) || normalizedValue.includes(normalizedOptValue)) {
-              select.value = opt.value;
-              select.dispatchEvent(new Event("change", { bubbles: true }));
-              return { found: true, fallback: true, selectedValue: opt.value, selectedText: opt.textContent };
-            }
+      // title로 못 찾으면 기존 방식 (모든 select에서 value로 검색)
+      const allSelects = document.querySelectorAll('select[id^="product_option_id"], select[class^="ProductOption"]');
+      for (const select of allSelects) {
+        const options = select.querySelectorAll("option");
+        for (const opt of options) {
+          const normalizedText = normalize(opt.textContent);
+          const normalizedOptValue = normalize(opt.value);
+          if (normalizedText.includes(normalizedValue) || normalizedValue.includes(normalizedText) ||
+              normalizedOptValue.includes(normalizedValue) || normalizedValue.includes(normalizedOptValue)) {
+            select.value = opt.value;
+            select.dispatchEvent(new Event("change", { bubbles: true }));
+            return { found: true, fallback: true, selectedValue: opt.value, selectedText: opt.textContent };
           }
         }
-
-        return { found: false };
-      }, title, value);
-
-      if (selectResult.found) {
-        console.log(`[napkin] ✅ SELECT 선택 완료: "${title}" = "${selectResult.selectedText || value}"`);
-        await delay(2000); // 페이지 업데이트 대기
-      } else {
-        console.log(`[napkin] ❌ SELECT 옵션 못찾음: "${title}" = "${value}"`);
-        return { success: false, message: `옵션 "${value}" 선택 실패` };
       }
+
+      return { found: false };
+    }, title, value);
+
+    if (selectResult.found) {
+      console.log(`[napkin] ✅ SELECT 선택 완료: "${title}" = "${selectResult.selectedText || value}"`);
+      await delay(2000); // 페이지 업데이트 대기
+      return { success: true };
+    } else {
+      console.log(`[napkin] ❌ SELECT 옵션 못찾음: "${title}" = "${value}"`);
+      return { success: false, message: `옵션 "${value}" 선택 실패` };
     }
   }
+}
 
-  console.log("[napkin] 모든 옵션 처리 완료, 수량 필드 대기...");
-  await delay(2000);
+/**
+ * 수량 설정 및 가격 정보 추출
+ * @returns { priceInfo }
+ */
+async function setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat) {
+  let priceInfo = null;
 
-  // 모든 옵션 선택 후 수량 필드 찾기 및 수량 설정
+  // 수량 필드 찾기 및 수량 설정
   const quantitySelector = '#option_box1_quantity';
   console.log(`[napkin] 수량 필드 대기: ${quantitySelector} (수량: ${quantity})`);
 
@@ -686,7 +671,89 @@ async function selectOptions(page, openMallOptions, quantity = 1, vendorPriceExc
     }
   }
 
+  return priceInfo;
+}
+
+/**
+ * 옵션 선택 (SELECT/INPUT_TEXT 타입 지원 + 2D 세트 구조)
+ * - tr > th로 title 찾고 → td에서 input/select 처리
+ *
+ * 지원 구조:
+ * - 2D (새 구조): [{options: [{title, value, type}, ...]}, ...]
+ * - 1D (레거시): [{title, value, type}, ...]
+ *
+ * @returns { success, priceInfo }
+ */
+async function selectOptions(page, openMallOptions, quantity = 1, vendorPriceExcludeVat = null) {
+  if (!openMallOptions || openMallOptions.length === 0) {
+    console.log("[napkin] 옵션 없음, 스킵");
+    return { success: true, skipped: true };
+  }
+
+  console.log("[napkin] 옵션 선택 시작:", JSON.stringify(openMallOptions));
+
+  // 옵션 탭 로딩 대기
+  console.log("[napkin] 옵션 탭 로딩 대기...");
+  const optionTab = await waitFor(page, '#sp-detail-optiontab > div > div', 10000);
+  if (!optionTab) {
+    console.log("[napkin] 옵션 탭 로딩 실패");
+    return { success: false, message: "옵션 탭 로딩 실패" };
+  }
+  await delay(500);
+
+  let priceInfo = null;
+
+  // 새로운 2D 구조 감지: [{options: [{title, value}, ...]}, ...]
+  const is2DStructure = openMallOptions[0] && Array.isArray(openMallOptions[0].options);
+
+  if (is2DStructure) {
+    // === 새로운 2D 구조 처리 ===
+    console.log(`[napkin] 2D 옵션 구조 감지: ${openMallOptions.length}개 세트`);
+
+    for (let s = 0; s < openMallOptions.length; s++) {
+      const set = openMallOptions[s];
+      const setOptions = set.options || [];
+
+      console.log(`[napkin] --- 세트 ${s + 1}/${openMallOptions.length} 처리 시작 (${setOptions.length}개 옵션) ---`);
+
+      // 세트 내 모든 옵션 선택
+      for (let i = 0; i < setOptions.length; i++) {
+        const option = setOptions[i];
+        console.log(`[napkin] 세트 ${s + 1}, 옵션 ${i + 1}: ${option.title} = ${option.value}`);
+
+        const result = await processSingleOption(page, option);
+        if (!result.success) {
+          return result;
+        }
+      }
+
+      // 세트 내 모든 옵션 선택 후 수량 설정 및 가격 확인
+      console.log(`[napkin] 세트 ${s + 1} 옵션 선택 완료, 수량 필드 대기...`);
+      await delay(2000);
+
+      priceInfo = await setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat);
+      await delay(1000);
+    }
+
+    return { success: true, priceInfo };
+  }
+
+  // === 기존 1D 구조 처리 (하위 호환) ===
+  console.log(`[napkin] 1D 옵션 구조 (레거시): ${openMallOptions.length}개 옵션`);
+
+  for (const option of openMallOptions) {
+    const result = await processSingleOption(page, option);
+    if (!result.success) {
+      return result;
+    }
+  }
+
+  console.log("[napkin] 모든 옵션 처리 완료, 수량 필드 대기...");
+  await delay(2000);
+
+  priceInfo = await setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat);
   await delay(1000);
+
   return { success: true, priceInfo };
 }
 

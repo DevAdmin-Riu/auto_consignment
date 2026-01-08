@@ -174,6 +174,47 @@ async function selectOptions(page, openMallOptions, quantity = 1) {
     }
   }
 
+  // 새로운 2D 구조 감지: [{options: [{title, value}, ...]}, ...]
+  const is2DStructure = options[0] && Array.isArray(options[0].options);
+
+  if (is2DStructure) {
+    // === 새로운 2D 구조 처리 ===
+    console.log(`[naver] 2D 옵션 구조 감지: ${options.length}개 세트`);
+
+    for (let s = 0; s < options.length; s++) {
+      const set = options[s];
+      const setOptions = set.options || [];
+
+      console.log(`[naver] --- 세트 ${s + 1}/${options.length} 처리 시작 (${setOptions.length}개 옵션) ---`);
+
+      // 세트 내 모든 옵션 선택
+      for (let i = 0; i < setOptions.length; i++) {
+        const option = setOptions[i];
+
+        // 옵션 유효성 검사
+        if (!option || !option.title || !option.value) {
+          return { success: false, reason: `세트 ${s + 1} 옵션 ${i + 1} 데이터 오류: ${JSON.stringify(option)}` };
+        }
+
+        console.log(`[naver] 세트 ${s + 1}, 옵션 ${i + 1}: ${option.title} = ${option.value}`);
+        await delay(500);
+
+        const result = await selectSingleOption(page, option);
+        if (!result.success) {
+          return result;
+        }
+      }
+
+      // 세트 내 모든 옵션 선택 후 수량 설정
+      console.log(`[naver] 세트 ${s + 1} 옵션 선택 완료, 수량 설정: ${quantity}개`);
+      await setQuantity(page, quantity);
+      await delay(500);
+    }
+
+    return { success: true, groupsProcessed: options.length, quantityHandled: true };
+  }
+
+  // === 기존 1D 구조 처리 (하위 호환) ===
   // 첫 번째 옵션 유효성 검사
   const firstOption = options[0];
   if (!firstOption || !firstOption.title || !firstOption.value) {
@@ -189,7 +230,7 @@ async function selectOptions(page, openMallOptions, quantity = 1) {
   }
   const titleCount = uniqueTitles.length;
 
-  console.log(`[naver] 옵션 선택 시작: 총 ${options.length}개, 고유 타이틀 ${titleCount}개`);
+  console.log(`[naver] 1D 옵션 구조 (레거시): 총 ${options.length}개, 고유 타이틀 ${titleCount}개`);
   console.log(`[naver] 고유 타이틀: ${uniqueTitles.join(", ")}`);
 
   // 그룹화 여부 판단: 옵션 개수가 타이틀 개수의 배수이고, 2개 이상의 그룹이 있을 때
