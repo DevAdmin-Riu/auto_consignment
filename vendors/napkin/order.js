@@ -603,14 +603,15 @@ async function processSingleOption(page, option) {
 
 /**
  * 수량 설정 및 가격 정보 추출
+ * @param {number} boxIndex - 옵션 박스 인덱스 (1부터 시작, 세트 추가 시 증가)
  * @returns { priceInfo }
  */
-async function setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat) {
+async function setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat, boxIndex = 1) {
   let priceInfo = null;
 
-  // 수량 필드 찾기 및 수량 설정
-  const quantitySelector = '#option_box1_quantity';
-  console.log(`[napkin] 수량 필드 대기: ${quantitySelector} (수량: ${quantity})`);
+  // 수량 필드 찾기 및 수량 설정 (세트별로 다른 박스)
+  const quantitySelector = `#option_box${boxIndex}_quantity`;
+  console.log(`[napkin] 수량 필드 대기: ${quantitySelector} (수량: ${quantity}, 박스: ${boxIndex})`);
 
   const quantityInput = await waitFor(page, quantitySelector, 10000);
   if (!quantityInput) {
@@ -618,7 +619,7 @@ async function setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat) {
   }
 
   if (quantityInput && quantity > 1) {
-    console.log(`[napkin] 수량 입력: ${quantity}`);
+    console.log(`[napkin] 수량 입력: ${quantity} (박스 ${boxIndex})`);
     await quantityInput.click();
     await delay(100);
     await quantityInput.click({ clickCount: 3 });
@@ -631,8 +632,8 @@ async function setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat) {
     await delay(2000);
   }
 
-  // 가격 정보 가져오기
-  const priceSelector = '#option_box1_price input.option_box_price';
+  // 가격 정보 가져오기 (세트별로 다른 박스)
+  const priceSelector = `#option_box${boxIndex}_price input.option_box_price`;
   const priceInput = await page.$(priceSelector);
 
   if (priceInput) {
@@ -728,7 +729,7 @@ async function selectOptions(page, openMallOptions, quantity = 1, vendorPriceExc
       console.log(`[napkin] 세트 ${s + 1} 옵션 선택 완료, 수량 필드 대기...`);
       await delay(2000);
 
-      priceInfo = await setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat);
+      priceInfo = await setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat, s + 1);
       await delay(1000);
     }
 
