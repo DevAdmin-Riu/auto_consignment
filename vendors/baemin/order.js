@@ -1847,6 +1847,7 @@ async function processBaeminOrder(
         priceMismatch: p.priceMismatch,
         selectedOption: p.selectedOption || null,
         optionFailed: p.optionFailed || false,
+        needsManagerVerification: p.needsManagerVerification || false,
       })),
       priceMismatchCount: priceMismatchList.length,
       priceMismatches: priceMismatches,

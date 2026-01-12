@@ -2200,6 +2200,7 @@ async function processAdpiaOrder(page, vendor, products, shippingInfo, res) {
         productSku: p.productSku,
         quantity: p.quantity,
         vendorPriceExcludeVat: p.vendorPriceExcludeVat,
+        needsManagerVerification: p.needsManagerVerification || false,
       })),
       orderResult: {
         placed: !!vendorOrderNumber,

@@ -104,7 +104,7 @@ async function selectSingleOption(page, option) {
     console.log(`[naver] 옵션 드롭다운 열기: ${option.title}`);
     await delay(1000);
 
-    // 드롭다운에서 옵션 값 선택 (li 항목 중 텍스트 매칭)
+    // 드롭다운에서 옵션 값 선택 (li 항목 중 텍스트 매칭 - 정확히 일치만 허용)
     const selected = await page.evaluate((targetValue) => {
       const items = document.querySelectorAll(
         "ul[role='listbox'] li a, div[role='listbox'] li a, .option_list li a"
@@ -113,11 +113,8 @@ async function selectSingleOption(page, option) {
         const rawText = item.textContent?.trim() || "";
         // 가격 부분 제거: "무지긴팔 (-3,500원)" → "무지긴팔"
         const text = rawText.replace(/\s*\([+-]?[\d,]+원\)\s*$/, "").trim();
-        if (
-          text === targetValue ||
-          text.includes(targetValue) ||
-          targetValue.includes(text)
-        ) {
+        // 정확히 일치하는 경우만 선택
+        if (text === targetValue) {
           item.click();
           return rawText;
         }
@@ -611,32 +608,39 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
 async function selectDeliveryAddress(page, shippingAddress) {
   console.log("[naver] 배송지 선택 시작...");
 
+  // 페이지 로딩 대기
+  await delay(2000);
+
   // 배송지 변경 버튼 셀렉터 (우선순위 순)
   const changeBtnSelectors = [
-    // 사용자 제공 정확한 셀렉터
-    "#root > div > div.DoubleTemplate_container__5LG6a > div.DoubleTemplate_content__KzCZb > div.DoubleTemplate_content-left__lMo44 > div > div:nth-child(1) > div.ContentWrapper_article__Bg6i8.ContentWrapper_bg-white__lpLoa > div > div.DeliveryContent_article__enYD0 > div.DeliveryContent_area-button__jrUnt > button",
-    // 클래스 기반 폴백
+    // 클래스 기반 (더 안정적)
     "div.DeliveryContent_area-button__jrUnt > button",
-    "[class*='DeliveryContent'] [class*='area-button'] button",
-    "[class*='delivery'] button",
+    "[class*='DeliveryContent_area-button'] > button",
+    "[class*='area-button'] > button",
+    // ButtonBox 클래스로 직접 찾기
+    "button[class*='ButtonBox-module'][class*='tertiary']",
   ];
 
   let changeBtn = null;
+
+  // waitFor로 대기하면서 찾기
   for (const selector of changeBtnSelectors) {
     try {
-      changeBtn = await page.$(selector);
+      console.log(`[naver] 셀렉터 시도: ${selector.substring(0, 50)}...`);
+      changeBtn = await waitFor(page, selector, 3000);
       if (changeBtn) {
         console.log(`[naver] 배송지 변경 버튼 찾음: ${selector.substring(0, 50)}...`);
         break;
       }
     } catch (e) {
-      console.log(`[naver] 셀렉터 오류: ${e.message}`);
+      // 타임아웃은 무시하고 다음 셀렉터 시도
     }
   }
 
   // 텍스트 기반 검색 폴백
   if (!changeBtn) {
     console.log("[naver] 텍스트 기반으로 변경 버튼 검색...");
+    await delay(1000);
     const jsHandle = await page.evaluateHandle(() => {
       const buttons = document.querySelectorAll("button");
       for (const btn of buttons) {
@@ -1464,6 +1468,7 @@ async function processNaverOrder(
             openMallPrice: p.openMallPrice,                    // 오픈몰 현재 가격 (VAT 포함)
             vendorPriceExcludeVat: p.vendorPriceExcludeVat,    // 협력사 매입가 (VAT 별도)
             priceMismatch: p.priceMismatch,
+            needsManagerVerification: p.needsManagerVerification || false,
           })),
           // 가격 불일치 관련
           priceMismatchCount: priceMismatchList.length,

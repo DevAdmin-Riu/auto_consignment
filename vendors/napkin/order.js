@@ -940,6 +940,7 @@ async function processNapkinOrder(
           success: true,
           message: "장바구니 담기 완료",
           priceInfo,
+          needsManagerVerification: product.needsManagerVerification || false,
         });
 
       } catch (productError) {

@@ -868,6 +868,7 @@ async function processCoupangOrder(
       openMallPrice: p.priceMismatch?.coupangPrice || null,   // 쿠팡 현재 가격
       vendorPriceExcludeVat: p.priceMismatch?.vendorPriceExcludeVat || null,  // 협력사 매입가 (VAT 별도)
       priceMismatch: p.priceMismatch?.detected || false,
+      needsManagerVerification: p.needsManagerVerification || false,
     })),
     // 가격 불일치 관련
     priceMismatchCount: priceMismatchList.length,
