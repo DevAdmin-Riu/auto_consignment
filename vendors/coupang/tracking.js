@@ -6,6 +6,11 @@
 
 const { coupangLogin } = require("./login");
 const { normalizeCarrier } = require("../../lib/carrier");
+const {
+  createTrackingErrorCollector,
+  TRACKING_STEPS,
+  ERROR_CODES,
+} = require("../../lib/automation-error");
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -21,6 +26,7 @@ async function getCoupangTrackingNumbers(page, vendor, openMallOrderNumbers) {
   console.log(`[송장조회] 시작: ${openMallOrderNumbers.length}건`);
 
   const results = [];
+  const errorCollector = createTrackingErrorCollector("coupang");
 
   try {
     // 1. 로그인 확인/처리
@@ -47,13 +53,21 @@ async function getCoupangTrackingNumbers(page, vendor, openMallOrderNumbers) {
         }
       } catch (error) {
         console.error(`[송장조회] ${openMallOrderNumber} 에러:`, error.message);
+        errorCollector.addError(TRACKING_STEPS.EXTRACTION, ERROR_CODES.EXTRACTION_FAILED, error.message, { openMallOrderNumber });
       }
     }
 
-    return results;
+    return {
+      results,
+      automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
+    };
   } catch (error) {
     console.error("[송장조회] 전체 에러:", error);
-    return results;
+    errorCollector.addError(TRACKING_STEPS.LOGIN, ERROR_CODES.LOGIN_FAILED, error.message);
+    return {
+      results,
+      automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
+    };
   }
 }
 

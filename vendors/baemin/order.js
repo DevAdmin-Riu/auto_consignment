@@ -14,6 +14,12 @@ const fs = require("fs");
 const path = require("path");
 const { getLoginStatus, setLoginStatus, delay } = require("../../lib/browser");
 const { enterNaverPayPin } = require("../naver/order");
+const {
+  createOrderErrorCollector,
+  ORDER_STEPS,
+  ERROR_CODES,
+} = require("../../lib/automation-error");
+const { saveOrderResults } = require("../../lib/graphql-client");
 
 // ==================== 셀렉터 정의 ====================
 
@@ -1587,7 +1593,8 @@ async function processBaeminOrder(
   res,
   page,
   vendor,
-  { products, purchaseOrderId, shippingAddress, lineIds }
+  { products, purchaseOrderId, shippingAddress, lineIds },
+  authToken
 ) {
   console.log("\n========================================");
   console.log("[baemin] 배민상회 주문 처리 시작");
@@ -1599,6 +1606,7 @@ async function processBaeminOrder(
   const addedProducts = [];
   // lineIds를 직접 사용 (request body에서 전달됨)
   const purchaseOrderLineIds = lineIds || [];
+  const errorCollector = createOrderErrorCollector("baemin");
 
   try {
     // 1. 로그인
@@ -1610,11 +1618,27 @@ async function processBaeminOrder(
     });
 
     if (!loginResult.success) {
+      errorCollector.addError(
+        ORDER_STEPS.LOGIN,
+        ERROR_CODES.LOGIN_FAILED,
+        loginResult.message,
+        { purchaseOrderId }
+      );
+      await saveOrderResults(authToken, {
+        purchaseOrderId,
+        products: [],
+        priceMismatches: [],
+        optionFailedProducts: [],
+        automationErrors: errorCollector.getErrors(),
+        lineIds,
+        success: false,
+      });
       return res.json({
         success: false,
         message: `로그인 실패: ${loginResult.message}`,
         purchaseOrderId,
         steps,
+        automationErrors: errorCollector.getErrors(),
       });
     }
 
@@ -1727,6 +1751,16 @@ async function processBaeminOrder(
         });
       } catch (error) {
         console.error(`[baemin] 상품 처리 실패:`, error.message);
+        errorCollector.addError(
+          ORDER_STEPS.ADD_TO_CART,
+          null,
+          error.message,
+          {
+            purchaseOrderId,
+            purchaseOrderLineId: product.purchaseOrderLineId,
+            productVariantVendorId: product.productVariantVendorId,
+          }
+        );
         steps.push({
           step: `product_${i + 1}`,
           productName: product.productName,
@@ -1777,13 +1811,38 @@ async function processBaeminOrder(
     // 7. 결과 반환
     const successfulProducts = addedProducts.filter((p) => p.addedToCart);
 
+    // 옵션 실패 상품 필터링 (조기 정의)
+    const optionFailedProducts = addedProducts
+      .filter((p) => p.optionFailed)
+      .map((p) => ({
+        orderLineId: p.orderLineId,
+        purchaseOrderLineId: p.purchaseOrderLineId,
+        productVariantVendorId: p.productVariantVendorId,
+        productSku: p.productSku,
+        productName: p.productName,
+        reason: p.optionFailReason,
+      }));
+
     if (successfulProducts.length === 0) {
+      await saveOrderResults(authToken, {
+        purchaseOrderId,
+        products: addedProducts || [],
+        priceMismatches: [],
+        optionFailedProducts: optionFailedProducts?.map(p => ({
+          productVariantVendorId: p.productVariantVendorId,
+          reason: p.optionFailReason || p.reason,
+        })) || [],
+        automationErrors: errorCollector.getErrors(),
+        lineIds,
+        success: false,
+      });
       return res.json({
         success: false,
         message: "장바구니에 담긴 상품이 없습니다",
         purchaseOrderId,
         steps,
         addedProducts,
+        automationErrors: errorCollector.getErrors(),
       });
     }
 
@@ -1809,22 +1868,27 @@ async function processBaeminOrder(
       };
     });
 
-    // 옵션 실패 상품 필터링
-    const optionFailedProducts = addedProducts
-      .filter((p) => p.optionFailed)
-      .map((p) => ({
-        orderLineId: p.orderLineId,
-        purchaseOrderLineId: p.purchaseOrderLineId,
-        productVariantVendorId: p.productVariantVendorId,
-        productSku: p.productSku,
-        productName: p.productName,
-        reason: p.optionFailReason,
-      }));
-
     // 결제 결과에서 주문번호 추출
     const paymentStep = steps.find((s) => s.step === "payment");
     const finalOrderNumber = paymentStep?.orderNumber || null;
     const paymentSuccess = paymentStep?.success || false;
+
+    await saveOrderResults(authToken, {
+      purchaseOrderId,
+      products: addedProducts.map(p => ({
+        orderLineId: p.orderLineId,
+        openMallOrderNumber: finalOrderNumber,
+      })),
+      priceMismatches: priceMismatches?.map(p => ({
+        productVariantVendorId: p.productVariantVendorId,
+        vendorPriceExcludeVat: p.vendorPriceExcludeVat,
+        openMallPrice: p.openMallPrice,
+      })) || [],
+      optionFailedProducts: [],
+      automationErrors: [],
+      lineIds,
+      success: true,
+    });
 
     return res.json({
       success: true,
@@ -1859,11 +1923,27 @@ async function processBaeminOrder(
     });
   } catch (error) {
     console.error("[baemin] 주문 처리 에러:", error);
+    errorCollector.addError(
+      ORDER_STEPS.ORDER_PLACEMENT,
+      ERROR_CODES.UNEXPECTED_ERROR,
+      error.message,
+      { purchaseOrderId }
+    );
+    await saveOrderResults(authToken, {
+      purchaseOrderId,
+      products: addedProducts || [],
+      priceMismatches: [],
+      optionFailedProducts: [],
+      automationErrors: errorCollector.getErrors(),
+      lineIds,
+      success: false,
+    });
     return res.json({
       success: false,
       message: error.message,
       purchaseOrderId,
       steps,
+      automationErrors: errorCollector.getErrors(),
     });
   }
 }

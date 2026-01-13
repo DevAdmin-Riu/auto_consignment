@@ -14,6 +14,12 @@ const fs = require("fs");
 const path = require("path");
 const { spawn } = require("child_process");
 const { getEnv } = require("../config");
+const {
+  createOrderErrorCollector,
+  ORDER_STEPS,
+  ERROR_CODES,
+} = require("../../lib/automation-error");
+const { saveOrderResults } = require("../../lib/graphql-client");
 
 // 임시 파일 저장 경로
 const TEMP_DIR = path.join(__dirname, "../../temp");
@@ -826,7 +832,8 @@ async function processNapkinOrder(
   res,
   page,
   vendor,
-  { products, purchaseOrderId, shippingAddress, lineIds }
+  { products, purchaseOrderId, shippingAddress, lineIds },
+  authToken
 ) {
   console.log("=".repeat(50));
   console.log("[napkin] 주문 처리 시작");
@@ -837,14 +844,28 @@ async function processNapkinOrder(
   // lineIds 직접 사용
   const purchaseOrderLineIds = lineIds || [];
 
+  // 에러 수집기 초기화
+  const errorCollector = createOrderErrorCollector("napkin");
+
   try {
     // 1. 로그인
     const loginResult = await loginToNapkin(page, vendor);
     if (!loginResult.success) {
+      errorCollector.addError(ORDER_STEPS.LOGIN, ERROR_CODES.LOGIN_FAILED, loginResult.message, { purchaseOrderId });
+      await saveOrderResults(authToken, {
+        purchaseOrderId,
+        products: [],
+        priceMismatches: [],
+        optionFailedProducts: [],
+        automationErrors: errorCollector.getErrors(),
+        lineIds,
+        success: false,
+      });
       return res.json({
         success: false,
         vendor: vendor.name,
         message: `로그인 실패: ${loginResult.message}`,
+        automationErrors: errorCollector.getErrors(),
       });
     }
 
@@ -898,6 +919,11 @@ async function processNapkinOrder(
         if (hasOptions) {
           const optionResult = await selectOptions(page, options, actualQuantity, product.vendorPriceExcludeVat);
           if (!optionResult.success) {
+            errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, optionResult.message, {
+              purchaseOrderId,
+              purchaseOrderLineId: lineId,
+              productVariantVendorId: product.productVariantVendorId,
+            });
             results.push({
               lineId,
               productName: product.productName,
@@ -919,6 +945,11 @@ async function processNapkinOrder(
         // 3-4. 장바구니 담기
         const cartResult = await addToCart(page);
         if (!cartResult.success) {
+          errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, cartResult.message, {
+            purchaseOrderId,
+            purchaseOrderLineId: lineId,
+            productVariantVendorId: product.productVariantVendorId,
+          });
           results.push({
             lineId,
             productName: product.productName,
@@ -945,6 +976,11 @@ async function processNapkinOrder(
 
       } catch (productError) {
         console.error(`[napkin] 상품 처리 에러:`, productError.message);
+        errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, productError.message, {
+          purchaseOrderId,
+          purchaseOrderLineId: lineId,
+          productVariantVendorId: product.productVariantVendorId,
+        });
         results.push({
           lineId,
           productName: product.productName,
@@ -960,6 +996,21 @@ async function processNapkinOrder(
     const successCount = results.filter(r => r.success).length;
     if (successCount === 0) {
       console.log("[napkin] 모든 상품 처리 실패 - 장바구니 이동 안함");
+      const optionFailedProducts = results
+        .filter(r => !r.success && r.message?.includes('옵션'))
+        .map(r => ({
+          productVariantVendorId: r.productVariantVendorId,
+          reason: r.message,
+        }));
+      await saveOrderResults(authToken, {
+        purchaseOrderId,
+        products: [],
+        priceMismatches: [],
+        optionFailedProducts,
+        automationErrors: errorCollector.getErrors(),
+        lineIds,
+        success: false,
+      });
       return res.json({
         success: false,
         vendor: vendor.name,
@@ -967,6 +1018,7 @@ async function processNapkinOrder(
         message: "모든 상품 처리 실패",
         results,
         lineIds: purchaseOrderLineIds,
+        automationErrors: errorCollector.getErrors(),
       });
     }
 
@@ -1375,6 +1427,24 @@ async function processNapkinOrder(
         reason: r.message,
       }));
 
+    // saveOrderResults 호출 (성공)
+    await saveOrderResults(authToken, {
+      purchaseOrderId,
+      products: products.map(p => ({
+        orderLineId: p.orderLineId,
+        openMallOrderNumber: vendorOrderNumber || null,
+      })),
+      priceMismatches: priceMismatches?.map(p => ({
+        productVariantVendorId: p.productVariantVendorId,
+        vendorPriceExcludeVat: p.vendorPriceExcludeVat,
+        openMallPrice: p.openMallPrice,
+      })) || [],
+      optionFailedProducts: [],
+      automationErrors: [],
+      lineIds,
+      success: true,
+    });
+
     return res.json({
       success: true,
       message: vendorOrderNumber
@@ -1408,10 +1478,20 @@ async function processNapkinOrder(
 
   } catch (error) {
     console.error("[napkin] 주문 처리 에러:", error);
+    await saveOrderResults(authToken, {
+      purchaseOrderId,
+      products: [],
+      priceMismatches: [],
+      optionFailedProducts: [],
+      automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : [],
+      lineIds,
+      success: false,
+    });
     return res.json({
       success: false,
       vendor: vendor.name,
       message: `주문 처리 에러: ${error.message}`,
+      automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
     });
   }
 }

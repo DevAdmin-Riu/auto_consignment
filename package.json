@@ -21,7 +21,8 @@
     "docker:start": "docker compose -f ./docker-compose.yml up -d",
     "docker:stop": "docker compose -f ./docker-compose.yml down",
     "docker:restart": "docker compose -f ./docker-compose.yml restart",
-    "docker:logs": "docker logs -f n8n"
+    "docker:logs": "docker logs -f n8n",
+    "docker:open": "open -a Docker"
   },
   "keywords": [],
   "author": "",

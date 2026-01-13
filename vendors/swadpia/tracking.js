@@ -5,6 +5,11 @@
  */
 
 const { login } = require("./order");
+const {
+  createTrackingErrorCollector,
+  TRACKING_STEPS,
+  ERROR_CODES,
+} = require("../../lib/automation-error");
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -35,15 +40,21 @@ const SELECTORS = {
 async function getSwadpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
   console.log(`[swadpia 송장조회] 시작: ${openMallOrderNumbers.length}건`);
 
+  const errorCollector = createTrackingErrorCollector("swadpia");
   const results = [];
 
   try {
     // 1. 로그인 확인/처리
-    await login(page, {
-      email: vendor.email,
-      password: vendor.password,
-    });
-    console.log("[swadpia 송장조회] 로그인 완료");
+    try {
+      await login(page, {
+        email: vendor.email,
+        password: vendor.password,
+      });
+      console.log("[swadpia 송장조회] 로그인 완료");
+    } catch (loginError) {
+      errorCollector.addError(TRACKING_STEPS.LOGIN, ERROR_CODES.LOGIN_FAILED, loginError.message);
+      throw loginError;
+    }
 
     // 2. 주문완료/배송조회 페이지로 이동
     console.log("[swadpia 송장조회] 주문완료/배송조회 페이지로 이동...");
@@ -110,13 +121,14 @@ async function getSwadpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
 
       } catch (error) {
         console.error(`[swadpia 송장조회] ${openMallOrderNumber} 에러:`, error.message);
+        errorCollector.addError(TRACKING_STEPS.EXTRACTION, ERROR_CODES.EXTRACTION_FAILED, error.message, { openMallOrderNumber });
       }
     }
 
-    return results;
+    return { results, automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined };
   } catch (error) {
     console.error("[swadpia 송장조회] 전체 에러:", error);
-    return results;
+    return { results, automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined };
   }
 }
 

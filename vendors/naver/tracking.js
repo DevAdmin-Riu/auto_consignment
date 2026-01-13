@@ -11,6 +11,11 @@
 
 const { login } = require("./login");
 const { normalizeCarrier } = require("../../lib/carrier");
+const {
+  createTrackingErrorCollector,
+  TRACKING_STEPS,
+  ERROR_CODES,
+} = require("../../lib/automation-error");
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -49,11 +54,22 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
   console.log(`[naver 송장조회] 시작: ${openMallOrderNumbers.length}건`);
 
   const results = [];
+  const errorCollector = createTrackingErrorCollector("naver");
 
   try {
     // 1. 로그인 확인/처리
-    await login(page, vendor);
-    console.log("[naver 송장조회] 로그인 완료");
+    try {
+      await login(page, vendor);
+      console.log("[naver 송장조회] 로그인 완료");
+    } catch (loginError) {
+      console.error("[naver 송장조회] 로그인 실패:", loginError.message);
+      errorCollector.addError(
+        TRACKING_STEPS.LOGIN,
+        ERROR_CODES.LOGIN_FAILED,
+        loginError.message
+      );
+      return { results, automationErrors: errorCollector.getErrors() };
+    }
 
     // 2. 각 주문번호에 대해 조회
     for (const openMallOrderNumber of openMallOrderNumbers) {
@@ -80,6 +96,7 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
           console.log(
             `[naver 송장조회] ${openMallOrderNumber}: 배송조회 버튼 없음 (아직 배송 전)`
           );
+          // 배송 전이므로 에러가 아님 - 에러 수집 안함
           continue;
         }
 
@@ -137,6 +154,12 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
             console.log(
               `[naver 송장조회] ${openMallOrderNumber}: 송장번호 추출 실패`
             );
+            errorCollector.addError(
+              TRACKING_STEPS.EXTRACTION,
+              ERROR_CODES.EXTRACTION_FAILED,
+              "송장번호 추출 실패",
+              { openMallOrderNumber }
+            );
           }
         }
 
@@ -156,6 +179,7 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
           console.log(
             `[naver 송장조회] ${openMallOrderNumber}: 송장번호를 찾을 수 없음`
           );
+          // 송장번호가 없는 경우는 아직 발송 전일 수 있으므로 에러 수집 안함
         }
 
         // 다음 조회 전 딜레이
@@ -165,16 +189,33 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
           `[naver 송장조회] ${openMallOrderNumber} 에러:`,
           error.message
         );
+        errorCollector.addError(
+          TRACKING_STEPS.EXTRACTION,
+          null, // 에러 메시지에서 추론
+          error.message,
+          { openMallOrderNumber }
+        );
       }
     }
 
     console.log(
       `[naver 송장조회] 완료: ${results.length}/${openMallOrderNumbers.length}건 조회됨`
     );
-    return results;
+    return {
+      results,
+      automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
+    };
   } catch (error) {
     console.error("[naver 송장조회] 전체 에러:", error);
-    return results;
+    errorCollector.addError(
+      TRACKING_STEPS.EXTRACTION,
+      ERROR_CODES.UNEXPECTED_ERROR,
+      error.message
+    );
+    return {
+      results,
+      automationErrors: errorCollector.getErrors(),
+    };
   }
 }
 

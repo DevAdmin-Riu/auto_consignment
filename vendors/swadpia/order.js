@@ -4,6 +4,12 @@ const path = require("path");
 const https = require("https");
 const http = require("http");
 const { spawn } = require("child_process");
+const {
+  createOrderErrorCollector,
+  ORDER_STEPS,
+  ERROR_CODES,
+} = require("../../lib/automation-error");
+const { saveOrderResults } = require("../../lib/graphql-client");
 
 // 임시 파일 저장 경로
 const TEMP_DIR = path.join(__dirname, "../../temp");
@@ -1878,10 +1884,12 @@ async function processSwadpiaOrder(
   res,
   page,
   vendor,
-  { products, shippingAddress, lineIds, purchaseOrderId }
+  { products, shippingAddress, lineIds, purchaseOrderId },
+  authToken
 ) {
   const downloadedFiles = []; // 다운로드한 파일 경로들
   const MAX_RETRY = 2; // 최대 재시도 횟수
+  const errorCollector = createOrderErrorCollector("swadpia");
 
   try {
     console.log("[swadpia] 주문 처리 시작...");
@@ -1919,10 +1927,15 @@ async function processSwadpiaOrder(
     console.log("[swadpia] 준비된 파일 수:", downloadedFiles.length);
 
     // 1. 로그인
-    await login(page, {
-      email: vendor.email,
-      password: vendor.password,
-    });
+    try {
+      await login(page, {
+        email: vendor.email,
+        password: vendor.password,
+      });
+    } catch (loginError) {
+      errorCollector.addError(ORDER_STEPS.LOGIN, ERROR_CODES.LOGIN_FAILED, loginError.message, { purchaseOrderId });
+      throw loginError;
+    }
 
     // 2. 장바구니 비우기
     console.log("[swadpia] 장바구니 비우기...");
@@ -1996,6 +2009,27 @@ async function processSwadpiaOrder(
 
       if (retryCount > MAX_RETRY) {
         console.log("[swadpia] 최대 재시도 횟수 초과");
+        // Collect errors for failed products
+        if (cartVerification?.missingItems?.length > 0) {
+          for (const item of cartVerification.missingItems) {
+            const product = products.find(p => p.productSku === item.productSku);
+            errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, `상품 장바구니 추가 실패: ${item.productSku}`, {
+              purchaseOrderId,
+              purchaseOrderLineId: product?.lineId || null,
+              productVariantVendorId: product?.productVariantVendorId || null,
+            });
+          }
+        }
+        if (cartVerification?.quantityMismatches?.length > 0) {
+          for (const item of cartVerification.quantityMismatches) {
+            const product = products.find(p => p.productSku === item.productSku);
+            errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, `수량 불일치: 기대 ${item.expected}, 실제 ${item.actual}`, {
+              purchaseOrderId,
+              purchaseOrderLineId: product?.lineId || null,
+              productVariantVendorId: product?.productVariantVendorId || null,
+            });
+          }
+        }
       }
     }
 
@@ -2007,6 +2041,11 @@ async function processSwadpiaOrder(
       const ispPassword =
         vendor.ispPassword || process.env.BC_ISP_PASSWORD || "";
       orderResult = await placeOrder(page, shippingAddress, ispPassword);
+
+      // Collect payment error if order failed
+      if (!orderResult?.success && orderResult?.error) {
+        errorCollector.addError(ORDER_STEPS.PAYMENT, ERROR_CODES.PAYMENT_FAILED, orderResult.error, { purchaseOrderId });
+      }
     } else {
       console.log("[swadpia] 장바구니 검증 실패 - 주문 진행 안함");
     }
@@ -2015,6 +2054,38 @@ async function processSwadpiaOrder(
     console.log("[swadpia] 임시 파일 정리...");
     for (const file of downloadedFiles) {
       cleanupTempFile(file.filePath);
+    }
+
+    // saveOrderResults 호출
+    if (orderResult?.success) {
+      // 성공: 결제 완료
+      await saveOrderResults(authToken, {
+        purchaseOrderId,
+        products: products.map(p => ({
+          orderLineId: p.orderLineId,
+          openMallOrderNumber: orderResult?.vendorOrderNumber || null,
+        })),
+        priceMismatches: cartVerification?.priceMismatches?.map(p => ({
+          productVariantVendorId: p.productVariantVendorId,
+          vendorPriceExcludeVat: p.vendorPriceExcludeVat,
+          openMallPrice: p.openMallPrice,
+        })) || [],
+        optionFailedProducts: [],
+        automationErrors: [],
+        lineIds,
+        success: true,
+      });
+    } else {
+      // 실패: 장바구니 검증 실패 또는 결제 실패
+      await saveOrderResults(authToken, {
+        purchaseOrderId,
+        products: [],
+        priceMismatches: [],
+        optionFailedProducts: [],
+        automationErrors: errorCollector.getErrors(),
+        lineIds,
+        success: false,
+      });
     }
 
     return res.json({
@@ -2058,6 +2129,8 @@ async function processSwadpiaOrder(
       hasPriceMismatch: cartVerification?.hasPriceMismatch || false,
       priceMismatchCount: cartVerification?.priceMismatchCount || 0,
       priceMismatches: cartVerification?.priceMismatches || [],
+      // 자동화 에러
+      automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
     });
   } catch (error) {
     console.error("[swadpia] 주문 처리 에러:", error);
@@ -2071,6 +2144,7 @@ async function processSwadpiaOrder(
     return res.status(500).json({
       success: false,
       error: error.message,
+      automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
     });
   }
 }

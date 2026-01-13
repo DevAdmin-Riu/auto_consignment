@@ -4,6 +4,12 @@
 
 const { delay, getLoginStatus, setLoginStatus } = require("../../lib/browser");
 const { coupangLogin } = require("./login");
+const {
+  createOrderErrorCollector,
+  ORDER_STEPS,
+  ERROR_CODES,
+} = require("../../lib/automation-error");
+const { saveOrderResults } = require("../../lib/graphql-client");
 const Tesseract = require("tesseract.js");
 const sharp = require("sharp");
 const path = require("path");
@@ -16,10 +22,12 @@ async function processCoupangOrder(
   res,
   page,
   vendor,
-  { products, shippingAddress, lineIds, purchaseOrderId }
+  { products, shippingAddress, lineIds, purchaseOrderId },
+  authToken
 ) {
   const steps = [];
   const addedProducts = []; // 장바구니에 담긴 상품들 추적
+  const errorCollector = createOrderErrorCollector("coupang");
 
   // 1. 로그인
   if (!getLoginStatus("coupang")) {
@@ -87,6 +95,11 @@ async function processCoupangOrder(
           step: `product_${productIndex + 1}_skip`,
           success: false,
           error: "URL 없음",
+        });
+        errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.PRODUCT_NOT_FOUND, "URL 없음", {
+          purchaseOrderId,
+          purchaseOrderLineId: lineIds?.[productIndex],
+          productVariantVendorId: product.productVariantVendorId,
         });
         continue;
       }
@@ -214,6 +227,11 @@ async function processCoupangOrder(
             success: false,
             error: "버튼을 찾을 수 없음",
           });
+          errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.ELEMENT_NOT_FOUND, "장바구니 버튼을 찾을 수 없음", {
+            purchaseOrderId,
+            purchaseOrderLineId: lineIds?.[productIndex],
+            productVariantVendorId: product.productVariantVendorId,
+          });
         }
       } catch (e) {
         console.log(`상품 ${productIndex + 1} 처리 실패:`, e.message);
@@ -221,6 +239,11 @@ async function processCoupangOrder(
           step: `product_${productIndex + 1}_error`,
           success: false,
           error: e.message,
+        });
+        errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, e.message, {
+          purchaseOrderId,
+          purchaseOrderLineId: lineIds?.[productIndex],
+          productVariantVendorId: product.productVariantVendorId,
         });
       }
     }
@@ -354,11 +377,23 @@ async function processCoupangOrder(
 
   // 재시도 횟수 초과 시 에러 반환
   if (!cartVerified) {
+    const errorMessage = `장바구니 검증 실패 - ${maxCartRetries}회 재시도 후에도 실패`;
+    errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, errorMessage, { purchaseOrderId });
+    await saveOrderResults(authToken, {
+      purchaseOrderId,
+      products: addedProducts || [],
+      priceMismatches: [],
+      optionFailedProducts: [],
+      automationErrors: errorCollector.getErrors(),
+      lineIds,
+      success: false,
+    });
     return res.json({
       success: false,
       vendor: vendor.name,
-      error: `장바구니 검증 실패 - ${maxCartRetries}회 재시도 후에도 실패`,
+      error: errorMessage,
       steps,
+      automationErrors: errorCollector.getErrors(),
     });
   }
 
@@ -452,6 +487,16 @@ async function processCoupangOrder(
 
           if (!fillResult.success) {
             // 배송지 폼 입력 실패 - 여기서 멈춤
+            errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, ERROR_CODES.INPUT_FAILED, "배송지 폼 입력 실패", { purchaseOrderId });
+            await saveOrderResults(authToken, {
+              purchaseOrderId,
+              products: addedProducts || [],
+              priceMismatches: [],
+              optionFailedProducts: [],
+              automationErrors: errorCollector.getErrors(),
+              lineIds,
+              success: false,
+            });
             return res.json({
               success: false,
               vendor: vendor.name,
@@ -460,6 +505,7 @@ async function processCoupangOrder(
               addressCount: editResult.count,
               fillResult,
               steps,
+              automationErrors: errorCollector.getErrors(),
             });
           }
           // 배송지 입력 성공 - 결제 단계로 진행
@@ -473,15 +519,26 @@ async function processCoupangOrder(
             addressCount: editResult.count,
           });
           // 배송지 처리 실패 - 여기서 멈춤
+          const shippingError = editResult.count === 0
+            ? "배송지 추가 버튼 클릭 실패"
+            : "배송지 수정 버튼 클릭 실패";
+          errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, ERROR_CODES.CLICK_FAILED, shippingError, { purchaseOrderId });
+          await saveOrderResults(authToken, {
+            purchaseOrderId,
+            products: addedProducts || [],
+            priceMismatches: [],
+            optionFailedProducts: [],
+            automationErrors: errorCollector.getErrors(),
+            lineIds,
+            success: false,
+          });
           return res.json({
             success: false,
             vendor: vendor.name,
-            error:
-              editResult.count === 0
-                ? "배송지 추가 버튼 클릭 실패"
-                : "배송지 수정 버튼 클릭 실패",
+            error: shippingError,
             addressCount: editResult.count,
             steps,
+            automationErrors: errorCollector.getErrors(),
           });
         }
       } else {
@@ -493,11 +550,22 @@ async function processCoupangOrder(
           debug: changeResult.debug,
         });
         // 배송지 처리 실패 - 여기서 멈춤
+        errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, ERROR_CODES.CLICK_FAILED, "배송지 변경 버튼 클릭 실패", { purchaseOrderId });
+        await saveOrderResults(authToken, {
+          purchaseOrderId,
+          products: addedProducts || [],
+          priceMismatches: [],
+          optionFailedProducts: [],
+          automationErrors: errorCollector.getErrors(),
+          lineIds,
+          success: false,
+        });
         return res.json({
           success: false,
           vendor: vendor.name,
           error: "배송지 변경 버튼 클릭 실패",
           steps,
+          automationErrors: errorCollector.getErrors(),
         });
       }
     } catch (e) {
@@ -508,11 +576,22 @@ async function processCoupangOrder(
         error: e.message,
       });
       // 배송지 처리 실패 - 여기서 멈춤
+      errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, e.message, { purchaseOrderId });
+      await saveOrderResults(authToken, {
+        purchaseOrderId,
+        products: addedProducts || [],
+        priceMismatches: [],
+        optionFailedProducts: [],
+        automationErrors: errorCollector.getErrors(),
+        lineIds,
+        success: false,
+      });
       return res.json({
         success: false,
         vendor: vendor.name,
         error: e.message,
         steps,
+        automationErrors: errorCollector.getErrors(),
       });
     }
   }
@@ -852,6 +931,36 @@ async function processCoupangOrder(
     differencePercent: p.priceMismatch?.differencePercent,
   }));
 
+  // saveOrderResults 호출
+  if (isPaymentComplete) {
+    await saveOrderResults(authToken, {
+      purchaseOrderId,
+      products: productResults.map(p => ({
+        orderLineId: p.orderLineId,
+        openMallOrderNumber: paymentStep?.orderNumber || null,
+      })),
+      priceMismatches: priceMismatches.map(p => ({
+        productVariantVendorId: p.productVariantVendorId,
+        vendorPriceExcludeVat: p.vendorPriceExcludeVat,
+        openMallPrice: p.openMallPrice,
+      })),
+      optionFailedProducts: [],
+      automationErrors: [],
+      lineIds,
+      success: true,
+    });
+  } else {
+    await saveOrderResults(authToken, {
+      purchaseOrderId,
+      products: addedProducts || [],
+      priceMismatches: [],
+      optionFailedProducts: [],
+      automationErrors: errorCollector.getErrors(),
+      lineIds,
+      success: false,
+    });
+  }
+
   // 응답 반환 (필수 데이터만)
   return res.json({
     success: isPaymentComplete,
@@ -873,6 +982,7 @@ async function processCoupangOrder(
     // 가격 불일치 관련
     priceMismatchCount: priceMismatchList.length,
     priceMismatches: priceMismatches,
+    automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
   });
 }
 

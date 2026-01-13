@@ -6,6 +6,11 @@
  */
 
 const { loginToAdpia } = require("./order");
+const {
+  createTrackingErrorCollector,
+  TRACKING_STEPS,
+  ERROR_CODES,
+} = require("../../lib/automation-error");
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -43,6 +48,7 @@ const DEFAULT_CARRIER = "롯데택배";
 async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
   console.log(`[adpia 송장조회] 시작: ${openMallOrderNumbers.length}건`);
 
+  const errorCollector = createTrackingErrorCollector("adpia");
   const results = [];
 
   try {
@@ -50,7 +56,8 @@ async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
     const loginResult = await loginToAdpia(page, vendor);
     if (!loginResult.success) {
       console.error("[adpia 송장조회] 로그인 실패:", loginResult.message);
-      return results;
+      errorCollector.addError(TRACKING_STEPS.LOGIN, ERROR_CODES.LOGIN_FAILED, loginResult.message);
+      return { results, automationErrors: errorCollector.getErrors() };
     }
     console.log("[adpia 송장조회] 로그인 완료");
 
@@ -142,6 +149,7 @@ async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
 
       } catch (err) {
         console.error(`[adpia 송장조회] ${openMallOrderNumber} 조회 실패:`, err.message);
+        errorCollector.addError(TRACKING_STEPS.EXTRACTION, ERROR_CODES.EXTRACTION_FAILED, err.message, { openMallOrderNumber });
       }
     }
 
@@ -150,7 +158,10 @@ async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
   }
 
   console.log(`[adpia 송장조회] 완료: ${results.length}건 조회됨`);
-  return results;
+  return {
+    results,
+    automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
+  };
 }
 
 module.exports = {

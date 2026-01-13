@@ -164,6 +164,9 @@ async function handleVendorOrder(req, res) {
       );
     });
 
+    // authToken 추출 (GraphQL mutation 호출용)
+    const authToken = req.headers.authorization;
+
     // 자동화 타입별 분기 처리
     switch (vendor.automationType) {
       case "product_search":
@@ -173,6 +176,7 @@ async function handleVendorOrder(req, res) {
           orderData,
           lineIds,
           purchaseOrderId,
+          authToken,
         });
 
       case "reorder":
@@ -230,7 +234,7 @@ async function handleVendorOrder(req, res) {
 async function handleProductSearchOrder(
   res,
   vendor,
-  { products, shippingAddress, orderData, lineIds, purchaseOrderId }
+  { products, shippingAddress, orderData, lineIds, purchaseOrderId, authToken }
 ) {
   let { browser, page } = await getBrowser(vendor.key);
 
@@ -249,7 +253,7 @@ async function handleProductSearchOrder(
         shippingAddress,
         lineIds,
         purchaseOrderId,
-      });
+      }, authToken);
 
     case "napkin":
       return await processNapkinOrder(res, page, vendor, {
@@ -257,7 +261,7 @@ async function handleProductSearchOrder(
         shippingAddress,
         lineIds,
         purchaseOrderId,
-      });
+      }, authToken);
 
     case "baemin":
       return await processBaeminOrder(res, page, vendor, {
@@ -265,7 +269,7 @@ async function handleProductSearchOrder(
         shippingAddress,
         lineIds,
         purchaseOrderId,
-      });
+      }, authToken);
 
     case "naver":
       return await processNaverOrder(res, page, vendor, {
@@ -273,7 +277,7 @@ async function handleProductSearchOrder(
         shippingAddress,
         lineIds,
         purchaseOrderId,
-      });
+      }, authToken);
 
     case "wowpress":
       return await processWowpressOrder(res, page, vendor, {
@@ -289,10 +293,15 @@ async function handleProductSearchOrder(
         shippingAddress,
         lineIds,
         purchaseOrderId,
-      });
+      }, authToken);
 
     case "adpia":
-      return await processAdpiaOrder(page, vendor, products, shippingAddress, res);
+      return await processAdpiaOrder(res, page, vendor, {
+        products,
+        shippingAddress,
+        lineIds,
+        purchaseOrderId,
+      }, authToken);
 
     default:
       return res.json({

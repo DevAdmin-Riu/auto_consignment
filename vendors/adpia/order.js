@@ -20,6 +20,12 @@
 const { getEnv } = require("../config");
 const fs = require("fs");
 const path = require("path");
+const {
+  createOrderErrorCollector,
+  ORDER_STEPS,
+  ERROR_CODES,
+} = require("../../lib/automation-error");
+const { saveOrderResults } = require("../../lib/graphql-client");
 const https = require("https");
 const http = require("http");
 const { spawn } = require("child_process");
@@ -1958,8 +1964,17 @@ async function processPayment(page) {
 /**
  * 애드피아몰 주문 처리 메인 함수
  */
-async function processAdpiaOrder(page, vendor, products, shippingInfo, res) {
+async function processAdpiaOrder(
+  res,
+  page,
+  vendor,
+  { products, shippingAddress, lineIds, purchaseOrderId },
+  authToken
+) {
   console.log(`[adpia] 주문 시작: ${products.length}개 상품`);
+
+  const errorCollector = createOrderErrorCollector("adpia");
+  const shippingInfo = shippingAddress; // 기존 코드와 호환을 위해 alias
 
   // ISP 비밀번호 (환경변수에서 가져옴 - BC카드 ISP 공용)
   const ispPassword = vendor.ispPassword || getEnv("BC_ISP_PASSWORD") || "";
@@ -1969,8 +1984,9 @@ async function processAdpiaOrder(page, vendor, products, shippingInfo, res) {
 
   const results = [];
   const downloadedFiles = []; // 다운로드한 파일 경로들
-  let purchaseOrderId = null;
-  let purchaseOrderLineIds = [];
+  const addedProducts = []; // 장바구니에 추가된 상품들
+  const optionFailedProducts = []; // 옵션 실패 상품들
+  const priceMismatches = []; // 가격 불일치 상품들
 
   try {
     // 0. 디자인 파일 미리 다운로드
@@ -1998,10 +2014,21 @@ async function processAdpiaOrder(page, vendor, products, shippingInfo, res) {
     // 1. 로그인
     const loginResult = await loginToAdpia(page, vendor);
     if (!loginResult.success) {
+      errorCollector.addError(ORDER_STEPS.LOGIN, ERROR_CODES.LOGIN_FAILED, loginResult.message || "로그인 실패", { purchaseOrderId });
+      await saveOrderResults(authToken, {
+        purchaseOrderId,
+        products: [],
+        priceMismatches: [],
+        optionFailedProducts: [],
+        automationErrors: errorCollector.getErrors(),
+        lineIds,
+        success: false,
+      });
       return res.json({
         success: false,
         message: "로그인 실패",
         vendor: vendor.name,
+        automationErrors: errorCollector.getErrors(),
       });
     }
 
@@ -2011,14 +2038,6 @@ async function processAdpiaOrder(page, vendor, products, shippingInfo, res) {
     // 3. 각 상품 처리
     for (const product of products) {
       console.log(`[adpia] 상품 처리: ${product.productName}`);
-
-      // purchaseOrderId/LineId 저장
-      if (!purchaseOrderId && product.purchaseOrderId) {
-        purchaseOrderId = product.purchaseOrderId;
-      }
-      if (product.orderLineId) {
-        purchaseOrderLineIds.push(product.orderLineId);
-      }
 
       try {
         // 3-1. 제품코드로 상품 찾기 (favor 페이지에서)
@@ -2033,6 +2052,13 @@ async function processAdpiaOrder(page, vendor, products, shippingInfo, res) {
             success: false,
             message: findResult.message,
           });
+          // 옵션 실패로 추적
+          if (findResult.message?.includes('옵션')) {
+            optionFailedProducts.push({
+              productVariantVendorId: product.productVariantVendorId,
+              reason: findResult.message,
+            });
+          }
           continue;
         }
 
@@ -2096,7 +2122,7 @@ async function processAdpiaOrder(page, vendor, products, shippingInfo, res) {
           break;
         }
 
-        results.push({
+        const resultEntry = {
           lineId: product.orderLineId,
           productVariantVendorId: product.productVariantVendorId,
           productSku: product.productSku,
@@ -2106,9 +2132,40 @@ async function processAdpiaOrder(page, vendor, products, shippingInfo, res) {
           success: orderPageResult.success,
           message: orderPageResult.message,
           priceInfo, // 가격 비교 정보 (priceMismatch 포함)
-        });
+        };
+        results.push(resultEntry);
+
+        // addedProducts, optionFailedProducts, priceMismatches 추적
+        if (orderPageResult.success) {
+          addedProducts.push({
+            orderLineId: product.orderLineId,
+            productVariantVendorId: product.productVariantVendorId,
+            productSku: product.productSku,
+            productName: product.productName,
+            quantity: product.quantity,
+          });
+        } else if (orderPageResult.message?.includes('옵션')) {
+          optionFailedProducts.push({
+            productVariantVendorId: product.productVariantVendorId,
+            reason: orderPageResult.message,
+          });
+        }
+
+        // 가격 불일치 추적
+        if (priceInfo.priceMismatch) {
+          priceMismatches.push({
+            productVariantVendorId: product.productVariantVendorId,
+            vendorPriceExcludeVat: priceInfo.unitPriceExcludeVat,
+            openMallPrice: priceInfo.unitPrice,
+          });
+        }
       } catch (error) {
         console.error(`[adpia] 상품 처리 에러:`, error.message);
+        errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, error.message, {
+          purchaseOrderId,
+          purchaseOrderLineId: product.orderLineId,
+          productVariantVendorId: product.productVariantVendorId,
+        });
         results.push({
           lineId: product.orderLineId,
           productSku: product.productSku,
@@ -2163,9 +2220,9 @@ async function processAdpiaOrder(page, vendor, products, shippingInfo, res) {
       console.log("[adpia] 장바구니에 담긴 상품이 없어 주문서 이동 스킵");
     }
 
-    // 가격 불일치 목록
+    // 가격 불일치 목록 (res.json용 상세 정보)
     const priceMismatchList = results.filter((r) => r.priceInfo?.priceMismatch);
-    const priceMismatches = priceMismatchList.map((r) => ({
+    const priceMismatchesForRes = priceMismatchList.map((r) => ({
       purchaseOrderLineId: r.lineId,
       productVariantVendorId: r.productVariantVendorId || null,
       productCode: r.productSku,
@@ -2176,8 +2233,8 @@ async function processAdpiaOrder(page, vendor, products, shippingInfo, res) {
       difference: r.priceInfo?.difference,
     }));
 
-    // 옵션 실패 목록
-    const optionFailedProducts = results
+    // 옵션 실패 목록 (res.json용 상세 정보)
+    const optionFailedProductsForRes = results
       .filter((r) => !r.success && r.message?.includes("옵션"))
       .map((r) => ({
         purchaseOrderLineId: r.lineId,
@@ -2187,12 +2244,30 @@ async function processAdpiaOrder(page, vendor, products, shippingInfo, res) {
         reason: r.message,
       }));
 
+    // saveOrderResults 호출 (성공)
+    await saveOrderResults(authToken, {
+      purchaseOrderId,
+      products: addedProducts.map((p) => ({
+        orderLineId: p.orderLineId,
+        openMallOrderNumber: vendorOrderNumber || null,
+      })),
+      priceMismatches: priceMismatches.map((p) => ({
+        productVariantVendorId: p.productVariantVendorId,
+        vendorPriceExcludeVat: p.vendorPriceExcludeVat,
+        openMallPrice: p.openMallPrice,
+      })),
+      optionFailedProducts: [],
+      automationErrors: [],
+      lineIds,
+      success: true,
+    });
+
     return res.json({
       success: true,
       message: `${products.length}개 상품 처리 완료`,
       vendor: vendor.name,
       purchaseOrderId: purchaseOrderId || null,
-      purchaseOrderLineIds: purchaseOrderLineIds || [],
+      purchaseOrderLineIds: lineIds || [],
       products: products.map((p) => ({
         orderLineId: p.orderLineId,
         openMallOrderNumber: vendorOrderNumber || null,
@@ -2208,16 +2283,30 @@ async function processAdpiaOrder(page, vendor, products, shippingInfo, res) {
       },
       hasPriceMismatch: priceMismatchList.length > 0,
       priceMismatchCount: priceMismatchList.length,
-      priceMismatches,
-      optionFailedCount: optionFailedProducts.length,
-      optionFailedProducts,
+      priceMismatches: priceMismatchesForRes,
+      optionFailedCount: optionFailedProductsForRes.length,
+      optionFailedProducts: optionFailedProductsForRes,
     });
   } catch (error) {
     console.error("[adpia] 주문 처리 에러:", error);
+    errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, error.message, { purchaseOrderId });
+    await saveOrderResults(authToken, {
+      purchaseOrderId,
+      products: addedProducts || [],
+      priceMismatches: [],
+      optionFailedProducts: optionFailedProducts?.map((p) => ({
+        productVariantVendorId: p.productVariantVendorId,
+        reason: p.reason,
+      })) || [],
+      automationErrors: errorCollector.getErrors(),
+      lineIds,
+      success: false,
+    });
     return res.json({
       success: false,
       vendor: vendor.name,
       message: `주문 처리 에러: ${error.message}`,
+      automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
     });
   } finally {
     // 임시 파일 정리
