@@ -5,6 +5,9 @@
  * - lib/browser.js: 브라우저 관리
  * - vendors/config.js: 협력사 설정
  * - vendors/{vendor}/index.js: 각 협력사별 모듈
+ *
+ * 환경변수: vendors/config.js의 getEnv() 사용
+ * (dotenv 사용 금지 - 모듈 로드 순서 문제 발생)
  */
 
 const express = require("express");
@@ -26,13 +29,19 @@ const {
   getVendorByName,
 } = require("./vendors/config");
 
+// GraphQL 클라이언트
+const { setConfig: setGraphQLConfig } = require("./lib/graphql-client");
+
 // 협력사별 모듈
 const { processCoupangOrder } = require("./vendors/coupang");
 const { processNapkinOrder } = require("./vendors/napkin");
 const { processBaeminOrder } = require("./vendors/baemin");
 const { processNaverOrder } = require("./vendors/naver");
 const { processWowpressOrder } = require("./vendors/wowpress");
-const { router: swadpiaRouter, processSwadpiaOrder } = require("./vendors/swadpia");
+const {
+  router: swadpiaRouter,
+  processSwadpiaOrder,
+} = require("./vendors/swadpia");
 const { processAdpiaOrder } = require("./vendors/adpia");
 
 const app = express();
@@ -110,7 +119,13 @@ async function handleVendorOrder(req, res) {
       orderData,
       lineIds, // 주문 라인 ID들
       purchaseOrderId, // 발주 ID
+      graphqlUrl, // GraphQL API URL (n8n에서 전달)
     } = req.body;
+
+    // GraphQL URL 설정 (환경변수보다 요청에서 전달된 값 우선)
+    if (graphqlUrl) {
+      setGraphQLConfig({ graphqlUrl });
+    }
 
     if (!vendorName) {
       return res.status(400).json({
@@ -154,7 +169,9 @@ async function handleVendorOrder(req, res) {
     console.log(`자동화 타입: ${AUTOMATION_TYPES[vendor.automationType]}`);
     console.log(`상품 수: ${productsList.length}개`);
     if (resolvedShippingAddress) {
-      console.log(`배송지: ${resolvedShippingAddress.firstName} / ${resolvedShippingAddress.phone} / ${resolvedShippingAddress.streetAddress1}`);
+      console.log(
+        `배송지: ${resolvedShippingAddress.firstName} / ${resolvedShippingAddress.phone} / ${resolvedShippingAddress.streetAddress1}`
+      );
     } else {
       console.log(`배송지: 없음 (장바구니만 담기)`);
     }
@@ -205,8 +222,8 @@ async function handleVendorOrder(req, res) {
           notes: vendor.requiresKakaoDesign
             ? "카톡으로 디자인 확정 필요"
             : vendor.requiresKakaoFile
-              ? "카톡으로 양식/디자인 파일 전달 필요"
-              : null,
+            ? "카톡으로 양식/디자인 파일 전달 필요"
+            : null,
           siteUrl: vendor.siteUrl,
         });
 
@@ -248,36 +265,60 @@ async function handleProductSearchOrder(
   // 협력사별 주문 처리
   switch (vendor.key) {
     case "coupang":
-      return await processCoupangOrder(res, page, vendor, {
-        products,
-        shippingAddress,
-        lineIds,
-        purchaseOrderId,
-      }, authToken);
+      return await processCoupangOrder(
+        res,
+        page,
+        vendor,
+        {
+          products,
+          shippingAddress,
+          lineIds,
+          purchaseOrderId,
+        },
+        authToken
+      );
 
     case "napkin":
-      return await processNapkinOrder(res, page, vendor, {
-        products,
-        shippingAddress,
-        lineIds,
-        purchaseOrderId,
-      }, authToken);
+      return await processNapkinOrder(
+        res,
+        page,
+        vendor,
+        {
+          products,
+          shippingAddress,
+          lineIds,
+          purchaseOrderId,
+        },
+        authToken
+      );
 
     case "baemin":
-      return await processBaeminOrder(res, page, vendor, {
-        products,
-        shippingAddress,
-        lineIds,
-        purchaseOrderId,
-      }, authToken);
+      return await processBaeminOrder(
+        res,
+        page,
+        vendor,
+        {
+          products,
+          shippingAddress,
+          lineIds,
+          purchaseOrderId,
+        },
+        authToken
+      );
 
     case "naver":
-      return await processNaverOrder(res, page, vendor, {
-        products,
-        shippingAddress,
-        lineIds,
-        purchaseOrderId,
-      }, authToken);
+      return await processNaverOrder(
+        res,
+        page,
+        vendor,
+        {
+          products,
+          shippingAddress,
+          lineIds,
+          purchaseOrderId,
+        },
+        authToken
+      );
 
     case "wowpress":
       return await processWowpressOrder(res, page, vendor, {
@@ -288,20 +329,32 @@ async function handleProductSearchOrder(
       });
 
     case "swadpia":
-      return await processSwadpiaOrder(res, page, vendor, {
-        products,
-        shippingAddress,
-        lineIds,
-        purchaseOrderId,
-      }, authToken);
+      return await processSwadpiaOrder(
+        res,
+        page,
+        vendor,
+        {
+          products,
+          shippingAddress,
+          lineIds,
+          purchaseOrderId,
+        },
+        authToken
+      );
 
     case "adpia":
-      return await processAdpiaOrder(res, page, vendor, {
-        products,
-        shippingAddress,
-        lineIds,
-        purchaseOrderId,
-      }, authToken);
+      return await processAdpiaOrder(
+        res,
+        page,
+        vendor,
+        {
+          products,
+          shippingAddress,
+          lineIds,
+          purchaseOrderId,
+        },
+        authToken
+      );
 
     default:
       return res.json({
@@ -316,7 +369,11 @@ async function handleProductSearchOrder(
 /**
  * 재주문 처리 (마플)
  */
-async function handleReorder(res, vendor, { productName, quantity, orderData }) {
+async function handleReorder(
+  res,
+  vendor,
+  { productName, quantity, orderData }
+) {
   return res.json({
     success: false,
     automationType: "reorder",

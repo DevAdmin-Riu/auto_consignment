@@ -20,9 +20,19 @@ const {
   ERROR_CODES,
 } = require("../../lib/automation-error");
 const { saveOrderResults } = require("../../lib/graphql-client");
+const { getEnv } = require("../config");
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// 통관정보 동적으로 가져오기
+function getCustomsInfo() {
+  return {
+    code: getEnv("CUSTOMS_CODE"),
+    name: getEnv("CUSTOMS_NAME"),
+    phone: getEnv("CUSTOMS_PHONE"),
+  };
+}
 
 // 임시 디렉토리
 const tempDir = "/tmp/naver_ocr";
@@ -70,6 +80,139 @@ const SELECTORS = {
     agreeAll: "input._all_agree, input[name='agreeAll']",
   },
 };
+
+/**
+ * 개인통관고유부호 입력 처리 (해외직배송 상품)
+ * @param {Page} page - 메인 페이지 또는 팝업 페이지
+ * @returns {Object} { success: boolean, reason?: string, handled?: boolean }
+ */
+async function handleCustomsCode(page) {
+  console.log("[naver] 통관고유부호 처리 확인...");
+
+  // 통관정보 동적으로 가져오기
+  const customsInfo = getCustomsInfo();
+
+  // 통관정보가 없으면 스킵
+  if (!customsInfo.code) {
+    console.log("[naver] 통관정보 환경변수가 설정되지 않음 (CUSTOMS_CODE)");
+    return { success: false, reason: "customs_info_not_configured", handled: false };
+  }
+
+  // 1. 개인통관고유부호 입력 버튼 찾기
+  const customsBtnSelector = "#root > div > div.DoubleTemplate_container__5LG6a > div.DoubleTemplate_content__KzCZb > div.DoubleTemplate_content-left__lMo44 > div > div:nth-child(2) > div.ContentWrapper_article__Bg6i8.ContentWrapper_bg-white__lpLoa > div > div > div > button";
+
+  const customsBtn = await page.$(customsBtnSelector);
+  if (!customsBtn) {
+    console.log("[naver] 통관고유부호 입력 버튼 없음 (해외직배송 상품 아님)");
+    return { success: true, handled: false };
+  }
+
+  console.log("[naver] 통관고유부호 입력 버튼 발견 - 해외직배송 상품");
+  await customsBtn.click();
+  await delay(2000);
+
+  // 2. 새 팝업 대기 (통관 입력은 팝업에서 진행)
+  const browser = page.browser();
+  const customsPopupPromise = new Promise((resolve) => {
+    browser.once("targetcreated", async (target) => {
+      if (target.type() === "page") {
+        const newPage = await target.page();
+        console.log("[naver] 통관 팝업 감지:", target.url());
+        resolve(newPage);
+      }
+    });
+    setTimeout(() => resolve(null), 5000);
+  });
+
+  const customsPopup = await customsPopupPromise;
+  const targetPage = customsPopup || page; // 팝업이 없으면 메인 페이지에서 진행
+
+  if (customsPopup) {
+    console.log("[naver] 통관 팝업 열림");
+    await delay(2000);
+  }
+
+  // 3. 통관부호 입력
+  const customsInputSelector = "#content > div > div.CustomsModal_area-input__LQs4Z > div > div > div > input";
+  const customsInput = await targetPage.$(customsInputSelector);
+
+  if (customsInput) {
+    await customsInput.click({ clickCount: 3 });
+    await customsInput.type(customsInfo.code, { delay: 30 });
+    console.log(`[naver] 통관부호 입력: ${customsInfo.code}`);
+    await delay(500);
+  } else {
+    console.log("[naver] 통관부호 입력 필드를 찾을 수 없음");
+    return { success: false, reason: "customs_input_not_found", handled: true };
+  }
+
+  // 4. 동의하고 입력하기 버튼 클릭
+  const agreeSubmitBtnSelector = "#content > div > div.CustomsModal_area-button__T0iR3 > button";
+  const agreeSubmitBtn = await targetPage.$(agreeSubmitBtnSelector);
+
+  if (agreeSubmitBtn) {
+    await agreeSubmitBtn.click();
+    console.log("[naver] 동의하고 입력하기 버튼 클릭");
+    await delay(2000);
+  } else {
+    console.log("[naver] 동의하고 입력하기 버튼을 찾을 수 없음");
+    return { success: false, reason: "agree_button_not_found", handled: true };
+  }
+
+  // 5. 이름/연락처 불일치 확인 - 수정 버튼 체크
+  const editSaveBtnSelector = "#content > div > div.CheckInfo_article__TlJWF > div > button";
+  const editBtn = await targetPage.$(editSaveBtnSelector);
+
+  if (editBtn) {
+    console.log("[naver] 이름/연락처 불일치 감지 - 수정 버튼 클릭");
+    await editBtn.click();
+    await delay(2000);
+
+    // 6. 이름/연락처 입력
+    const nameInputSelector = "#content > div > div.CheckInfo_article__TlJWF > ul.CheckInfo_list-info__iV5jr.CheckInfo_type-modify__4qzbS > li:nth-child(1) > div > div > div > div > input";
+    const phoneInputSelector = "#content > div > div.CheckInfo_article__TlJWF > ul.CheckInfo_list-info__iV5jr.CheckInfo_type-modify__4qzbS > li:nth-child(2) > div > div > div > div > input";
+
+    // 이름 입력 (트리플 클릭으로 전체 선택 후 입력)
+    const nameInput = await targetPage.$(nameInputSelector);
+    if (nameInput) {
+      await nameInput.click({ clickCount: 3 });
+      await delay(100);
+      await nameInput.type(customsInfo.name, { delay: 30 });
+      console.log(`[naver] 받는 이 변경: ${customsInfo.name}`);
+    }
+
+    // 연락처 입력
+    const phoneInput = await targetPage.$(phoneInputSelector);
+    if (phoneInput) {
+      await phoneInput.click({ clickCount: 3 });
+      await delay(100);
+      await phoneInput.type(customsInfo.phone, { delay: 30 });
+      console.log(`[naver] 연락처 변경: ${customsInfo.phone}`);
+    }
+
+    await delay(500);
+
+    // 저장 버튼 클릭 (수정 버튼이 저장 버튼으로 변경됨)
+    const saveBtn = await targetPage.$(editSaveBtnSelector);
+    if (saveBtn) {
+      await saveBtn.click();
+      console.log("[naver] 배송지 정보 저장");
+      await delay(2000);
+    }
+
+    // 최종 확인 버튼 클릭
+    const finalConfirmBtnSelector = "#content > div > div.CustomsModal_area-button__T0iR3 > button";
+    const finalConfirmBtn = await targetPage.$(finalConfirmBtnSelector);
+    if (finalConfirmBtn) {
+      await finalConfirmBtn.click();
+      console.log("[naver] 통관 최종 확인 버튼 클릭");
+      await delay(2000);
+    }
+  }
+
+  console.log("[naver] 통관고유부호 처리 완료");
+  return { success: true, handled: true };
+}
 
 /**
  * 상품 가격 추출
@@ -1417,12 +1560,45 @@ async function processNaverOrder(
       }
     }
 
-    // 6. 결제하기 버튼 클릭
+    // 6. 해외직배송 통관 처리 (결제 전에 먼저 확인)
+    await delay(2000);
+    const customsResult = await handleCustomsCode(page);
+    if (customsResult.handled) {
+      steps.push({
+        step: "customs_code",
+        success: customsResult.success,
+        reason: customsResult.reason,
+      });
+
+      if (!customsResult.success) {
+        console.log(`[naver] 통관 처리 실패: ${customsResult.reason}`);
+        errorCollector.addError(
+          ORDER_STEPS.ORDER_PLACEMENT,
+          ERROR_CODES.ELEMENT_NOT_FOUND,
+          `통관 처리 실패: ${customsResult.reason}`,
+          { purchaseOrderId }
+        );
+        return res.json({
+          success: false,
+          message: `통관 처리 실패: ${customsResult.reason}`,
+          steps,
+          addedProducts,
+          purchaseOrderId,
+          automationErrors: errorCollector.getErrors(),
+        });
+      }
+    }
+
+    // 7. 결제하기 버튼 클릭
     await delay(2000);
     const paymentBtnSelector = "#root > div > div.DoubleTemplate_container__5LG6a > div.SubmitButton_article__\\+7E3M.SubmitButton_type-pc__wc4Vy.SubmitButton_type-floating__VRJYZ.SubmitButton_floating__Plj-\\+ > div > div > div.SubmitButton_area-button__1RiID > button";
 
-    const paymentBtn = await page.$(paymentBtnSelector);
+    let paymentBtn = await page.$(paymentBtnSelector);
     if (paymentBtn) {
+      console.log("[naver] 결제하기 버튼 클릭...");
+      await paymentBtn.click();
+      steps.push({ step: "payment_button_click", success: true });
+
       // 새 창(팝업) 대기 설정 - 결제 키패드가 새 창으로 열림
       const browser = page.browser();
       const paymentPopupPromise = new Promise((resolve) => {
@@ -1436,10 +1612,6 @@ async function processNaverOrder(
         // 10초 후 타임아웃
         setTimeout(() => resolve(null), 10000);
       });
-
-      console.log("[naver] 결제하기 버튼 클릭...");
-      await paymentBtn.click();
-      steps.push({ step: "payment_button_click", success: true });
 
       // 8. 네이버페이 결제 팝업 대기
       console.log("[naver] 네이버페이 결제 팝업 대기...");
@@ -1711,6 +1883,7 @@ module.exports = {
   processProduct,
   selectDeliveryAddress,
   modifyDeliveryAddress,
+  handleCustomsCode,
   enterNaverPayPin,
   getProductPrice,
   SELECTORS,
