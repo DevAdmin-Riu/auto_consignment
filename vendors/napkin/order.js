@@ -464,11 +464,14 @@ async function clearCart(page) {
   });
   await delay(1500);
 
-  // confirm 다이얼로그 자동 수락 설정
-  page.on("dialog", async (dialog) => {
+  // confirm 다이얼로그 자동 수락 설정 (named function으로 나중에 제거 가능)
+  const napkinDialogHandler = async (dialog) => {
     console.log("[napkin] confirm 다이얼로그:", dialog.message());
     await dialog.accept();
-  });
+  };
+  page.on("dialog", napkinDialogHandler);
+  // 핸들러 반환해서 나중에 제거할 수 있게 함
+  page._napkinDialogHandler = napkinDialogHandler;
 
   // 버튼 렌더링 대기
   await delay(1500);
@@ -1445,6 +1448,13 @@ async function processNapkinOrder(
       success: true,
     });
 
+    // dialog 핸들러 제거 (다른 협력사와 충돌 방지)
+    if (page._napkinDialogHandler) {
+      page.off("dialog", page._napkinDialogHandler);
+      delete page._napkinDialogHandler;
+      console.log("[napkin] dialog 핸들러 제거 완료");
+    }
+
     return res.json({
       success: true,
       message: vendorOrderNumber
@@ -1478,6 +1488,14 @@ async function processNapkinOrder(
 
   } catch (error) {
     console.error("[napkin] 주문 처리 에러:", error);
+
+    // dialog 핸들러 제거 (에러 발생 시에도)
+    if (page._napkinDialogHandler) {
+      page.off("dialog", page._napkinDialogHandler);
+      delete page._napkinDialogHandler;
+      console.log("[napkin] dialog 핸들러 제거 완료 (에러 처리)");
+    }
+
     await saveOrderResults(authToken, {
       purchaseOrderId,
       products: [],

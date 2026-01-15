@@ -20,12 +20,13 @@ services:
       # Allow external npm modules in Code node
       - NODE_FUNCTION_ALLOW_EXTERNAL=xlsx,xlsx-js-style
       # GraphQL API (아래 중 하나 선택)
-      - GRAPHQL_URL=http://host.docker.internal:8080/graphql/ # 로컬
+      # - GRAPHQL_URL=http://host.docker.internal:8080/graphql/ # 로컬
       # - GRAPHQL_URL=https://stage-api.pojangboss.com/graphql/ # 스테이지
-      # - GRAPHQL_URL=https://api.pojangboss.com/graphql/ # 프로덕션
+      - GRAPHQL_URL=https://api.pojangboss.com/graphql/ # 프로덕션
       # Frontend URL (발주 확인 링크용)
-      - MALL_URL=http://localhost:7000 # 로컬
+      # - MALL_URL=http://localhost:7000 # 로컬
       # - MALL_URL=https://stage.pojangboss.com # 스테이지
-      # - MALL_URL=https://pojangboss.com # 프로덕션
+      - MALL_URL=https://pojangboss.com # 프로덕션
       # Auth Token (로그인 후 개발자도구에서 복사)
-      - AUTH_TOKEN=JWT eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3NjU5MzQzNjAsImV4cCI6NDkxOTUzNDM2MCwidG9rZW4iOiJFZ0JlM2R6N25TNEEiLCJsb2dpbl9pZCI6ImNoYmtrMTIzIiwidHlwZSI6ImFjY2VzcyIsInVzZXJfaWQiOiJWWE5sY2pveCIsImlzX3N0YWZmIjp0cnVlLCJpc19ocV9zdGFmZiI6ZmFsc2UsImlzX3ZlbmRvcl9zdGFmZiI6ZmFsc2UsInJlcXVlc3Rfb3JpZ2luIjoiTUFMTCJ9.CAKNgfJuh2pztpzpdmPLxCLssgQAU1bXE2vdBmnvapE
+      # 로컬 - AUTH_TOKEN=JWT eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3NjYwMjQ3ODAsImV4cCI6MTc2NjAyNTA4MCwidG9rZW4iOiJFZ0JlM2R6N25TNEEiLCJsb2dpbl9pZCI6ImNoYmtrMTIzIiwidHlwZSI6ImFjY2VzcyIsInVzZXJfaWQiOiJWWE5sY2pveCIsImlzX3N0YWZmIjp0cnVlLCJpc19ocV9zdGFmZiI6ZmFsc2UsImlzX3ZlbmRvcl9zdGFmZiI6ZmFsc2UsInJlcXVlc3Rfb3JpZ2luIjoiREFTSEJPQVJEIn0.ztBN7-O3egK8SQIgl34xnlBF1F-tBig6-GH8xshzLyk
+      - AUTH_TOKEN=JWT eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3Njg0MzcyNDEsImV4cCI6NDkyMjAzNzI0MSwidG9rZW4iOiJFZ0JlM2R6N25TNEEiLCJsb2dpbl9pZCI6ImNoYmtrMTIzIiwidHlwZSI6ImFjY2VzcyIsInVzZXJfaWQiOiJWWE5sY2pveCIsImlzX3N0YWZmIjp0cnVlLCJpc19ocV9zdGFmZiI6ZmFsc2UsImlzX3ZlbmRvcl9zdGFmZiI6ZmFsc2UsInJlcXVlc3Rfb3JpZ2luIjpudWxsfQ.NHeeZpH_Ei_nXFdDs7EnBvnZTDt_iRje3pDmwVA1-SE

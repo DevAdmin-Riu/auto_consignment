@@ -411,11 +411,14 @@ async function clearCart(page) {
   });
   await delay(2000);
 
-  // dialog 핸들러 (confirm, alert 처리)
-  page.on("dialog", async (dialog) => {
+  // dialog 핸들러 (confirm, alert 처리) - named function으로 나중에 제거 가능
+  const naverDialogHandler = async (dialog) => {
     console.log(`[naver] Dialog: ${dialog.type()} - ${dialog.message()}`);
     await dialog.accept();
-  });
+  };
+  page.on("dialog", naverDialogHandler);
+  // 핸들러 반환해서 나중에 제거할 수 있게 함
+  page._naverDialogHandler = naverDialogHandler;
 
   // 선택 삭제 버튼 찾기
   const deleteBtn = await page.$(
@@ -1756,6 +1759,13 @@ async function processNaverOrder(
           success: true,
         });
 
+        // dialog 핸들러 제거 (다른 협력사와 충돌 방지)
+        if (page._naverDialogHandler) {
+          page.off("dialog", page._naverDialogHandler);
+          delete page._naverDialogHandler;
+          console.log("[naver] dialog 핸들러 제거 완료");
+        }
+
         return res.json({
           success: true,
           message: orderNumber ? "결제 완료" : "결제 완료 (주문번호 확인 필요)",
@@ -1849,6 +1859,14 @@ async function processNaverOrder(
     });
   } catch (error) {
     console.error("[naver] 주문 처리 실패:", error);
+
+    // dialog 핸들러 제거 (에러 발생 시에도)
+    if (page._naverDialogHandler) {
+      page.off("dialog", page._naverDialogHandler);
+      delete page._naverDialogHandler;
+      console.log("[naver] dialog 핸들러 제거 완료 (에러 처리)");
+    }
+
     errorCollector.addError(
       ORDER_STEPS.ORDER_PLACEMENT,
       ERROR_CODES.UNEXPECTED_ERROR,
