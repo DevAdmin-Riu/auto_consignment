@@ -621,6 +621,7 @@ async function processNapkinOrder(
           productName: product.productName,
           productSku: product.productSku,
           lineId,
+          purchaseOrderId: product.purchaseOrderId, // 개별 상품의 발주 ID
           message: "상품 URL 없음",
         });
         continue;
@@ -671,6 +672,7 @@ async function processNapkinOrder(
               productName: product.productName,
               productSku: product.productSku,
               productVariantVendorId: product.productVariantVendorId,
+              purchaseOrderId: product.purchaseOrderId, // 개별 상품의 발주 ID
               success: false,
               message: optionResult.message,
             });
@@ -697,6 +699,7 @@ async function processNapkinOrder(
             productName: product.productName,
             productSku: product.productSku,
             productVariantVendorId: product.productVariantVendorId,
+            purchaseOrderId: product.purchaseOrderId, // 개별 상품의 발주 ID
             success: false,
             message: cartResult.message,
           });
@@ -708,6 +711,7 @@ async function processNapkinOrder(
           productName: product.productName,
           productSku: product.productSku,
           productVariantVendorId: product.productVariantVendorId,
+          purchaseOrderId: product.purchaseOrderId, // 개별 상품의 발주 ID
           quantity: product.quantity,
           vendorPriceExcludeVat: product.vendorPriceExcludeVat,
           success: true,
@@ -728,6 +732,7 @@ async function processNapkinOrder(
           productName: product.productName,
           productSku: product.productSku,
           productVariantVendorId: product.productVariantVendorId,
+          purchaseOrderId: product.purchaseOrderId, // 개별 상품의 발주 ID
           success: false,
           message: productError.message,
         });
@@ -742,6 +747,7 @@ async function processNapkinOrder(
         .filter(r => !r.success && r.message?.includes('옵션'))
         .map(r => ({
           productVariantVendorId: r.productVariantVendorId,
+          purchaseOrderId: r.purchaseOrderId, // 개별 상품의 발주 ID
           reason: r.message,
         }));
       await saveOrderResults(authToken, {
@@ -1253,6 +1259,7 @@ async function processNapkinOrder(
     const priceMismatchList = results.filter(r => r.priceInfo?.priceMismatch);
     const priceMismatches = priceMismatchList.map(r => ({
       purchaseOrderLineId: r.lineId,
+      purchaseOrderId: r.purchaseOrderId, // 개별 상품의 발주 ID
       productVariantVendorId: r.productVariantVendorId || null,
       productCode: r.productSku,
       productName: r.productName,
@@ -1271,6 +1278,7 @@ async function processNapkinOrder(
       .filter(r => !r.success && r.message?.includes('옵션'))
       .map(r => ({
         purchaseOrderLineId: r.lineId,
+        purchaseOrderId: r.purchaseOrderId, // 개별 상품의 발주 ID
         productVariantVendorId: r.productVariantVendorId,
         productSku: r.productSku,
         productName: r.productName,
@@ -1286,6 +1294,7 @@ async function processNapkinOrder(
       })),
       priceMismatches: priceMismatches?.map(p => ({
         productVariantVendorId: p.productVariantVendorId,
+        purchaseOrderId: p.purchaseOrderId, // 개별 상품의 발주 ID
         vendorPriceExcludeVat: p.vendorPriceExcludeVat,
         openMallPrice: p.openMallPrice,
       })) || [],
