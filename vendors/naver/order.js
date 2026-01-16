@@ -1745,7 +1745,7 @@ async function processNaverOrder(
         await saveOrderResults(authToken, {
           purchaseOrderId,
           products: addedProducts.map((p) => ({
-            orderLineId: p.orderLineId,
+            orderLineIds: p.orderLineIds, // n8n에서 배열로 전달됨
             openMallOrderNumber: orderNumber,
           })),
           priceMismatches: priceMismatches.map((p) => ({
@@ -1772,9 +1772,9 @@ async function processNaverOrder(
           orderNumber,
           purchaseOrderId,
           purchaseOrderLineIds: lineIds || [], // PurchaseOrderLinesReceive mutation용
-          // 상품별 결과 (mutation용 orderLineId 포함)
+          // 상품별 결과 (mutation용 orderLineIds 포함)
           products: addedProducts.map((p) => ({
-            orderLineId: p.orderLineId,
+            orderLineIds: p.orderLineIds, // n8n에서 배열로 전달됨
             openMallOrderNumber: orderNumber,
             productName: p.productName,
             productSku: p.productSku,
