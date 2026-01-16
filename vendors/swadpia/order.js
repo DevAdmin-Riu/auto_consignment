@@ -1792,7 +1792,7 @@ async function processSwadpiaOrder(
       await saveOrderResults(authToken, {
         purchaseOrderId,
         products: products.map(p => ({
-          orderLineId: p.orderLineId,
+          orderLineIds: p.orderLineIds,
           openMallOrderNumber: orderResult?.vendorOrderNumber || null,
         })),
         priceMismatches: cartVerification?.priceMismatches?.map(p => ({

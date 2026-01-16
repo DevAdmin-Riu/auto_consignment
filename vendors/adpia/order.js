@@ -1945,7 +1945,7 @@ async function processAdpiaOrder(
     await saveOrderResults(authToken, {
       purchaseOrderId,
       products: addedProducts.map((p) => ({
-        orderLineId: p.orderLineId,
+        orderLineIds: p.orderLineIds,
         openMallOrderNumber: vendorOrderNumber || null,
       })),
       priceMismatches: priceMismatches.map((p) => ({

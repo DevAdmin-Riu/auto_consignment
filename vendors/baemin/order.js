@@ -1876,7 +1876,7 @@ async function processBaeminOrder(
     await saveOrderResults(authToken, {
       purchaseOrderId,
       products: addedProducts.map(p => ({
-        orderLineId: p.orderLineId,
+        orderLineIds: p.orderLineIds,
         openMallOrderNumber: finalOrderNumber,
       })),
       priceMismatches: priceMismatches?.map(p => ({

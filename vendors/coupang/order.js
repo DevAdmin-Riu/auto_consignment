@@ -936,7 +936,7 @@ async function processCoupangOrder(
     await saveOrderResults(authToken, {
       purchaseOrderId,
       products: productResults.map(p => ({
-        orderLineId: p.orderLineId,
+        orderLineIds: p.orderLineIds,
         openMallOrderNumber: paymentStep?.orderNumber || null,
       })),
       priceMismatches: priceMismatches.map(p => ({

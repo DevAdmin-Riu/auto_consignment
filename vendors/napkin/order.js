@@ -1289,7 +1289,7 @@ async function processNapkinOrder(
     await saveOrderResults(authToken, {
       purchaseOrderId,
       products: products.map((p, i) => ({
-        orderLineId: p.orderLineId || p.purchaseOrderLineId || lineIds[i],
+        orderLineIds: p.orderLineIds,
         openMallOrderNumber: vendorOrderNumber || null,
       })),
       priceMismatches: priceMismatches?.map(p => ({
