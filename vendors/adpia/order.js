@@ -26,9 +26,9 @@ const {
   ERROR_CODES,
 } = require("../../lib/automation-error");
 const { saveOrderResults } = require("../../lib/graphql-client");
+const { automateISPPayment } = require("../../lib/isp-payment");
 const https = require("https");
 const http = require("http");
-const { spawn } = require("child_process");
 
 // 임시 파일 저장 경로
 const TEMP_DIR = path.join(__dirname, "../../temp");
@@ -37,396 +37,93 @@ const TEMP_DIR = path.join(__dirname, "../../temp");
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * PowerShell 명령 실행 (Promise) - 파일로 저장 후 실행
+ * ISP/페이북 결제 래퍼 함수 (adpia 전용)
+ * - 결제창에서 발생하는 alert를 처리하면서 공통 ISP 함수 호출
  */
-function runPowerShell(script, silent = false) {
-  return new Promise((resolve, reject) => {
-    // 임시 스크립트 파일 생성
-    const scriptPath = path.join(TEMP_DIR, `ps_${Date.now()}.ps1`);
-    fs.writeFileSync(scriptPath, script, "utf8");
-
-    const ps = spawn(
-      "powershell",
-      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath],
-      {
-        stdio: ["ignore", "pipe", "pipe"],
-        windowsHide: false,
-      }
-    );
-
-    let stdout = "";
-    let stderr = "";
-
-    ps.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
-
-    ps.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-
-    ps.on("close", (code) => {
-      try {
-        fs.unlinkSync(scriptPath);
-      } catch (e) {}
-
-      const output = stdout.trim();
-      if (output) {
-        if (!silent) console.log("[PowerShell]", output);
-        resolve(output);
-      } else if (code !== 0) {
-        if (!silent) console.log("[PowerShell] 실패:", stderr);
-        reject(new Error(stderr || `Exit code: ${code}`));
-      } else {
-        resolve("");
-      }
-    });
-
-    ps.on("error", (err) => {
-      try {
-        fs.unlinkSync(scriptPath);
-      } catch (e) {}
-      reject(err);
-    });
-  });
-}
-
-/**
- * ISP/페이북 네이티브 윈도우 자동화
- * VPWalletLauncherC 프로세스의 창을 찾아서 자동화
- */
-async function automateISPPayment(ispPassword, paymentPopup = null) {
-  console.log("[ISP] 네이티브 윈도우 자동화 시작...");
-
+async function automateISPPaymentWithAlertHandler(ispPassword, paymentPopup = null) {
   // alert 핸들러 (대기 루프 중 발생하는 alert 처리)
-  let alertHandled = false;
-  const handledDialogs = new WeakSet(); // 이미 처리된 dialog 추적
+  const handledDialogs = new WeakSet();
   const ispLoopAlertHandler = async (dialog) => {
-    // 이미 처리된 dialog는 무시 (중복 핸들러 방지)
-    if (handledDialogs.has(dialog)) {
-      return;
-    }
+    if (handledDialogs.has(dialog)) return;
     handledDialogs.add(dialog);
 
-    console.log("[ISP] 대기 중 Alert 발생:", dialog.type(), dialog.message());
-    alertHandled = true;
+    console.log("[ISP] Alert 발생:", dialog.type(), dialog.message());
     try {
       await dialog.accept();
     } catch (e) {
-      // 이미 처리된 dialog면 에러 무시
       if (!e.message.includes("already handled")) {
         console.log("[ISP] dialog accept 에러:", e.message);
       }
     }
   };
 
-  // 브라우저의 모든 페이지에 alert 핸들러 등록 (tosspayments iframe 등 대응)
-  let allPages = [];
   let browser = null;
-  const registeredPages = new Set(); // 이미 핸들러가 등록된 페이지 추적
+  const registeredPages = new Set();
 
-  // 새 페이지가 생성될 때 핸들러 등록하는 함수
   const registerHandlerOnPage = (p) => {
     if (!registeredPages.has(p)) {
       p.on("dialog", ispLoopAlertHandler);
       registeredPages.add(p);
-      console.log(`[ISP] 새 페이지에 alert 핸들러 등록 (총 ${registeredPages.size}개)`);
     }
   };
 
-  // 새 타겟(페이지) 생성 시 핸들러 등록
   const targetCreatedHandler = async (target) => {
     if (target.type() === "page") {
       try {
         const newPage = await target.page();
-        if (newPage) {
-          registerHandlerOnPage(newPage);
-        }
-      } catch (e) {
-        // 무시
-      }
+        if (newPage) registerHandlerOnPage(newPage);
+      } catch (e) {}
     }
   };
 
+  // 결제창이 있으면 alert 핸들러 등록
   if (paymentPopup) {
     try {
       browser = paymentPopup.browser();
-
-      // 새 페이지 생성 이벤트 리스너 등록
       browser.on("targetcreated", targetCreatedHandler);
 
-      // 기존 모든 페이지에 핸들러 등록
-      allPages = await browser.pages();
+      const allPages = await browser.pages();
       for (const p of allPages) {
         registerHandlerOnPage(p);
       }
-      console.log(`[ISP] ${allPages.length}개 기존 페이지에 alert 핸들러 등록`);
 
-      // 결제창에서 자동으로 alert 처리 (page.evaluate로 window.alert 오버라이드)
+      // alert/confirm 오버라이드
       try {
         await paymentPopup.evaluate(() => {
-          window.alert = (msg) => { console.log('[ISP Override] alert:', msg); };
+          window.alert = (msg) => console.log('[ISP Override] alert:', msg);
           window.confirm = (msg) => { console.log('[ISP Override] confirm:', msg); return true; };
         });
-        console.log("[ISP] 결제창 alert/confirm 오버라이드 완료");
-      } catch (e) {
-        console.log("[ISP] 결제창 오버라이드 실패:", e.message);
-      }
+      } catch (e) {}
 
-      // 결제창의 모든 frame에도 오버라이드 시도
+      // frame에도 오버라이드
       try {
-        const frames = paymentPopup.frames();
-        for (const frame of frames) {
+        for (const frame of paymentPopup.frames()) {
           try {
             await frame.evaluate(() => {
-              window.alert = (msg) => { console.log('[ISP Frame Override] alert:', msg); };
+              window.alert = (msg) => console.log('[ISP Frame Override] alert:', msg);
               window.confirm = (msg) => { console.log('[ISP Frame Override] confirm:', msg); return true; };
             });
-          } catch (e) {
-            // iframe 접근 실패 무시
-          }
+          } catch (e) {}
         }
-        console.log(`[ISP] ${frames.length}개 frame에 오버라이드 시도 완료`);
-      } catch (e) {
-        console.log("[ISP] frame 오버라이드 실패:", e.message);
-      }
+      } catch (e) {}
     } catch (e) {
-      console.log("[ISP] 브라우저 페이지 핸들러 등록 실패:", e.message);
-      // fallback: paymentPopup에만 등록
       paymentPopup.on("dialog", ispLoopAlertHandler);
       registeredPages.add(paymentPopup);
     }
   }
 
   try {
-    // 1. VPWalletLauncherC 프로세스 창이 열릴 때까지 대기 (최대 60초)
-    console.log("[ISP] 페이북 창 대기 중...");
-
-    const findWindowScript = `$proc = Get-Process -Name VPWalletLauncherC -ErrorAction SilentlyContinue | Select-Object -First 1; if ($proc -and $proc.MainWindowHandle -ne 0) { Write-Output $proc.MainWindowHandle.ToInt64() }`;
-
-    let hwnd = null;
-    for (let i = 0; i < 60; i++) {
-      // alert가 발생했으면 잠시 대기 후 계속
-      if (alertHandled) {
-        console.log("[ISP] Alert 처리 완료, 계속 대기...");
-        alertHandled = false;
-        await delay(500);
-      }
-
-      try {
-        const result = await runPowerShell(findWindowScript, true);
-        if (result && result.length > 0 && result !== "0") {
-          const lines = result.trim().split("\n");
-          const hwndLine = lines[lines.length - 1].trim();
-          if (/^\d+$/.test(hwndLine)) {
-            hwnd = hwndLine;
-            console.log("[ISP] 페이북 창 발견, HWND:", hwnd);
-            break;
-          }
-        }
-      } catch (e) {
-        // 무시하고 계속 대기
-      }
-      await delay(1000);
-      if (i % 5 === 0) {
-        console.log(`[ISP] 창 대기 중... ${i}초`);
-      }
-    }
-
-    if (!hwnd) {
-      console.log("[ISP] 페이북 창을 찾을 수 없음 - 수동 결제 필요");
-      // 핸들러 제거 (모든 페이지에서)
-      for (const p of registeredPages) {
-        try { p.off("dialog", ispLoopAlertHandler); } catch (e) {}
-      }
-      if (browser) {
-        try { browser.off("targetcreated", targetCreatedHandler); } catch (e) {}
-      }
-      return { success: false, error: "페이북 창을 찾을 수 없음" };
-    }
-
-    // 2. 창 활성화 및 위치 가져오기
-    console.log("[ISP] 창 활성화 및 위치 확인...");
-    const activateAndGetRectScript = `
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-
-public class Win32 {
-    [DllImport("user32.dll")]
-    public static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
-    [DllImport("user32.dll")]
-    public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct RECT {
-        public int Left, Top, Right, Bottom;
-    }
-}
-'@
-
-$hwnd = [IntPtr]::new(${hwnd})
-[Win32]::ShowWindow($hwnd, 5)
-[Win32]::SetForegroundWindow($hwnd)
-Start-Sleep -Milliseconds 500
-
-$rect = New-Object Win32+RECT
-[Win32]::GetWindowRect($hwnd, [ref]$rect)
-Write-Output "$($rect.Left),$($rect.Top),$($rect.Right),$($rect.Bottom)"
-    `;
-
-    const rectResult = await runPowerShell(activateAndGetRectScript);
-    const lines = rectResult.trim().split("\n");
-    const rectLine = lines[lines.length - 1].trim();
-    const [winLeft, winTop, winRight, winBottom] = rectLine
-      .split(",")
-      .map(Number);
-    const winWidth = winRight - winLeft;
-    const winHeight = winBottom - winTop;
-    console.log(
-      `[ISP] 창 위치: Left=${winLeft}, Top=${winTop}, Size=${winWidth}x${winHeight}`
-    );
-
-    await delay(1000);
-
-    // 3. 비밀번호 입력 필드 클릭 후 입력
-    if (ispPassword) {
-      console.log("[ISP] 비밀번호 필드 클릭 및 입력...");
-
-      // 비밀번호 필드: 절대 좌표 x=960, y=650
-      const pwdX = 960;
-      const pwdY = 650;
-
-      const passwordScript = `
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-
-public class MouseKeyboard {
-    [DllImport("user32.dll")]
-    public static extern bool SetCursorPos(int X, int Y);
-
-    [DllImport("user32.dll")]
-    public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, IntPtr dwExtraInfo);
-
-    [DllImport("user32.dll")]
-    public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, IntPtr dwExtraInfo);
-
-    public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
-    public const uint MOUSEEVENTF_LEFTUP = 0x0004;
-    public const uint KEYEVENTF_KEYUP = 0x0002;
-
-    public static void Click(int x, int y) {
-        SetCursorPos(x, y);
-        System.Threading.Thread.Sleep(50);
-        mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, IntPtr.Zero);
-        System.Threading.Thread.Sleep(30);
-        mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, IntPtr.Zero);
-    }
-
-    public static void TypeKey(byte vk) {
-        keybd_event(vk, 0, 0, IntPtr.Zero);
-        System.Threading.Thread.Sleep(30);
-        keybd_event(vk, 0, KEYEVENTF_KEYUP, IntPtr.Zero);
-        System.Threading.Thread.Sleep(50);
-    }
-}
-'@
-
-$x = ${pwdX}
-$y = ${pwdY}
-
-# 클릭 3번
-[MouseKeyboard]::Click($x, $y)
-Start-Sleep -Milliseconds 300
-[MouseKeyboard]::Click($x, $y)
-Start-Sleep -Milliseconds 300
-[MouseKeyboard]::Click($x, $y)
-Start-Sleep -Milliseconds 500
-
-# 숫자 키 입력
-$password = '${ispPassword}'
-foreach ($char in $password.ToCharArray()) {
-    $vk = [byte][char]$char
-    [MouseKeyboard]::TypeKey($vk)
-}
-
-Write-Output "Done at $x, $y"
-      `;
-
-      await runPowerShell(passwordScript);
-      await delay(1000);
-    }
-
-    // 4. 결제진행 버튼 클릭
-    console.log("[ISP] 결제진행 버튼 클릭...");
-
-    // 결제 버튼: 절대 좌표 x=960, y=720
-    const payX = 960;
-    const payY = 720;
-
-    const clickPayScript = `
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-
-public class MouseHelper2 {
-    [DllImport("user32.dll")]
-    public static extern bool SetCursorPos(int X, int Y);
-
-    [DllImport("user32.dll")]
-    public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, IntPtr dwExtraInfo);
-
-    public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
-    public const uint MOUSEEVENTF_LEFTUP = 0x0004;
-
-    public static void Click(int x, int y) {
-        SetCursorPos(x, y);
-        System.Threading.Thread.Sleep(50);
-        mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, IntPtr.Zero);
-        System.Threading.Thread.Sleep(30);
-        mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, IntPtr.Zero);
-    }
-}
-'@
-
-# 클릭 3번
-[MouseHelper2]::Click(${payX}, ${payY})
-Start-Sleep -Milliseconds 300
-[MouseHelper2]::Click(${payX}, ${payY})
-Start-Sleep -Milliseconds 300
-[MouseHelper2]::Click(${payX}, ${payY})
-Write-Output "Pay button clicked at ${payX}, ${payY}"
-    `;
-
-    await runPowerShell(clickPayScript);
-    await delay(3000);
-
-    console.log("[ISP] 네이티브 윈도우 자동화 완료");
-    // 핸들러 제거 (모든 페이지에서)
+    // 공통 ISP 결제 함수 호출
+    const result = await automateISPPayment(ispPassword);
+    return result;
+  } finally {
+    // 핸들러 제거
     for (const p of registeredPages) {
       try { p.off("dialog", ispLoopAlertHandler); } catch (e) {}
     }
     if (browser) {
       try { browser.off("targetcreated", targetCreatedHandler); } catch (e) {}
     }
-    return { success: true };
-  } catch (error) {
-    console.error("[ISP] 자동화 실패:", error.message);
-    // 핸들러 제거 (모든 페이지에서)
-    for (const p of registeredPages) {
-      try { p.off("dialog", ispLoopAlertHandler); } catch (e) {}
-    }
-    if (browser) {
-      try { browser.off("targetcreated", targetCreatedHandler); } catch (e) {}
-    }
-    return { success: false, error: error.message };
   }
 }
 
@@ -1816,7 +1513,7 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
                 await delay(3000);
 
                 console.log("[adpia] ISP 네이티브 결제창 자동화 시작...");
-                const ispResult = await automateISPPayment(ispPassword, paymentPopup);
+                const ispResult = await automateISPPaymentWithAlertHandler(ispPassword, paymentPopup);
 
                 // 핸들러 제거
                 page.off("dialog", ispAlertHandler);

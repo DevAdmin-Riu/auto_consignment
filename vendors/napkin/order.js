@@ -10,9 +10,6 @@
  * 6. 주문/결제
  */
 
-const fs = require("fs");
-const path = require("path");
-const { spawn } = require("child_process");
 const { getEnv } = require("../config");
 const {
   createOrderErrorCollector,
@@ -20,287 +17,10 @@ const {
   ERROR_CODES,
 } = require("../../lib/automation-error");
 const { saveOrderResults } = require("../../lib/graphql-client");
-
-// 임시 파일 저장 경로
-const TEMP_DIR = path.join(__dirname, "../../temp");
+const { automateISPPayment } = require("../../lib/isp-payment");
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * PowerShell 명령 실행 (Promise) - 파일로 저장 후 실행
- */
-function runPowerShell(script, silent = false) {
-  return new Promise((resolve, reject) => {
-    // temp 폴더가 없으면 생성
-    if (!fs.existsSync(TEMP_DIR)) {
-      fs.mkdirSync(TEMP_DIR, { recursive: true });
-    }
-
-    // 임시 스크립트 파일 생성
-    const scriptPath = path.join(TEMP_DIR, `ps_${Date.now()}.ps1`);
-    fs.writeFileSync(scriptPath, script, "utf8");
-
-    const ps = spawn(
-      "powershell",
-      ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", scriptPath],
-      {
-        stdio: ["ignore", "pipe", "pipe"],
-        windowsHide: false, // 창을 숨기지 않음
-      }
-    );
-
-    let stdout = "";
-    let stderr = "";
-
-    ps.stdout.on("data", (data) => {
-      stdout += data.toString();
-    });
-
-    ps.stderr.on("data", (data) => {
-      stderr += data.toString();
-    });
-
-    ps.on("close", (code) => {
-      // 임시 파일 삭제
-      try {
-        fs.unlinkSync(scriptPath);
-      } catch (e) {}
-
-      const output = stdout.trim();
-      if (output) {
-        if (!silent) console.log("[PowerShell]", output);
-        resolve(output);
-      } else if (code !== 0) {
-        if (!silent) console.log("[PowerShell] 실패:", stderr);
-        reject(new Error(stderr || `Exit code: ${code}`));
-      } else {
-        resolve("");
-      }
-    });
-
-    ps.on("error", (err) => {
-      try {
-        fs.unlinkSync(scriptPath);
-      } catch (e) {}
-      reject(err);
-    });
-  });
-}
-
-/**
- * ISP/페이북 네이티브 윈도우 자동화
- * VPWalletLauncherC 프로세스의 창을 찾아서 자동화
- * - 이미 PC/ISP 선택되어 있으므로 비밀번호 입력 + 결제 버튼만 클릭
- */
-async function automateISPPayment(ispPassword) {
-  console.log("[ISP] 네이티브 윈도우 자동화 시작...");
-
-  try {
-    // 1. VPWalletLauncherC 프로세스 창이 열릴 때까지 대기 (최대 60초)
-    console.log("[ISP] 페이북 창 대기 중...");
-
-    const findWindowScript = `$proc = Get-Process -Name VPWalletLauncherC -ErrorAction SilentlyContinue | Select-Object -First 1; if ($proc -and $proc.MainWindowHandle -ne 0) { Write-Output $proc.MainWindowHandle.ToInt64() }`;
-
-    let hwnd = null;
-    for (let i = 0; i < 60; i++) {
-      try {
-        const result = await runPowerShell(findWindowScript, true); // silent 모드
-        if (result && result.length > 0 && result !== "0") {
-          // 숫자만 추출 (HWND)
-          const lines = result.trim().split("\n");
-          const hwndLine = lines[lines.length - 1].trim();
-          if (/^\d+$/.test(hwndLine)) {
-            hwnd = hwndLine;
-            console.log("[ISP] 페이북 창 발견, HWND:", hwnd);
-            break;
-          }
-        }
-      } catch (e) {
-        // 무시하고 계속 대기
-      }
-      await new Promise((r) => setTimeout(r, 1000));
-      if (i % 5 === 0) {
-        console.log(`[ISP] 창 대기 중... ${i}초`);
-      }
-    }
-
-    if (!hwnd) {
-      console.log("[ISP] 페이북 창을 찾을 수 없음 - 수동 결제 필요");
-      return { success: false, error: "페이북 창을 찾을 수 없음" };
-    }
-
-    // 2. 창 활성화 및 위치 가져오기
-    console.log("[ISP] 창 활성화 및 위치 확인...");
-    const activateAndGetRectScript = `
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-
-public class Win32 {
-    [DllImport("user32.dll")]
-    public static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
-
-    [DllImport("user32.dll")]
-    public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
-
-    [StructLayout(LayoutKind.Sequential)]
-    public struct RECT {
-        public int Left, Top, Right, Bottom;
-    }
-}
-'@
-
-$hwnd = [IntPtr]::new(${hwnd})
-[Win32]::ShowWindow($hwnd, 5)
-[Win32]::SetForegroundWindow($hwnd)
-Start-Sleep -Milliseconds 500
-
-$rect = New-Object Win32+RECT
-[Win32]::GetWindowRect($hwnd, [ref]$rect)
-Write-Output "$($rect.Left),$($rect.Top),$($rect.Right),$($rect.Bottom)"
-    `;
-
-    const rectResult = await runPowerShell(activateAndGetRectScript);
-    // 출력에 True/False 불리언 값이 포함될 수 있으므로 마지막 줄(좌표)만 파싱
-    const lines = rectResult.trim().split("\n");
-    const rectLine = lines[lines.length - 1].trim();
-    const [winLeft, winTop, winRight, winBottom] = rectLine
-      .split(",")
-      .map(Number);
-    const winWidth = winRight - winLeft;
-    const winHeight = winBottom - winTop;
-    console.log(
-      `[ISP] 창 위치: Left=${winLeft}, Top=${winTop}, Size=${winWidth}x${winHeight}`
-    );
-
-    await new Promise((r) => setTimeout(r, 1000));
-
-    // 3. 비밀번호 입력 필드 클릭 후 입력
-    if (ispPassword) {
-      console.log("[ISP] 비밀번호 필드 클릭 및 입력...");
-
-      // 비밀번호 필드: 절대 좌표 x=960, y=650
-      const pwdX = 960;
-      const pwdY = 650;
-
-      const passwordScript = `
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-
-public class MouseKeyboard {
-    [DllImport("user32.dll")]
-    public static extern bool SetCursorPos(int X, int Y);
-
-    [DllImport("user32.dll")]
-    public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, IntPtr dwExtraInfo);
-
-    [DllImport("user32.dll")]
-    public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, IntPtr dwExtraInfo);
-
-    public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
-    public const uint MOUSEEVENTF_LEFTUP = 0x0004;
-    public const uint KEYEVENTF_KEYUP = 0x0002;
-
-    public static void Click(int x, int y) {
-        SetCursorPos(x, y);
-        System.Threading.Thread.Sleep(50);
-        mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, IntPtr.Zero);
-        System.Threading.Thread.Sleep(30);
-        mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, IntPtr.Zero);
-    }
-
-    public static void TypeKey(byte vk) {
-        keybd_event(vk, 0, 0, IntPtr.Zero);
-        System.Threading.Thread.Sleep(30);
-        keybd_event(vk, 0, KEYEVENTF_KEYUP, IntPtr.Zero);
-        System.Threading.Thread.Sleep(50);
-    }
-}
-'@
-
-$x = ${pwdX}
-$y = ${pwdY}
-
-# 클릭 3번
-[MouseKeyboard]::Click($x, $y)
-Start-Sleep -Milliseconds 300
-[MouseKeyboard]::Click($x, $y)
-Start-Sleep -Milliseconds 300
-[MouseKeyboard]::Click($x, $y)
-Start-Sleep -Milliseconds 500
-
-# 숫자 키 입력
-$password = '${ispPassword}'
-foreach ($char in $password.ToCharArray()) {
-    $vk = [byte][char]$char
-    [MouseKeyboard]::TypeKey($vk)
-}
-
-Write-Output "Done at $x, $y"
-      `;
-
-      await runPowerShell(passwordScript);
-      await new Promise((r) => setTimeout(r, 1000));
-    }
-
-    // 4. 결제진행 버튼 클릭
-    console.log("[ISP] 결제진행 버튼 클릭...");
-
-    // 결제 버튼: 절대 좌표 x=960, y=720
-    const payX = 960;
-    const payY = 720;
-
-    const clickPayScript = `
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type @'
-using System;
-using System.Runtime.InteropServices;
-
-public class MouseHelper2 {
-    [DllImport("user32.dll")]
-    public static extern bool SetCursorPos(int X, int Y);
-
-    [DllImport("user32.dll")]
-    public static extern void mouse_event(uint dwFlags, int dx, int dy, uint dwData, IntPtr dwExtraInfo);
-
-    public const uint MOUSEEVENTF_LEFTDOWN = 0x0002;
-    public const uint MOUSEEVENTF_LEFTUP = 0x0004;
-
-    public static void Click(int x, int y) {
-        SetCursorPos(x, y);
-        System.Threading.Thread.Sleep(50);
-        mouse_event(MOUSEEVENTF_LEFTDOWN, 0, 0, 0, IntPtr.Zero);
-        System.Threading.Thread.Sleep(30);
-        mouse_event(MOUSEEVENTF_LEFTUP, 0, 0, 0, IntPtr.Zero);
-    }
-}
-'@
-
-# 클릭 3번
-[MouseHelper2]::Click(${payX}, ${payY})
-Start-Sleep -Milliseconds 300
-[MouseHelper2]::Click(${payX}, ${payY})
-Start-Sleep -Milliseconds 300
-[MouseHelper2]::Click(${payX}, ${payY})
-Write-Output "Pay button clicked at ${payX}, ${payY}"
-    `;
-
-    await runPowerShell(clickPayScript);
-    await new Promise((r) => setTimeout(r, 3000));
-
-    console.log("[ISP] 네이티브 윈도우 자동화 완료");
-    return { success: true };
-  } catch (error) {
-    console.error("[ISP] 자동화 실패:", error.message);
-    return { success: false, error: error.message };
-  }
-}
 
 // waitFor 함수
 async function waitFor(page, selector, timeout = 10000) {
@@ -887,6 +607,25 @@ async function processNapkinOrder(
       console.log(`[napkin] URL: ${product.productUrl}`);
       console.log(`[napkin] 수량: ${product.quantity}`);
 
+      // productUrl이 없으면 스킵
+      if (!product.productUrl) {
+        console.log(`[napkin] ❌ 상품 URL이 없음 - 스킵: ${product.productName}`);
+        errorCollector.addError(
+          ORDER_STEPS.PRODUCT_ACCESS,
+          ERROR_CODES.PRODUCT_NOT_FOUND,
+          `상품 URL이 없음: ${product.productName}`,
+          { productSku: product.productSku, lineId }
+        );
+        results.push({
+          success: false,
+          productName: product.productName,
+          productSku: product.productSku,
+          lineId,
+          message: "상품 URL 없음",
+        });
+        continue;
+      }
+
       try {
         // 3-1. 상품 페이지 이동
         await page.goto(product.productUrl, {
@@ -1251,15 +990,62 @@ async function processNapkinOrder(
 
           if (bcCardClicked) {
             console.log("[napkin] ✅ 비씨카드 선택 완료");
-            await delay(2000);
+            await delay(3000);
 
-            // 필수 동의 버튼 클릭
-            const agreeSelector = '#__next > div > main > section.payment-gateway-cache-pwjxn4 > form > div.payment-gateway-cache-1elpzgm > div > div.payment-gateway-cache-pi74h5 > div';
-            const agreeBtn = await frame.$(agreeSelector);
-            if (agreeBtn) {
-              await agreeBtn.click();
-              console.log("[napkin] ✅ 필수 동의 클릭");
+            // 필수 동의 버튼 클릭 (최대 10초 대기하면서 재시도)
+            console.log("[napkin] 필수 동의 버튼 찾는 중...");
+
+            let agreeClicked = null;
+            for (let retry = 0; retry < 10; retry++) {
+              agreeClicked = await frame.evaluate(() => {
+                // 방법 1: aria-label로 찾기
+                const inputs = document.querySelectorAll('input[type="checkbox"]');
+                for (const input of inputs) {
+                  const ariaLabel = input.getAttribute('aria-label') || '';
+                  if (ariaLabel.includes('필수')) {
+                    input.click();
+                    return 'aria-label';
+                  }
+                }
+
+                // 방법 2: label 텍스트로 찾기
+                const labels = document.querySelectorAll('label');
+                for (const label of labels) {
+                  const text = label.textContent || '';
+                  if (text.includes('필수')) {
+                    const input = label.querySelector('input[type="checkbox"]');
+                    if (input) {
+                      input.click();
+                      return 'label-input';
+                    }
+                    const forId = label.getAttribute('for');
+                    if (forId) {
+                      const linkedInput = document.getElementById(forId);
+                      if (linkedInput) {
+                        linkedInput.click();
+                        return 'label-for';
+                      }
+                    }
+                    label.click();
+                    return 'label-click';
+                  }
+                }
+
+                return null;
+              });
+
+              if (agreeClicked) {
+                console.log(`[napkin] ✅ 필수 동의 클릭 (방법: ${agreeClicked}, 시도: ${retry + 1})`);
+                await delay(2000);
+                break;
+              }
+
+              console.log(`[napkin] 필수 동의 버튼 대기 중... (${retry + 1}/10)`);
               await delay(1000);
+            }
+
+            if (!agreeClicked) {
+              console.log("[napkin] ⚠️ 필수 동의 버튼을 찾지 못함 (10초 대기 후)");
             }
 
             // 다음 버튼 클릭 전 현재 페이지 목록 저장
@@ -1289,13 +1075,74 @@ async function processNapkinOrder(
             };
             browser.on("targetcreated", targetCreatedHandler);
 
-            // 다음 버튼 클릭
-            const nextSelector = '#__next > div > main > section.payment-gateway-cache-pwjxn4 > form > div.payment-gateway-cache-1elpzgm > button';
-            const nextBtn = await frame.$(nextSelector);
-            if (nextBtn) {
-              await nextBtn.click();
-              console.log("[napkin] ✅ 다음 버튼 클릭");
-              await delay(3000);
+            // 다음 버튼 클릭 (최대 10초 대기하면서 재시도)
+            console.log("[napkin] 다음 버튼 찾는 중...");
+
+            let nextClicked = null;
+            for (let retry = 0; retry < 10; retry++) {
+              nextClicked = await frame.evaluate(() => {
+                // 방법 1: 버튼 텍스트로 찾기
+                const buttons = document.querySelectorAll('button');
+                for (const btn of buttons) {
+                  const text = (btn.textContent || '').trim();
+                  if (text === '다음' || text.includes('다음')) {
+                    btn.click();
+                    return 'text-다음';
+                  }
+                }
+
+                // 방법 2: submit 타입 버튼
+                const submitBtns = document.querySelectorAll('button[type="submit"]');
+                for (const btn of submitBtns) {
+                  btn.click();
+                  return 'submit';
+                }
+
+                return null;
+              });
+
+              if (nextClicked) {
+                console.log(`[napkin] ✅ 다음 버튼 클릭 (방법: ${nextClicked}, 시도: ${retry + 1})`);
+                await delay(3000);
+                break;
+              }
+
+              console.log(`[napkin] 다음 버튼 대기 중... (${retry + 1}/10)`);
+              await delay(1000);
+            }
+
+            if (nextClicked) {
+              // 두 번째 다음 버튼 클릭 (최대 10초 대기하면서 재시도)
+              console.log("[napkin] 두 번째 다음 버튼 찾는 중...");
+
+              let nextClicked2 = null;
+              for (let retry = 0; retry < 10; retry++) {
+                nextClicked2 = await frame.evaluate(() => {
+                  const buttons = document.querySelectorAll('button');
+                  for (const btn of buttons) {
+                    const text = (btn.textContent || '').trim();
+                    if (text === '다음' || text.includes('다음')) {
+                      btn.click();
+                      return 'text-다음';
+                    }
+                  }
+                  const submitBtns = document.querySelectorAll('button[type="submit"]');
+                  for (const btn of submitBtns) {
+                    btn.click();
+                    return 'submit';
+                  }
+                  return null;
+                });
+
+                if (nextClicked2) {
+                  console.log(`[napkin] ✅ 두 번째 다음 버튼 클릭 (방법: ${nextClicked2}, 시도: ${retry + 1})`);
+                  await delay(3000);
+                  break;
+                }
+
+                console.log(`[napkin] 두 번째 다음 버튼 대기 중... (${retry + 1}/10)`);
+                await delay(1000);
+              }
 
               // BC카드 결제창 (새 창) 찾기 (이미 targetcreated에서 잡았을 수 있음)
               console.log("[napkin] BC카드 결제창 대기...");
@@ -1433,8 +1280,8 @@ async function processNapkinOrder(
     // saveOrderResults 호출 (성공)
     await saveOrderResults(authToken, {
       purchaseOrderId,
-      products: products.map(p => ({
-        orderLineId: p.orderLineId,
+      products: products.map((p, i) => ({
+        orderLineId: p.orderLineId || p.purchaseOrderLineId || lineIds[i],
         openMallOrderNumber: vendorOrderNumber || null,
       })),
       priceMismatches: priceMismatches?.map(p => ({
@@ -1463,8 +1310,8 @@ async function processNapkinOrder(
       vendor: vendor.name,
       purchaseOrderId: purchaseOrderId || null,
       purchaseOrderLineIds: purchaseOrderLineIds || [],
-      products: products.map((p) => ({
-        orderLineId: p.orderLineId,
+      products: products.map((p, i) => ({
+        orderLineId: p.orderLineId || lineIds[i],
         openMallOrderNumber: vendorOrderNumber || null,
         productName: p.productName,
         productSku: p.productSku,
