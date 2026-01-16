@@ -118,9 +118,15 @@ async function handleVendorOrder(req, res) {
       shippingAddress,
       orderData,
       lineIds, // 주문 라인 ID들
-      purchaseOrderId, // 발주 ID
+      purchaseOrderId: rawPurchaseOrderId, // 발주 ID (단일)
+      purchaseOrderIds, // 발주 ID들 (배열, n8n에서 전달)
       graphqlUrl, // GraphQL API URL (n8n에서 전달)
     } = req.body;
+
+    // purchaseOrderId 처리: purchaseOrderIds 배열 우선, 없으면 단일 값 사용
+    const purchaseOrderId = (purchaseOrderIds && purchaseOrderIds.length > 0)
+      ? purchaseOrderIds[0]
+      : rawPurchaseOrderId;
 
     // GraphQL URL 설정 (환경변수보다 요청에서 전달된 값 우선)
     if (graphqlUrl) {
@@ -167,6 +173,7 @@ async function handleVendorOrder(req, res) {
 
     console.log(`\n========== [${vendor.name}] 발주 시작 ==========`);
     console.log(`자동화 타입: ${AUTOMATION_TYPES[vendor.automationType]}`);
+    console.log(`발주 ID: ${purchaseOrderId || '없음'} (원본: purchaseOrderIds=${JSON.stringify(purchaseOrderIds)}, rawPurchaseOrderId=${rawPurchaseOrderId})`);
     console.log(`상품 수: ${productsList.length}개`);
     if (resolvedShippingAddress) {
       console.log(
