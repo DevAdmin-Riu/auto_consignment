@@ -1835,7 +1835,7 @@ async function processAdpiaOrder(
         // addedProducts, optionFailedProducts, priceMismatches 추적
         if (orderPageResult.success) {
           addedProducts.push({
-            orderLineId: product.orderLineId,
+            orderLineIds: product.orderLineIds,
             productVariantVendorId: product.productVariantVendorId,
             productSku: product.productSku,
             productName: product.productName,
@@ -1966,7 +1966,7 @@ async function processAdpiaOrder(
       purchaseOrderId: purchaseOrderId || null,
       purchaseOrderLineIds: lineIds || [],
       products: products.map((p) => ({
-        orderLineId: p.orderLineId,
+        orderLineIds: p.orderLineIds,
         openMallOrderNumber: vendorOrderNumber || null,
         productName: p.productName,
         productSku: p.productSku,

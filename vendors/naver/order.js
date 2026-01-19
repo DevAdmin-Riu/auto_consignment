@@ -1480,7 +1480,7 @@ async function processNaverOrder(
           success: false,
           message: `옵션 선택 실패로 주문 불가 (${optionFailedProducts.length}건)`,
           optionFailedProducts: optionFailedProducts.map((p) => ({
-            orderLineId: p.orderLineId,
+            orderLineIds: p.orderLineIds,
             purchaseOrderLineId: p.purchaseOrderLineId,
             productVariantVendorId: p.productVariantVendorId,
             productSku: p.productSku,
@@ -1790,7 +1790,7 @@ async function processNaverOrder(
           // 옵션 실패 관련
           optionFailedCount: optionFailedProducts.length,
           optionFailedProducts: optionFailedProducts.map((p) => ({
-            orderLineId: p.orderLineId,
+            orderLineIds: p.orderLineIds,
             purchaseOrderLineId: p.purchaseOrderLineId,
             productVariantVendorId: p.productVariantVendorId,
             productSku: p.productSku,

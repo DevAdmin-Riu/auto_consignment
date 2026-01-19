@@ -903,7 +903,7 @@ async function processCoupangOrder(
       productSku: product.productSku || null,  // 제품코드 (가격 불일치 mutation용)
       productUrl: product.productUrl,
       quantity: quantity,
-      orderLineId: product.orderLineId || null,  // OrderLine ID (mutation용)
+      orderLineIds: product.orderLineIds || null,  // OrderLine IDs (mutation용)
       lineId: lineIds?.[i] || null,  // PurchaseOrderLine ID
       productVariantVendorId: product.productVariantVendorId || null,  // ProductVariantVendor ID
       orderNumber: paymentStep?.orderNumber || null,
@@ -969,7 +969,7 @@ async function processCoupangOrder(
     purchaseOrderLineIds: lineIds || [],  // PurchaseOrderLinesReceive mutation용
     // 상품별 결과 (mutation용 orderLineId 포함)
     products: productResults.map(p => ({
-      orderLineId: p.orderLineId,
+      orderLineIds: p.orderLineIds,
       openMallOrderNumber: p.orderNumber,
       productName: p.productName,
       productSku: p.productSku,

@@ -1815,7 +1815,7 @@ async function processBaeminOrder(
     const optionFailedProducts = addedProducts
       .filter((p) => p.optionFailed)
       .map((p) => ({
-        orderLineId: p.orderLineId,
+        orderLineIds: p.orderLineIds,
         purchaseOrderLineId: p.purchaseOrderLineId,
         productVariantVendorId: p.productVariantVendorId,
         productSku: p.productSku,
@@ -1899,7 +1899,7 @@ async function processBaeminOrder(
       purchaseOrderId,
       purchaseOrderLineIds: purchaseOrderLineIds,
       products: addedProducts.map((p) => ({
-        orderLineId: p.orderLineId,
+        orderLineIds: p.orderLineIds,
         openMallOrderNumber: p.openMallOrderNumber || finalOrderNumber,
         productName: p.productName,
         productSku: p.productSku,

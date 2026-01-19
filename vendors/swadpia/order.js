@@ -1828,7 +1828,7 @@ async function processSwadpiaOrder(
       purchaseOrderLineIds: lineIds || [],  // PurchaseOrderLinesReceive mutation용
       retryCount,
       products: products.map((p) => ({
-        orderLineId: p.orderLineId,
+        orderLineIds: p.orderLineIds,
         openMallOrderNumber: orderResult?.vendorOrderNumber || null,
         productName: p.productName,
         productSku: p.productSku,

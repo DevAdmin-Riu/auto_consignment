@@ -1288,7 +1288,7 @@ async function processNapkinOrder(
     // saveOrderResults 호출 (성공)
     await saveOrderResults(authToken, {
       purchaseOrderId,
-      products: products.map((p, i) => ({
+      products: products.map((p) => ({
         orderLineIds: p.orderLineIds,
         openMallOrderNumber: vendorOrderNumber || null,
       })),
@@ -1319,8 +1319,8 @@ async function processNapkinOrder(
       vendor: vendor.name,
       purchaseOrderId: purchaseOrderId || null,
       purchaseOrderLineIds: purchaseOrderLineIds || [],
-      products: products.map((p, i) => ({
-        orderLineId: p.orderLineId || lineIds[i],
+      products: products.map((p) => ({
+        orderLineIds: p.orderLineIds,
         openMallOrderNumber: vendorOrderNumber || null,
         productName: p.productName,
         productSku: p.productSku,
