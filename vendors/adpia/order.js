@@ -1733,7 +1733,8 @@ async function processAdpiaOrder(
     await clearCart(page);
 
     // 3. 각 상품 처리
-    for (const product of products) {
+    for (let productIndex = 0; productIndex < products.length; productIndex++) {
+      const product = products[productIndex];
       console.log(`[adpia] 상품 처리: ${product.productName}`);
 
       try {
@@ -1742,7 +1743,7 @@ async function processAdpiaOrder(
 
         if (!findResult.success) {
           results.push({
-            lineId: product.orderLineId,
+            lineId: lineIds?.[productIndex],
             productVariantVendorId: product.productVariantVendorId,
             productSku: product.productSku,
             productName: product.productName,
@@ -1820,7 +1821,7 @@ async function processAdpiaOrder(
         }
 
         const resultEntry = {
-          lineId: product.orderLineId,
+          lineId: lineIds?.[productIndex],
           productVariantVendorId: product.productVariantVendorId,
           productSku: product.productSku,
           productName: product.productName,
@@ -1860,11 +1861,11 @@ async function processAdpiaOrder(
         console.error(`[adpia] 상품 처리 에러:`, error.message);
         errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, error.message, {
           purchaseOrderId,
-          purchaseOrderLineId: product.orderLineId,
+          purchaseOrderLineId: lineIds?.[productIndex],
           productVariantVendorId: product.productVariantVendorId,
         });
         results.push({
-          lineId: product.orderLineId,
+          lineId: lineIds?.[productIndex],
           productSku: product.productSku,
           productName: product.productName,
           success: false,
