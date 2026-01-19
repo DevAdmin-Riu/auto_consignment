@@ -960,6 +960,18 @@ async function processNapkinOrder(
       console.log("[napkin] 배송지 정보 입력 완료");
     }
 
+    // 일반배송 선택 (새벽배송 대신)
+    console.log("[napkin] 일반배송 선택...");
+    const normalDeliverySelector = '#chatis_dd_entrance_form_area > div > div.chatis_dd_modal_delivery_type_wrap > label.dawn_entrance_radio_wrap.dawn_entrance_inline_radio_wrap.chatis_dd_modal_type_radio_normal > input';
+    const normalDeliveryRadio = await waitFor(page, normalDeliverySelector, 3000);
+    if (normalDeliveryRadio) {
+      await normalDeliveryRadio.click();
+      console.log("[napkin] ✅ 일반배송 선택 완료");
+      await delay(500);
+    } else {
+      console.log("[napkin] ⚠️ 일반배송 라디오 버튼을 찾을 수 없음 (무시하고 진행)");
+    }
+
     // 결제하기 버튼 클릭
     console.log("[napkin] 결제하기 버튼 클릭...");
     await delay(1000);
