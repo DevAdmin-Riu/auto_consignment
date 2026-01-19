@@ -1729,16 +1729,16 @@ async function processAdpiaOrder(
       });
     }
 
-    // 2. 각 상품 개별 처리 (애드피아: 상품별로 장바구니 → 주문 → 결제)
+    // 2. 장바구니 비우기
+    await clearCart(page);
+
+    // 3. 각 상품 처리
     for (let productIndex = 0; productIndex < products.length; productIndex++) {
       const product = products[productIndex];
-      console.log(`\n[adpia] ========== 상품 ${productIndex + 1}/${products.length}: ${product.productName} ==========`);
+      console.log(`[adpia] 상품 처리: ${product.productName}`);
 
       try {
-        // 2-1. 장바구니 비우기 (이전 상품 잔여분 제거)
-        await clearCart(page);
-
-        // 2-2. 제품코드로 상품 찾기 (favor 페이지에서)
+        // 3-1. 제품코드로 상품 찾기 (favor 페이지에서)
         const findResult = await findProductByCode(page, product.productSku);
 
         if (!findResult.success) {
@@ -1760,7 +1760,7 @@ async function processAdpiaOrder(
           continue;
         }
 
-        // 2-3. 협력사 가격 확인 (favor 페이지에서 가져온 가격)
+        // 3-2. 협력사 가격 확인 (favor 페이지에서 가져온 가격)
         const openMallPrice = findResult.price; // 오픈몰 가격 (VAT 포함)
         const expectedPrice = product.vendorPriceExcludeVat; // 시스템 가격 (VAT 제외)
 
@@ -1781,7 +1781,7 @@ async function processAdpiaOrder(
           difference: openMallPriceExcludeVat - expectedPrice,
         };
 
-        // 2-4. 주문 페이지에서 처리 (수량 입력, 파일 업로드, 장바구니 담기)
+        // 3-3. 주문 페이지에서 처리 (수량 입력, 파일 업로드, 장바구니 담기)
         const downloadedFile = downloadedFiles.find(
           (f) => f.productSku === product.productSku
         );
@@ -1820,92 +1820,6 @@ async function processAdpiaOrder(
           break;
         }
 
-        // 장바구니 담기 실패 시 다음 상품으로
-        if (!orderPageResult.success) {
-          results.push({
-            lineId: lineIds?.[productIndex],
-            productVariantVendorId: product.productVariantVendorId,
-            productSku: product.productSku,
-            productName: product.productName,
-            quantity: product.quantity,
-            price: openMallPrice,
-            success: false,
-            message: orderPageResult.message,
-            priceInfo,
-          });
-          if (orderPageResult.message?.includes('옵션')) {
-            optionFailedProducts.push({
-              productVariantVendorId: product.productVariantVendorId,
-              reason: orderPageResult.message,
-            });
-          }
-          continue;
-        }
-
-        // 2-5. 장바구니 → 주문서 이동
-        let vendorOrderNumber = null;
-        const orderFormResult = await goToOrderForm(page);
-        if (!orderFormResult.success) {
-          console.log("[adpia] 주문서 이동 실패:", orderFormResult.message);
-          results.push({
-            lineId: lineIds?.[productIndex],
-            productVariantVendorId: product.productVariantVendorId,
-            productSku: product.productSku,
-            productName: product.productName,
-            quantity: product.quantity,
-            price: openMallPrice,
-            success: false,
-            message: orderFormResult.message,
-            priceInfo,
-          });
-          continue;
-        }
-
-        // 2-6. 배송지 입력 + 결제
-        if (shippingInfo) {
-          const shippingResult = await fillShippingInfo(
-            page,
-            shippingInfo,
-            ispPassword
-          );
-          if (!shippingResult.success) {
-            console.log("[adpia] 배송지 입력/결제 실패:", shippingResult.message);
-            results.push({
-              lineId: lineIds?.[productIndex],
-              productVariantVendorId: product.productVariantVendorId,
-              productSku: product.productSku,
-              productName: product.productName,
-              quantity: product.quantity,
-              price: openMallPrice,
-              success: false,
-              message: shippingResult.message,
-              priceInfo,
-            });
-            continue;
-          } else if (shippingResult.vendorOrderNumber) {
-            vendorOrderNumber = shippingResult.vendorOrderNumber;
-            console.log("[adpia] 주문번호 확인:", vendorOrderNumber);
-          }
-        }
-
-        // 2-7. 주문번호 없으면 재시도
-        if (!vendorOrderNumber) {
-          await delay(3000);
-          try {
-            const orderNumberEl = await page.$(SELECTORS.order.orderNumber);
-            if (orderNumberEl) {
-              vendorOrderNumber = await page.$eval(
-                SELECTORS.order.orderNumber,
-                (el) => el.textContent?.trim()
-              );
-              console.log("[adpia] 주문번호 재시도 성공:", vendorOrderNumber);
-            }
-          } catch (e) {
-            console.log("[adpia] 주문번호 재시도 실패:", e.message);
-          }
-        }
-
-        // 2-8. 결과 저장
         const resultEntry = {
           lineId: lineIds?.[productIndex],
           productVariantVendorId: product.productVariantVendorId,
@@ -1913,24 +1827,26 @@ async function processAdpiaOrder(
           productName: product.productName,
           quantity: product.quantity,
           price: openMallPrice,
-          success: !!vendorOrderNumber,
-          message: vendorOrderNumber ? "주문 완료" : "주문번호 추출 실패",
-          vendorOrderNumber: vendorOrderNumber || null,
-          priceInfo,
+          success: orderPageResult.success,
+          message: orderPageResult.message,
+          priceInfo, // 가격 비교 정보 (priceMismatch 포함)
         };
         results.push(resultEntry);
 
-        // 성공한 상품 추적 (주문번호 포함)
-        if (vendorOrderNumber) {
+        // addedProducts, optionFailedProducts, priceMismatches 추적
+        if (orderPageResult.success) {
           addedProducts.push({
             orderLineIds: product.orderLineIds,
             productVariantVendorId: product.productVariantVendorId,
             productSku: product.productSku,
             productName: product.productName,
             quantity: product.quantity,
-            openMallOrderNumber: vendorOrderNumber,
           });
-          console.log(`[adpia] ✅ 상품 ${productIndex + 1} 주문 완료: ${vendorOrderNumber}`);
+        } else if (orderPageResult.message?.includes('옵션')) {
+          optionFailedProducts.push({
+            productVariantVendorId: product.productVariantVendorId,
+            reason: orderPageResult.message,
+          });
         }
 
         // 가격 불일치 추적
@@ -1958,9 +1874,49 @@ async function processAdpiaOrder(
       }
     }
 
-    // 3. 결과 요약
+    // 4. 장바구니 → 주문서 이동
+    let vendorOrderNumber = null;
     const successProducts = results.filter((r) => r.success);
-    console.log(`\n[adpia] ========== 주문 완료: ${successProducts.length}/${products.length}개 ==========`);
+    if (successProducts.length > 0) {
+      const orderFormResult = await goToOrderForm(page);
+      if (!orderFormResult.success) {
+        console.log("[adpia] 주문서 이동 실패:", orderFormResult.message);
+      } else {
+        // 5. 배송지 입력 + 결제
+        if (shippingInfo) {
+          const shippingResult = await fillShippingInfo(
+            page,
+            shippingInfo,
+            ispPassword
+          );
+          if (!shippingResult.success) {
+            console.log("[adpia] 배송지 입력 실패:", shippingResult.message);
+          } else if (shippingResult.vendorOrderNumber) {
+            vendorOrderNumber = shippingResult.vendorOrderNumber;
+            console.log("[adpia] 주문번호 확인:", vendorOrderNumber);
+          }
+        }
+
+        // 6. 주문번호 없으면 재시도
+        if (!vendorOrderNumber) {
+          await delay(3000);
+          try {
+            const orderNumberEl = await page.$(SELECTORS.order.orderNumber);
+            if (orderNumberEl) {
+              vendorOrderNumber = await page.$eval(
+                SELECTORS.order.orderNumber,
+                (el) => el.textContent?.trim()
+              );
+              console.log("[adpia] 주문번호 재시도 성공:", vendorOrderNumber);
+            }
+          } catch (e) {
+            console.log("[adpia] 주문번호 재시도 실패:", e.message);
+          }
+        }
+      }
+    } else {
+      console.log("[adpia] 장바구니에 담긴 상품이 없어 주문서 이동 스킵");
+    }
 
     // 가격 불일치 목록 (res.json용 상세 정보)
     const priceMismatchList = results.filter((r) => r.priceInfo?.priceMismatch);
@@ -1986,12 +1942,12 @@ async function processAdpiaOrder(
         reason: r.message,
       }));
 
-    // saveOrderResults 호출 (성공 - 각 상품별 주문번호 사용)
+    // saveOrderResults 호출 (성공)
     await saveOrderResults(authToken, {
       purchaseOrderId,
       products: addedProducts.map((p) => ({
         orderLineIds: p.orderLineIds,
-        openMallOrderNumber: p.openMallOrderNumber || null,
+        openMallOrderNumber: vendorOrderNumber || null,
       })),
       priceMismatches: priceMismatches.map((p) => ({
         productVariantVendorId: p.productVariantVendorId,
@@ -2004,35 +1960,24 @@ async function processAdpiaOrder(
       success: true,
     });
 
-    // 성공한 주문번호 목록 추출
-    const vendorOrderNumbers = addedProducts
-      .map((p) => p.openMallOrderNumber)
-      .filter(Boolean);
-
     return res.json({
-      success: successProducts.length > 0,
-      message: `${successProducts.length}/${products.length}개 상품 주문 완료`,
+      success: true,
+      message: `${products.length}개 상품 처리 완료`,
       vendor: vendor.name,
       purchaseOrderId: purchaseOrderId || null,
       purchaseOrderLineIds: lineIds || [],
-      products: products.map((p, idx) => {
-        // results에서 해당 상품의 주문번호 찾기
-        const result = results.find((r) => r.productSku === p.productSku);
-        return {
-          orderLineIds: p.orderLineIds,
-          openMallOrderNumber: result?.vendorOrderNumber || null,
-          productName: p.productName,
-          productSku: p.productSku,
-          quantity: p.quantity,
-          vendorPriceExcludeVat: p.vendorPriceExcludeVat,
-          needsManagerVerification: p.needsManagerVerification || false,
-          success: result?.success || false,
-        };
-      }),
+      products: products.map((p) => ({
+        orderLineIds: p.orderLineIds,
+        openMallOrderNumber: vendorOrderNumber || null,
+        productName: p.productName,
+        productSku: p.productSku,
+        quantity: p.quantity,
+        vendorPriceExcludeVat: p.vendorPriceExcludeVat,
+        needsManagerVerification: p.needsManagerVerification || false,
+      })),
       orderResult: {
-        placed: vendorOrderNumbers.length > 0,
-        vendorOrderNumbers: vendorOrderNumbers, // 배열로 변경
-        vendorOrderNumber: vendorOrderNumbers[0] || null, // 하위 호환성
+        placed: !!vendorOrderNumber,
+        vendorOrderNumber: vendorOrderNumber || null,
       },
       hasPriceMismatch: priceMismatchList.length > 0,
       priceMismatchCount: priceMismatchList.length,
@@ -2045,10 +1990,7 @@ async function processAdpiaOrder(
     errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, error.message, { purchaseOrderId });
     await saveOrderResults(authToken, {
       purchaseOrderId,
-      products: (addedProducts || []).map((p) => ({
-        orderLineIds: p.orderLineIds,
-        openMallOrderNumber: p.openMallOrderNumber || null,
-      })),
+      products: addedProducts || [],
       priceMismatches: [],
       optionFailedProducts: optionFailedProducts?.map((p) => ({
         productVariantVendorId: p.productVariantVendorId,
