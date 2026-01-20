@@ -19,7 +19,7 @@ const {
   ORDER_STEPS,
   ERROR_CODES,
 } = require("../../lib/automation-error");
-const { saveOrderResults } = require("../../lib/graphql-client");
+const { saveOrderResults, createPaymentLogs } = require("../../lib/graphql-client");
 
 // ==================== 셀렉터 정의 ====================
 
@@ -81,21 +81,15 @@ const SELECTORS = {
   finalOrderButton:
     "body > div.sc-gYbzsP.sc-cCjUiG.ezEUYI.jtlzcK > div.sc-jcMfQk.boexkD > div > button",
 
-  // 결제 페이지 - 주소 변경
-  addressChangeButton:
-    "#root > div > div.sc-jephDI.fmkuTR > section > section > div.sc-jlLNHi.ivBwAR > div.sc-hQQLEc.bFNvC > div > div.sc-jccYHG.gBSXkF.sc-kgwZvu.ewRxLB > button",
+  // 결제 페이지 - 주소 변경/수정/저장하기 버튼은 텍스트로 찾음 (enterShippingAddress에서 처리)
+  // styled-components 동적 클래스는 빌드마다 바뀌므로 사용하지 않음
 
-  // 주소 변경 모달 - 수정 버튼
-  addressEditButton:
-    "body > div.sc-gYbzsP.sc-cCjUiG.ezEUYI.jtlzcK > div.sc-jcMfQk.boexkD > div.sc-hbWBzy.ihvGVX > div.sc-jephDI.fmkuTR > div > div > div.sc-jccYHG.gBSXkF.sc-cPIbRQ.glDLkI > div.sc-islFiG.fifJNq",
+  // 주소 입력 폼 (autocomplete 속성 기반 - 안정적)
+  recipientNameInput: 'input[autocomplete="receiverName"]',
+  recipientPhoneInput: 'input[autocomplete="mobile"]',
 
-  // 주소 입력 폼
-  recipientNameInput:
-    "body > div:nth-child(16) > div.sc-jcMfQk.boexkD > form > div.sc-gXnjX.fdmBiR > div:nth-child(1) > div.sc-fWHiwC.dWvntu.sc-ckLdoV.gTFpWC > div > input",
-  recipientPhoneInput:
-    "body > div:nth-child(16) > div.sc-jcMfQk.boexkD > form > div.sc-gXnjX.fdmBiR > div:nth-child(2) > div.sc-fWHiwC.dWvntu.sc-ckLdoV.gTFpWC > div > input",
-  addressSearchButton:
-    "body > div:nth-child(16) > div.sc-jcMfQk.boexkD > form > div.sc-gXnjX.fdmBiR > div:nth-child(3) > button",
+  // 상세 주소 입력
+  detailAddressInput: 'input[autocomplete="detailAddress"]',
 
   // 다음 주소 검색 iframe
   daumPostcodeFrame: "iframe[title='우편번호 검색 프레임']",
@@ -111,7 +105,9 @@ const SELECTORS = {
   cashReceiptNoIssue:
     "#root > div > div.sc-jephDI.fmkuTR > section > section > div.sc-jlLNHi.ivBwAR > section.sc-caoIEO.cLZbNX > div > section > div > div:nth-child(3) > input",
 
-  // 필수 동의 라벨
+  // 필수 동의 체크박스 (input name이 가장 안정적)
+  requiredAgreementCheckbox: 'input[name="order-payment-agree-check"]',
+  // 레거시: 필수 동의 라벨 (styled-components 클래스 - 불안정)
   requiredAgreementLabel:
     "#root > div > div.sc-jephDI.fmkuTR > section > section > div.sc-fWpDKo.hauHbL > div.sc-eXGUsz.knNOLb > div.sc-jdudiz.eHkFji > div > label",
 
@@ -833,39 +829,206 @@ async function enterShippingAddress(page, shippingAddress) {
   }
 
   try {
-    // 1. 주소 변경 버튼 클릭
+    // 1. 주소 변경 버튼 클릭 (텍스트 "변경"으로 찾기 - styled class 대신)
     console.log("[baemin] 1. 주소 변경 버튼 클릭...");
-    const addressChangeBtn = await waitFor(page, SELECTORS.addressChangeButton, 5000);
     await delay(1100);
 
-    if (!addressChangeBtn) {
+    const changeClicked = await page.evaluate(() => {
+      const buttons = document.querySelectorAll("button");
+      for (const btn of buttons) {
+        const text = (btn.innerText || btn.textContent || "").trim();
+        if (text === "변경") {
+          btn.click();
+          return { clicked: true, text };
+        }
+      }
+      return { clicked: false };
+    });
+
+    if (!changeClicked.clicked) {
       console.log("[baemin] 주소 변경 버튼 없음");
       return { success: false, message: "주소 변경 버튼 없음" };
     }
-
-    await addressChangeBtn.click();
+    console.log(`[baemin] 주소 변경 버튼 클릭: "${changeClicked.text}"`);
     await delay(1100);
 
-    // 2. 수정 버튼 클릭
-    console.log("[baemin] 2. 수정 버튼 클릭...");
-    const editBtn = await waitFor(page, SELECTORS.addressEditButton, 5000);
+    // 2. 첫번째 주소의 수정(연필) 아이콘 클릭
+    console.log("[baemin] 2. 첫번째 주소 수정 아이콘 클릭...");
     await delay(1100);
 
-    if (!editBtn) {
-      console.log("[baemin] 수정 버튼 없음");
-      return { success: false, message: "수정 버튼 없음" };
+    // 연필 아이콘의 bounding box 좌표를 가져오기 (클릭은 Puppeteer로 함)
+    const pencilInfo = await page.evaluate(() => {
+      const debugInfo = [];
+
+      // 방법 1: "배송지 변경" 텍스트를 포함하는 요소 찾기
+      let modalContainer = null;
+      const allElements = document.querySelectorAll("*");
+
+      for (const el of allElements) {
+        const text = el.textContent?.trim();
+        if (text === "배송지 변경") {
+          const parent = el.parentElement;
+          if (parent) {
+            const hasImg = parent.querySelector("img") !== null;
+            const hasCloseIcon = parent.innerHTML.includes("close") || parent.innerHTML.includes("Close");
+            debugInfo.push(`Found "배송지 변경": tag=${el.tagName}, parent=${parent.tagName}, hasImg=${hasImg}`);
+
+            if (hasImg || hasCloseIcon) {
+              let container = parent;
+              for (let i = 0; i < 6; i++) {
+                if (container.parentElement) {
+                  container = container.parentElement;
+                }
+              }
+              modalContainer = container;
+              debugInfo.push(`Modal container found: ${modalContainer.tagName}, childCount=${modalContainer.children.length}`);
+              break;
+            }
+          }
+        }
+      }
+
+      // 방법 2: role="dialog" 또는 모달 클래스로 찾기
+      if (!modalContainer) {
+        const dialogs = document.querySelectorAll('[role="dialog"], [class*="modal"], [class*="Modal"], [class*="popup"], [class*="Popup"]');
+        for (const dialog of dialogs) {
+          if (dialog.textContent?.includes("배송지 변경")) {
+            modalContainer = dialog;
+            debugInfo.push(`Modal found via role/class: ${dialog.tagName}, class=${dialog.className?.substring(0, 50)}`);
+            break;
+          }
+        }
+      }
+
+      if (!modalContainer) {
+        return { found: false, reason: "배송지 변경 모달 없음", debug: debugInfo };
+      }
+
+      // 모달 안에서 연필 SVG 찾기
+      const svgs = modalContainer.querySelectorAll("svg");
+      debugInfo.push(`SVGs in modal: ${svgs.length}`);
+
+      for (const svg of svgs) {
+        const paths = svg.querySelectorAll("path");
+        for (const path of paths) {
+          const d = path.getAttribute("d") || "";
+          // 연필 아이콘 패턴들
+          if (d.includes("21.71 6.29") || d.includes("M3 17.25") || d.includes("pencil") || d.includes("edit")) {
+            debugInfo.push(`Pencil SVG found: d=${d.substring(0, 30)}...`);
+
+            // 클릭 대상 요소를 찾아서 좌표 반환 (클릭은 Puppeteer가 함)
+            let clickTarget = svg;
+
+            // 클릭 가능한 부모 찾기 (3단계까지)
+            let p = svg.parentElement;
+            for (let i = 0; i < 3 && p; i++) {
+              const tag = p.tagName.toLowerCase();
+              const role = p.getAttribute("role");
+              const cursor = window.getComputedStyle(p).cursor;
+              if (tag === "button" || tag === "a" || role === "button" || cursor === "pointer") {
+                clickTarget = p;
+                break;
+              }
+              p = p.parentElement;
+            }
+
+            const rect = clickTarget.getBoundingClientRect();
+            const tagInfo = `${clickTarget.tagName}${clickTarget.className ? '.' + String(clickTarget.className).split(' ')[0].substring(0, 20) : ''}`;
+            debugInfo.push(`Click target: ${tagInfo}, rect: ${JSON.stringify({ x: rect.x, y: rect.y, w: rect.width, h: rect.height })}`);
+
+            return {
+              found: true,
+              method: "pencil-svg",
+              clickedEl: tagInfo,
+              // 요소 중앙 좌표 반환
+              x: rect.x + rect.width / 2,
+              y: rect.y + rect.height / 2,
+              debug: debugInfo
+            };
+          }
+        }
+      }
+
+      // 모든 SVG path 값 출력 (디버깅용)
+      const allPaths = [];
+      svgs.forEach((svg, i) => {
+        const path = svg.querySelector("path");
+        if (path) {
+          allPaths.push({ index: i, d: (path.getAttribute("d") || "").substring(0, 40) });
+        }
+      });
+      debugInfo.push(`All SVG paths: ${JSON.stringify(allPaths)}`);
+
+      return { found: false, reason: "모달 내 연필 아이콘 없음", debug: debugInfo };
+    });
+
+    if (!pencilInfo.found) {
+      console.log(`[baemin] 첫번째 주소 수정 아이콘 없음: ${pencilInfo.reason || "unknown"}`);
+      if (pencilInfo.debug) {
+        console.log("[baemin] 디버그 정보:", JSON.stringify(pencilInfo.debug, null, 2));
+      }
+      return {
+        success: false,
+        message: pencilInfo.reason || "수정 아이콘 없음",
+      };
     }
 
-    await editBtn.click();
-    await delay(1100);
+    console.log(`[baemin] 연필 아이콘 발견 (${pencilInfo.method}) - ${pencilInfo.clickedEl}`);
+    console.log(`[baemin] 클릭 좌표: x=${pencilInfo.x}, y=${pencilInfo.y}`);
 
-    // 3. 받으실 분 입력 (puppeteer로 직접 입력)
+    // Puppeteer로 실제 마우스 클릭 (React 이벤트 확실히 트리거)
+    await page.mouse.click(pencilInfo.x, pencilInfo.y);
+    console.log("[baemin] Puppeteer mouse.click() 실행 완료");
+    await delay(2000);
+
+    // 클릭 후 수정 폼이 열렸는지 확인
+    let formOpened = await page.evaluate(() => {
+      const inputs = document.querySelectorAll('input[placeholder*="받으실"], input[placeholder*="이름"], input[autocomplete="name"]');
+      return inputs.length > 0;
+    });
+
+    // 폼 안 열리면 재시도: 요소 직접 클릭 시도
+    if (!formOpened) {
+      console.log("[baemin] ⚠️ 첫 번째 클릭으로 폼 안 열림 - JavaScript click() 재시도...");
+      await page.evaluate((x, y) => {
+        const el = document.elementFromPoint(x, y);
+        if (el) {
+          console.log("[baemin-eval] elementFromPoint:", el.tagName, el.className);
+          el.click();
+        }
+      }, pencilInfo.x, pencilInfo.y);
+      await delay(2000);
+
+      formOpened = await page.evaluate(() => {
+        const inputs = document.querySelectorAll('input[placeholder*="받으실"], input[placeholder*="이름"], input[autocomplete="name"]');
+        return inputs.length > 0;
+      });
+    }
+
+    if (!formOpened) {
+      console.log("[baemin] ❌ 수정 아이콘 클릭 후에도 폼이 안 열림");
+      // 디버깅: 현재 화면에 어떤 input들이 있는지 확인
+      const currentInputs = await page.evaluate(() => {
+        const inputs = document.querySelectorAll("input");
+        return Array.from(inputs).map(i => ({
+          placeholder: i.placeholder,
+          type: i.type,
+          name: i.name,
+          id: i.id
+        })).slice(0, 10);
+      });
+      console.log("[baemin] 현재 화면의 input들:", JSON.stringify(currentInputs, null, 2));
+    } else {
+      console.log("[baemin] ✅ 주소 수정 폼 열림 확인");
+    }
+
+    // 3. 받으실 분 입력 (placeholder/autocomplete 기반 셀렉터)
     console.log("[baemin] 3. 받으실 분 입력...");
     const recipientName = shippingAddress.firstName || "";
 
     if (recipientName) {
-      // input이 나타날 때까지 대기
-      const nameInput = await waitFor(page, 'input[autocomplete="receiverName"]', 5000);
+      // placeholder 또는 autocomplete 속성으로 찾기 (안정적)
+      const nameInput = await waitFor(page, SELECTORS.recipientNameInput, 5000);
       await delay(500);
 
       if (nameInput) {
@@ -883,7 +1046,7 @@ async function enterShippingAddress(page, shippingAddress) {
     console.log("[baemin] 4. 연락처 입력...");
     const phoneNumber = "010-7749-7515";
 
-    const phoneInput = await waitFor(page, 'input[autocomplete="mobile"]', 5000);
+    const phoneInput = await waitFor(page, SELECTORS.recipientPhoneInput, 5000);
     await delay(500);
 
     if (phoneInput) {
@@ -1048,127 +1211,67 @@ async function enterShippingAddress(page, shippingAddress) {
       console.log("[baemin] 주소 선택 에러:", e.message);
     }
 
-    // 9. "배송지 수정" 모달 내 상세주소 입력 (streetAddress2)
-    console.log("[baemin] 9. 배송지 수정 모달에서 상세주소 입력...");
+    // 9. 상세주소 입력 (placeholder 기반 셀렉터)
+    console.log("[baemin] 9. 상세주소 입력...");
     const detailAddress = shippingAddress.streetAddress2 || "";
 
-    // iframe 닫히고 "배송지 수정" 모달 대기
+    // iframe 닫히고 모달 대기
     await delay(1500);
 
     if (detailAddress) {
-      // "배송지 수정" 모달 내 상세주소 input 찾기
-      const detailInputResult = await page.evaluate((addr) => {
-        // "배송지 수정" 텍스트가 있는 모달 찾기
-        const allDivs = document.querySelectorAll("div");
-        let modalContainer = null;
+      // placeholder 속성으로 상세주소 input 찾기 (안정적)
+      const detailInput = await waitFor(page, SELECTORS.detailAddressInput, 5000);
 
-        for (const div of allDivs) {
-          const text = (div.innerText || div.textContent || "").trim();
-          if (text.startsWith("배송지 수정")) {
-            // 상위로 올라가서 모달 컨테이너 찾기
-            let parent = div.parentElement;
-            while (parent) {
-              const form = parent.querySelector("form");
-              if (form) {
-                modalContainer = parent;
-                break;
-              }
-              parent = parent.parentElement;
-            }
-            break;
-          }
-        }
-
-        if (!modalContainer) {
-          return { found: false, reason: "배송지 수정 모달 못찾음" };
-        }
-
-        // 모달 내 input들 중 상세주소 찾기 (보통 5번째 또는 placeholder로)
-        const inputs = modalContainer.querySelectorAll('input[type="text"], input:not([type])');
-        let detailInput = null;
-
-        // placeholder로 찾기
-        for (const input of inputs) {
-          const placeholder = input.placeholder || "";
-          if (placeholder.includes("상세") || placeholder.includes("나머지") || placeholder.includes("동/호수")) {
-            detailInput = input;
-            break;
-          }
-        }
-
-        // 못찾으면 마지막 input (상세주소는 보통 마지막)
-        if (!detailInput && inputs.length > 0) {
-          detailInput = inputs[inputs.length - 1];
-        }
-
-        if (detailInput) {
-          detailInput.focus();
-          detailInput.value = "";
-          detailInput.dispatchEvent(new Event("input", { bubbles: true }));
-          detailInput.value = addr;
-          detailInput.dispatchEvent(new Event("input", { bubbles: true }));
-          detailInput.dispatchEvent(new Event("change", { bubbles: true }));
-          return { found: true, inputCount: inputs.length };
-        }
-
-        return { found: false, reason: "상세주소 input 못찾음" };
-      }, detailAddress);
-
-      if (detailInputResult.found) {
+      if (detailInput) {
+        await detailInput.click({ clickCount: 3 }); // 전체 선택
+        await delay(200);
+        await detailInput.type(detailAddress, { delay: 50 });
         console.log(`[baemin] 상세주소 입력 완료: ${detailAddress}`);
       } else {
-        console.log(`[baemin] 상세주소 input 못찾음: ${detailInputResult.reason}`);
+        // 폴백: page.evaluate로 placeholder 찾기
+        const fallbackInput = await page.evaluate((addr) => {
+          const inputs = document.querySelectorAll('input[type="text"], input:not([type])');
+          for (const input of inputs) {
+            const placeholder = input.placeholder || "";
+            if (placeholder.includes("상세") || placeholder.includes("나머지") || placeholder.includes("동/호수")) {
+              input.focus();
+              input.value = "";
+              input.dispatchEvent(new Event("input", { bubbles: true }));
+              input.value = addr;
+              input.dispatchEvent(new Event("input", { bubbles: true }));
+              input.dispatchEvent(new Event("change", { bubbles: true }));
+              return { found: true };
+            }
+          }
+          return { found: false };
+        }, detailAddress);
+
+        if (fallbackInput.found) {
+          console.log(`[baemin] 상세주소 입력 완료 (폴백): ${detailAddress}`);
+        } else {
+          console.log("[baemin] 상세주소 input 못찾음");
+        }
       }
       await delay(500);
     }
 
-    // 10. "배송지 수정" 모달 내 저장하기 버튼 클릭
+    // 10. 저장하기 버튼 클릭 (텍스트로 찾기 - styled class 대신)
     console.log("[baemin] 10. 저장하기 버튼 클릭...");
+
     const saveClicked = await page.evaluate(() => {
-      // "배송지 수정" 모달 내 form 찾기
-      const allDivs = document.querySelectorAll("div");
-      let form = null;
-
-      for (const div of allDivs) {
-        const firstText = div.childNodes[0]?.textContent?.trim() || "";
-        if (firstText === "배송지 수정") {
-          // 형제나 부모에서 form 찾기
-          let parent = div.parentElement;
-          while (parent) {
-            form = parent.querySelector("form");
-            if (form) break;
-            parent = parent.parentElement;
-          }
-          break;
-        }
-      }
-
-      if (form) {
-        // form 내 저장하기 버튼 찾기
-        const buttons = form.querySelectorAll("button");
-        for (const btn of buttons) {
-          const text = (btn.innerText || btn.textContent || "").trim();
-          if (text === "저장하기" || text === "저장" || text === "완료") {
-            btn.click();
-            return { clicked: true, text, inForm: true };
-          }
-        }
-      }
-
-      // 폴백: 페이지 전체에서 "저장하기" 버튼 찾기
       const buttons = document.querySelectorAll("button");
       for (const btn of buttons) {
         const text = (btn.innerText || btn.textContent || "").trim();
-        if (text === "저장하기") {
+        if (text === "저장하기" || text === "저장" || text === "완료") {
           btn.click();
-          return { clicked: true, text, inForm: false };
+          return { clicked: true, text };
         }
       }
       return { clicked: false };
     });
 
     if (saveClicked.clicked) {
-      console.log(`[baemin] 저장하기 버튼 클릭: "${saveClicked.text}" (form내: ${saveClicked.inForm})`);
+      console.log(`[baemin] 저장하기 버튼 클릭 완료: "${saveClicked.text}"`);
       await delay(1500);
     } else {
       console.log("[baemin] 저장하기 버튼 없음");
@@ -1325,67 +1428,149 @@ async function processPayment(page) {
   try {
     // 1. 네이버페이 선택
     console.log("[baemin] 1. 네이버페이 선택...");
-    const naverPayInput = await waitFor(page, SELECTORS.naverPayInput, 5000);
-    if (naverPayInput) {
-      await naverPayInput.click();
-      console.log("[baemin] 네이버페이 선택 완료");
-    } else {
-      console.log("[baemin] 네이버페이 input 없음, 텍스트로 검색...");
-      await page.evaluate(() => {
-        const labels = document.querySelectorAll("label");
-        for (const label of labels) {
-          const text = (label.innerText || label.textContent || "").trim();
-          if (text.includes("네이버페이")) {
-            label.click();
-            return true;
+    const naverPayClicked = await page.evaluate(() => {
+      // 방법 1: name="네이버페이" input 찾기 (가장 안정적)
+      const naverPayInput = document.querySelector('input[name="네이버페이"]');
+      if (naverPayInput) {
+        naverPayInput.click();
+        return { clicked: true, method: "name-attribute" };
+      }
+
+      // 방법 2: "네이버페이" 텍스트가 포함된 label 또는 div 찾기 (폴백)
+      const allElements = document.querySelectorAll("label, div, span");
+      for (const el of allElements) {
+        const text = (el.innerText || el.textContent || "").trim();
+        if (text.includes("네이버페이") && !text.includes("네이버페이 포인트")) {
+          let input = el.querySelector('input[type="radio"]');
+          if (!input) {
+            const parent = el.closest("div");
+            if (parent) {
+              input = parent.querySelector('input[type="radio"]');
+            }
           }
+          if (input) {
+            input.click();
+            return { clicked: true, method: "text-search" };
+          }
+          el.click();
+          return { clicked: true, method: "element-direct" };
         }
-        return false;
-      });
+      }
+
+      return { clicked: false, reason: "네이버페이 요소 없음" };
+    });
+
+    if (naverPayClicked.clicked) {
+      console.log(`[baemin] 네이버페이 선택 완료 (${naverPayClicked.method})`);
+    } else {
+      console.log(`[baemin] ⚠️ 네이버페이 선택 실패: ${naverPayClicked.reason}`);
     }
     await delay(1100);
 
     // 2. 현금영수증 미발행 선택
     console.log("[baemin] 2. 현금영수증 미발행 선택...");
-    const cashReceiptInput = await waitFor(page, SELECTORS.cashReceiptNoIssue, 3000);
-    if (cashReceiptInput) {
-      await cashReceiptInput.click();
-      console.log("[baemin] 현금영수증 미발행 선택 완료");
-    } else {
-      console.log("[baemin] 현금영수증 미발행 input 없음, 텍스트로 검색...");
-      await page.evaluate(() => {
-        const labels = document.querySelectorAll("label");
-        for (const label of labels) {
-          const text = (label.innerText || label.textContent || "").trim();
-          if (text.includes("미발행") || text.includes("발행안함")) {
-            label.click();
-            return true;
+    const cashReceiptClicked = await page.evaluate(() => {
+      // 방법 1: name="orderCashReceiptRequestType" input 중 "미발행" 텍스트가 있는 것 찾기
+      const cashReceiptInputs = document.querySelectorAll('input[name="orderCashReceiptRequestType"]');
+      for (const input of cashReceiptInputs) {
+        const parent = input.closest("div");
+        if (parent) {
+          const text = parent.textContent || "";
+          if (text.includes("미발행")) {
+            input.click();
+            return { clicked: true, method: "name-attribute" };
           }
         }
-        return false;
-      });
+      }
+
+      // 방법 2: "미발행" 텍스트가 포함된 요소에서 radio input 찾기 (폴백)
+      const allElements = document.querySelectorAll("div, span, label");
+      for (const el of allElements) {
+        const text = (el.innerText || el.textContent || "").trim();
+        if (text === "미발행" || text.includes("미발행")) {
+          const parent = el.closest("div");
+          if (parent) {
+            const input = parent.querySelector('input[type="radio"]');
+            if (input) {
+              input.click();
+              return { clicked: true, method: "text-search" };
+            }
+          }
+        }
+      }
+
+      return { clicked: false, reason: "미발행 요소 없음" };
+    });
+
+    if (cashReceiptClicked.clicked) {
+      console.log(`[baemin] 현금영수증 미발행 선택 완료 (${cashReceiptClicked.method})`);
+    } else {
+      console.log(`[baemin] ⚠️ 현금영수증 미발행 선택 실패: ${cashReceiptClicked.reason}`);
     }
     await delay(1100);
 
-    // 3. 필수 동의 체크
+    // 3. 필수 동의 체크 (input name으로 먼저 시도 - 가장 안정적)
     console.log("[baemin] 3. 필수 동의 체크...");
-    const agreementLabel = await waitFor(page, SELECTORS.requiredAgreementLabel, 3000);
-    if (agreementLabel) {
-      await agreementLabel.click();
-      console.log("[baemin] 필수 동의 체크 완료");
-    } else {
-      console.log("[baemin] 필수 동의 라벨 없음, 텍스트로 검색...");
-      await page.evaluate(() => {
-        const labels = document.querySelectorAll("label");
-        for (const label of labels) {
-          const text = (label.innerText || label.textContent || "").trim();
-          if (text.includes("필수") && text.includes("동의")) {
-            label.click();
-            return true;
+    const agreementClicked = await page.evaluate(() => {
+      // 방법 1: input[name="order-payment-agree-check"] (가장 안정적)
+      const checkbox = document.querySelector('input[name="order-payment-agree-check"]');
+      if (checkbox) {
+        // 이미 체크되어 있으면 스킵
+        if (checkbox.checked) {
+          return { clicked: true, method: "already-checked" };
+        }
+        // 체크박스 직접 클릭
+        checkbox.click();
+        if (checkbox.checked) {
+          return { clicked: true, method: "checkbox-direct" };
+        }
+        // 클릭 안되면 label 클릭 시도
+        const label = checkbox.closest("label") || checkbox.parentElement?.querySelector("label");
+        if (label) {
+          label.click();
+          return { clicked: true, method: "checkbox-label" };
+        }
+      }
+
+      // 방법 2: "[필수] 구매할 상품" 텍스트가 포함된 요소 찾기
+      const allElements = document.querySelectorAll("p, span, div");
+      for (const el of allElements) {
+        const text = el.textContent?.trim() || "";
+        if (text.includes("[필수]") && text.includes("구매할 상품")) {
+          // 같은 부모의 label 또는 input 찾기
+          const parent = el.closest("div");
+          if (parent) {
+            const input = parent.querySelector('input[type="checkbox"]');
+            const label = parent.querySelector("label");
+            if (input && !input.checked) {
+              input.click();
+              return { clicked: true, method: "text-search-input" };
+            }
+            if (label) {
+              label.click();
+              return { clicked: true, method: "text-search-label" };
+            }
           }
         }
-        return false;
-      });
+      }
+
+      // 방법 3: 레거시 - "필수" + "동의" 텍스트 포함 label
+      const labels = document.querySelectorAll("label");
+      for (const label of labels) {
+        const text = (label.innerText || label.textContent || "").trim();
+        if (text.includes("필수") && text.includes("동의")) {
+          label.click();
+          return { clicked: true, method: "legacy-label" };
+        }
+      }
+
+      return { clicked: false, reason: "필수 동의 체크박스 없음" };
+    });
+
+    if (agreementClicked.clicked) {
+      console.log(`[baemin] 필수 동의 체크 완료 (${agreementClicked.method})`);
+    } else {
+      console.log(`[baemin] ⚠️ 필수 동의 체크 실패: ${agreementClicked.reason}`);
     }
     await delay(1100);
 
@@ -1700,6 +1885,10 @@ async function processPayment(page) {
 
 /**
  * 배민상회 주문 처리 (메인)
+ *
+ * 개별 상품 주문 방식:
+ * - 여러 판매자의 상품을 네이버페이로 한 번에 결제할 수 없음
+ * - 따라서 상품 1개씩 장바구니 → 결제 사이클 진행
  */
 async function processBaeminOrder(
   res,
@@ -1709,25 +1898,20 @@ async function processBaeminOrder(
   authToken
 ) {
   console.log("\n========================================");
-  console.log("[baemin] 배민상회 주문 처리 시작");
+  console.log("[baemin] 배민상회 주문 처리 시작 (개별 상품 주문 방식)");
   console.log(`[baemin] 상품 수: ${products?.length || 0}`);
   console.log(`[baemin] lineIds: ${JSON.stringify(lineIds || [])}`);
   console.log("========================================\n");
 
-  const steps = [];
+  const results = [];
   const addedProducts = [];
-  // lineIds를 직접 사용 (request body에서 전달됨)
-  const purchaseOrderLineIds = lineIds || [];
+  const priceMismatches = [];
+  const optionFailedProducts = [];
   const errorCollector = createOrderErrorCollector("baemin");
 
   try {
     // 1. 로그인
     const loginResult = await loginToBaemin(page, vendor);
-    steps.push({
-      step: "login",
-      success: loginResult.success,
-      message: loginResult.message,
-    });
 
     if (!loginResult.success) {
       errorCollector.addError(
@@ -1750,39 +1934,54 @@ async function processBaeminOrder(
         success: false,
         message: `로그인 실패: ${loginResult.message}`,
         purchaseOrderId,
-        steps,
         automationErrors: errorCollector.getErrors(),
       });
     }
 
-    // 2. 장바구니 비우기
-    const clearResult = await clearCart(page);
-    steps.push({
-      step: "clear_cart",
-      success: clearResult.success,
-      message: clearResult.message,
-    });
-
-    // 3. 각 상품 처리
-    for (let i = 0; i < products.length; i++) {
-      const product = products[i];
-      console.log(`\n[baemin] === 상품 ${i + 1}/${products.length} ===`);
-      console.log(`[baemin] 상품명: ${product.productName}`);
+    // 2. 각 상품 개별 처리 (장바구니 → 주문 → 결제 사이클)
+    for (let productIndex = 0; productIndex < products.length; productIndex++) {
+      const product = products[productIndex];
+      console.log(`\n[baemin] ========== 상품 ${productIndex + 1}/${products.length}: ${product.productName} ==========`);
       console.log(`[baemin] URL: ${product.productUrl}`);
 
+      let vendorOrderNumber = null;
+      let orderSuccess = false;
+      let openMallPrice = 0;
+      let vendorPriceExcludeVat = product.vendorPriceExcludeVat || 0;
+      let totalOptionPrice = 0;
+      let priceMismatch = false;
+      let selectedOptions = [];
+
       try {
-        // 3.1 상품 페이지 이동
+        // 2-1. 장바구니 비우기 (이전 상품 잔여분 제거)
+        await clearCart(page);
+
+        // 2-2. 상품 페이지 이동
         const navResult = await navigateToProduct(page, product.productUrl);
         if (!navResult.success) {
-          steps.push({
-            step: `product_${i + 1}`,
+          results.push({
+            lineId: lineIds?.[productIndex],
+            productVariantVendorId: product.productVariantVendorId,
+            productSku: product.productSku,
+            productName: product.productName,
             success: false,
-            error: navResult.error,
+            message: navResult.error || "상품 페이지 이동 실패",
+          });
+          // 실패해도 saveOrderResults 호출
+          await saveOrderResults(authToken, {
+            purchaseOrderId,
+            products: [],
+            priceMismatches: [],
+            optionFailedProducts: [],
+            automationErrors: [],
+            lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
+            success: false,
+            vendor: "baemin",
           });
           continue;
         }
 
-        // 3.2 수량 계산 (openMallQtyPerUnit 적용)
+        // 2-3. 수량 계산 (openMallQtyPerUnit 적용)
         const baseQuantity = product.quantity || 1;
         const qtyPerUnit = product.openMallQtyPerUnit || 1;
         const actualQuantity = baseQuantity * qtyPerUnit;
@@ -1790,7 +1989,7 @@ async function processBaeminOrder(
           console.log(`[baemin] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`);
         }
 
-        // 3.3 옵션 선택 (openMallOptions가 있는 경우) - 각 옵션마다 수량 설정
+        // 2-4. 옵션 선택 (openMallOptions가 있는 경우)
         const optionValue = product.openMallOptions || null;
         let optionResult = { success: true, selectedOption: null, selectedOptions: [], totalOptionPrice: 0 };
 
@@ -1798,37 +1997,71 @@ async function processBaeminOrder(
           optionResult = await selectOption(page, optionValue, actualQuantity);
           if (!optionResult.success) {
             console.log(`[baemin] ⚠️ 옵션 선택 실패: ${optionResult.reason}`);
-            addedProducts.push({
-              ...product,
-              optionFailed: true,
-              optionFailReason: optionResult.reason,
-              addedToCart: false,
+            optionFailedProducts.push({
+              productVariantVendorId: product.productVariantVendorId,
+              reason: optionResult.reason,
             });
-            steps.push({
-              step: `product_${i + 1}`,
+            results.push({
+              lineId: lineIds?.[productIndex],
+              productVariantVendorId: product.productVariantVendorId,
+              productSku: product.productSku,
               productName: product.productName,
               success: false,
-              error: `옵션 선택 실패: ${optionResult.reason}`,
+              message: `옵션 선택 실패: ${optionResult.reason}`,
+            });
+            // 옵션 실패 saveOrderResults
+            await saveOrderResults(authToken, {
+              purchaseOrderId,
+              products: [],
+              priceMismatches: [],
+              optionFailedProducts: [{
+                productVariantVendorId: product.productVariantVendorId,
+                reason: optionResult.reason,
+              }],
+              automationErrors: [],
+              lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
+              success: false,
+              vendor: "baemin",
             });
             continue;
           }
+          selectedOptions = optionResult.selectedOptions || [];
+          totalOptionPrice = optionResult.totalOptionPrice || 0;
         } else {
           // 옵션이 없는 경우에만 수량 설정
           await setQuantity(page, actualQuantity);
         }
 
-        // 3.4 가격 추출
-        const openMallPrice = await getProductPrice(page);
+        // 2-5. 가격 추출
+        openMallPrice = await getProductPrice(page);
 
-        // 3.5 장바구니 담기
+        // 2-6. 장바구니 담기
         const addedToCart = await addToCart(page);
+        if (!addedToCart) {
+          results.push({
+            lineId: lineIds?.[productIndex],
+            productVariantVendorId: product.productVariantVendorId,
+            productSku: product.productSku,
+            productName: product.productName,
+            success: false,
+            message: "장바구니 담기 실패",
+          });
+          await saveOrderResults(authToken, {
+            purchaseOrderId,
+            products: [],
+            priceMismatches: [],
+            optionFailedProducts: [],
+            automationErrors: [],
+            lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
+            success: false,
+            vendor: "baemin",
+          });
+          continue;
+        }
 
-        // 3.6 가격 비교
-        // 배민상회: 옵션 가격 합산 = 협력사 가격 (VAT 제외)
-        const totalOptionPrice = optionResult.totalOptionPrice || 0;
-        const vendorPriceExcludeVat = totalOptionPrice > 0 ? totalOptionPrice : (product.vendorPriceExcludeVat || 0);
+        // 2-7. 가격 비교
+        vendorPriceExcludeVat = totalOptionPrice > 0 ? totalOptionPrice : (product.vendorPriceExcludeVat || 0);
         const expectedPrice = Math.round(vendorPriceExcludeVat * 1.1);
-        let priceMismatch = false;
 
         if (totalOptionPrice > 0) {
           console.log(`[baemin] 옵션 가격 합계: ${totalOptionPrice}원 (VAT 제외 협력사 가격)`);
@@ -1837,248 +2070,254 @@ async function processBaeminOrder(
 
         if (openMallPrice && expectedPrice > 0) {
           if (openMallPrice !== expectedPrice) {
-            console.log(
-              `[baemin] ⚠️ 가격 불일치: 오픈몰 ${openMallPrice}원 vs 예상가 ${expectedPrice}원`
-            );
+            console.log(`[baemin] ⚠️ 가격 불일치: 오픈몰 ${openMallPrice}원 vs 예상가 ${expectedPrice}원`);
             priceMismatch = true;
+            priceMismatches.push({
+              productVariantVendorId: product.productVariantVendorId,
+              vendorPriceExcludeVat: vendorPriceExcludeVat,
+              openMallPrice: openMallPrice,
+            });
           } else {
             console.log(`[baemin] ✅ 가격 일치: ${openMallPrice}원`);
           }
         }
 
-        addedProducts.push({
-          ...product,
+        // 2-8. 주문하기 (결제 페이지 진입)
+        const checkoutResult = await proceedToCheckout(page);
+        if (!checkoutResult.success) {
+          console.log("[baemin] 결제 페이지 진입 실패:", checkoutResult.message);
+          results.push({
+            lineId: lineIds?.[productIndex],
+            productVariantVendorId: product.productVariantVendorId,
+            productSku: product.productSku,
+            productName: product.productName,
+            quantity: product.quantity,
+            openMallPrice,
+            success: false,
+            message: checkoutResult.message,
+          });
+          await saveOrderResults(authToken, {
+            purchaseOrderId,
+            products: [],
+            priceMismatches: priceMismatch ? [{
+              productVariantVendorId: product.productVariantVendorId,
+              vendorPriceExcludeVat,
+              openMallPrice,
+            }] : [],
+            optionFailedProducts: [],
+            automationErrors: [],
+            lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
+            success: false,
+            vendor: "baemin",
+          });
+          continue;
+        }
+
+        // 2-9. 배송지 입력
+        if (shippingAddress) {
+          const addressResult = await enterShippingAddress(page, shippingAddress);
+          if (!addressResult.success) {
+            console.log("[baemin] 배송지 입력 실패:", addressResult.message);
+            results.push({
+              lineId: lineIds?.[productIndex],
+              productVariantVendorId: product.productVariantVendorId,
+              productSku: product.productSku,
+              productName: product.productName,
+              quantity: product.quantity,
+              openMallPrice,
+              success: false,
+              message: addressResult.message,
+            });
+            await saveOrderResults(authToken, {
+              purchaseOrderId,
+              products: [],
+              priceMismatches: priceMismatch ? [{
+                productVariantVendorId: product.productVariantVendorId,
+                vendorPriceExcludeVat,
+                openMallPrice,
+              }] : [],
+              optionFailedProducts: [],
+              automationErrors: [],
+              lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
+              success: false,
+              vendor: "baemin",
+            });
+            continue;
+          }
+        }
+
+        // 2-10. 결제 처리 (네이버페이)
+        const paymentResult = await processPayment(page);
+        if (paymentResult.success && paymentResult.orderNumber) {
+          vendorOrderNumber = paymentResult.orderNumber;
+          orderSuccess = true;
+          console.log(`[baemin] ✅ 상품 ${productIndex + 1} 주문 완료: ${vendorOrderNumber}`);
+        } else {
+          console.log("[baemin] 결제 실패:", paymentResult.message);
+        }
+
+        // 2-11. 결과 저장
+        const resultEntry = {
+          lineId: lineIds?.[productIndex],
+          productVariantVendorId: product.productVariantVendorId,
+          productSku: product.productSku,
+          productName: product.productName,
+          quantity: product.quantity,
           openMallPrice,
           vendorPriceExcludeVat,
           totalOptionPrice,
-          selectedOptions: optionResult.selectedOptions || [],
+          selectedOptions,
           priceMismatch,
-          addedToCart,
-          selectedOption: optionResult.selectedOption,
+          success: orderSuccess,
+          message: orderSuccess ? "주문 완료" : (paymentResult.message || "결제 실패"),
+          vendorOrderNumber: vendorOrderNumber || null,
+        };
+        results.push(resultEntry);
+
+        if (orderSuccess) {
+          addedProducts.push({
+            orderLineIds: product.orderLineIds,
+            productVariantVendorId: product.productVariantVendorId,
+            productSku: product.productSku,
+            productName: product.productName,
+            quantity: product.quantity,
+            openMallOrderNumber: vendorOrderNumber,
+          });
+        }
+
+        // 상품별 saveOrderResults 호출
+        await saveOrderResults(authToken, {
+          purchaseOrderId,
+          products: orderSuccess ? [{
+            orderLineIds: product.orderLineIds,
+            openMallOrderNumber: vendorOrderNumber,
+          }] : [],
+          priceMismatches: priceMismatch ? [{
+            productVariantVendorId: product.productVariantVendorId,
+            vendorPriceExcludeVat,
+            openMallPrice,
+          }] : [],
+          optionFailedProducts: [],
+          automationErrors: [],
+          lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
+          success: orderSuccess,
+          vendor: "baemin",
         });
 
-        steps.push({
-          step: `product_${i + 1}`,
-          productName: product.productName,
-          success: addedToCart,
-        });
+        // 결제 성공 시 결제 로그 저장
+        if (orderSuccess && openMallPrice > 0) {
+          const paymentAmount = openMallPrice * (product.quantity || 1);
+          await createPaymentLogs(authToken, [{
+            vendor: vendor.name,
+            paymentAmount: paymentAmount,
+            purchaseOrderId: purchaseOrderId,
+            orderLineId: product.orderLineIds?.[0] || null,
+          }]);
+          console.log(`[baemin] 결제 로그 저장: ${paymentAmount}원`);
+        }
+
       } catch (error) {
-        console.error(`[baemin] 상품 처리 실패:`, error.message);
-        errorCollector.addError(
-          ORDER_STEPS.ADD_TO_CART,
-          null,
-          error.message,
-          {
-            purchaseOrderId,
-            purchaseOrderLineId: product.purchaseOrderLineId,
-            productVariantVendorId: product.productVariantVendorId,
-          }
-        );
-        steps.push({
-          step: `product_${i + 1}`,
+        console.error(`[baemin] 상품 처리 에러:`, error.message);
+        errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, error.message, {
+          purchaseOrderId,
+          purchaseOrderLineId: lineIds?.[productIndex],
+          productVariantVendorId: product.productVariantVendorId,
+        });
+        results.push({
+          lineId: lineIds?.[productIndex],
+          productSku: product.productSku,
           productName: product.productName,
           success: false,
-          error: error.message,
+          message: error.message,
+        });
+        // 에러 시에도 saveOrderResults 호출
+        await saveOrderResults(authToken, {
+          purchaseOrderId,
+          products: [],
+          priceMismatches: [],
+          optionFailedProducts: [],
+          automationErrors: errorCollector.getErrors(),
+          lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
+          success: false,
+          vendor: "baemin",
         });
       }
     }
 
-    // 4. 주문하기 (결제 페이지 진입)
-    const checkoutResult = await proceedToCheckout(page);
-    steps.push({
-      step: "checkout",
-      success: checkoutResult.success,
-      message: checkoutResult.message,
-      url: checkoutResult.url,
-    });
+    // 3. 최종 결과 요약
+    const successProducts = results.filter((r) => r.success);
+    const vendorOrderNumbers = addedProducts
+      .map((p) => p.openMallOrderNumber)
+      .filter(Boolean);
 
-    // checkout 실패 시 에러 수집
-    if (!checkoutResult.success) {
-      errorCollector.addError(
-        ORDER_STEPS.ORDER_PLACEMENT,
-        ERROR_CODES.NAVIGATION_FAILED,
-        checkoutResult.message || "결제 페이지 진입 실패",
-        { purchaseOrderId }
-      );
-    }
+    console.log(`\n[baemin] ========== 주문 완료: ${successProducts.length}/${products.length}개 ==========`);
 
-    // 5. 배송지 입력
-    if (checkoutResult.success && shippingAddress) {
-      const addressResult = await enterShippingAddress(page, shippingAddress);
-      steps.push({
-        step: "shipping_address",
-        success: addressResult.success,
-        message: addressResult.message,
-      });
+    // 가격 불일치 목록 (res.json용)
+    const priceMismatchList = results.filter((r) => r.priceMismatch);
+    const priceMismatchesForRes = priceMismatchList.map((r) => ({
+      purchaseOrderLineId: r.lineId,
+      productVariantVendorId: r.productVariantVendorId || null,
+      productCode: r.productSku,
+      productName: r.productName,
+      quantity: r.quantity,
+      openMallPrice: r.openMallPrice,
+      expectedPrice: Math.round((r.vendorPriceExcludeVat || 0) * 1.1),
+      vendorPriceExcludeVat: r.vendorPriceExcludeVat,
+      difference: r.openMallPrice - Math.round((r.vendorPriceExcludeVat || 0) * 1.1),
+    }));
 
-      // 배송지 입력 실패 시 에러 수집
-      if (!addressResult.success) {
-        errorCollector.addError(
-          ORDER_STEPS.ORDER_PLACEMENT,
-          ERROR_CODES.ELEMENT_NOT_FOUND,
-          addressResult.message || "배송지 입력 실패",
-          { purchaseOrderId }
-        );
-      }
-
-      // 6. 결제 처리 (네이버페이)
-      if (addressResult.success) {
-        const paymentResult = await processPayment(page);
-        steps.push({
-          step: "payment",
-          success: paymentResult.success,
-          message: paymentResult.message,
-          url: paymentResult.url,
-          orderNumber: paymentResult.orderNumber,
-        });
-
-        // 결제 실패 시 에러 수집
-        if (!paymentResult.success) {
-          errorCollector.addError(
-            ORDER_STEPS.PAYMENT,
-            ERROR_CODES.PAYMENT_FAILED,
-            paymentResult.message || "결제 실패",
-            { purchaseOrderId }
-          );
-        }
-
-        // 결제 성공 시 주문번호를 각 상품에 설정
-        if (paymentResult.success && paymentResult.orderNumber) {
-          for (const p of addedProducts) {
-            p.openMallOrderNumber = paymentResult.orderNumber;
-          }
-        }
-      }
-    }
-
-    // 7. 결과 반환
-    const successfulProducts = addedProducts.filter((p) => p.addedToCart);
-
-    // 옵션 실패 상품 필터링 (조기 정의)
-    const optionFailedProducts = addedProducts
-      .filter((p) => p.optionFailed)
-      .map((p) => ({
-        orderLineIds: p.orderLineIds,
-        purchaseOrderLineId: p.purchaseOrderLineId,
-        productVariantVendorId: p.productVariantVendorId,
-        productSku: p.productSku,
-        productName: p.productName,
-        reason: p.optionFailReason,
-      }));
-
-    if (successfulProducts.length === 0) {
-      await saveOrderResults(authToken, {
-        purchaseOrderId,
-        products: addedProducts || [],
-        priceMismatches: [],
-        optionFailedProducts: optionFailedProducts?.map(p => ({
-          productVariantVendorId: p.productVariantVendorId,
-          reason: p.optionFailReason || p.reason,
-        })) || [],
-        automationErrors: errorCollector.getErrors(),
-        lineIds,
-        success: false,
-        vendor: "baemin",
-      });
-      return res.json({
-        success: false,
-        message: "장바구니에 담긴 상품이 없습니다",
-        purchaseOrderId,
-        steps,
-        addedProducts,
-        automationErrors: errorCollector.getErrors(),
-      });
-    }
-
-    // 가격 불일치 상세 데이터
-    const priceMismatchList = addedProducts.filter((p) => p.priceMismatch);
-    const priceMismatches = priceMismatchList.map((p) => {
-      const vendorPriceExcludeVat = p.vendorPriceExcludeVat || 0;
-      const expectedPrice = Math.round(vendorPriceExcludeVat * 1.1);
-      const priceDiff = p.openMallPrice - expectedPrice;
-      const priceDiffPercent =
-        expectedPrice > 0 ? ((priceDiff / expectedPrice) * 100).toFixed(2) : 0;
-      return {
-        purchaseOrderLineId: p.purchaseOrderLineId || null,
-        productVariantVendorId: p.productVariantVendorId || null,
-        productCode: p.productSku,
-        productName: p.productName,
-        quantity: p.quantity,
-        openMallPrice: p.openMallPrice,
-        expectedPrice: expectedPrice,
-        vendorPriceExcludeVat: vendorPriceExcludeVat,
-        difference: priceDiff,
-        differencePercent: priceDiffPercent,
-      };
-    });
-
-    // 결제 결과에서 주문번호 추출
-    const paymentStep = steps.find((s) => s.step === "payment");
-    const finalOrderNumber = paymentStep?.orderNumber || null;
-    const paymentSuccess = paymentStep?.success || false;
-
-    await saveOrderResults(authToken, {
-      purchaseOrderId,
-      products: addedProducts.map(p => ({
-        orderLineIds: p.orderLineIds,
-        openMallOrderNumber: finalOrderNumber,
-      })),
-      priceMismatches: priceMismatches?.map(p => ({
-        productVariantVendorId: p.productVariantVendorId,
-        vendorPriceExcludeVat: p.vendorPriceExcludeVat,
-        openMallPrice: p.openMallPrice,
-      })) || [],
-      optionFailedProducts: [],
-      automationErrors: [],
-      lineIds,
-      success: true,
-      vendor: "baemin",
-    });
+    // 옵션 실패 목록 (res.json용)
+    const optionFailedProductsForRes = optionFailedProducts.map((p) => ({
+      productVariantVendorId: p.productVariantVendorId,
+      reason: p.reason,
+    }));
 
     return res.json({
-      success: true,
-      message: paymentSuccess && finalOrderNumber
-        ? "주문 완료"
-        : "주문 처리 완료 - 결제 확인 필요",
-      orderNumber: finalOrderNumber,
-      purchaseOrderId,
-      purchaseOrderLineIds: purchaseOrderLineIds,
-      products: addedProducts.map((p) => ({
-        orderLineIds: p.orderLineIds,
-        openMallOrderNumber: p.openMallOrderNumber || finalOrderNumber,
-        productName: p.productName,
-        productSku: p.productSku,
-        quantity: p.quantity,
-        openMallPrice: p.openMallPrice,
-        vendorPriceExcludeVat: p.vendorPriceExcludeVat,
-        totalOptionPrice: p.totalOptionPrice || 0,
-        selectedOptions: p.selectedOptions || [],
-        priceMismatch: p.priceMismatch,
-        selectedOption: p.selectedOption || null,
-        optionFailed: p.optionFailed || false,
-        needsManagerVerification: p.needsManagerVerification || false,
+      success: successProducts.length > 0,
+      message: `${successProducts.length}/${products.length}개 상품 주문 완료`,
+      vendor: vendor.name,
+      purchaseOrderId: purchaseOrderId || null,
+      purchaseOrderLineIds: lineIds || [],
+      products: results.map((r) => ({
+        orderLineIds: products.find((p) => p.productSku === r.productSku)?.orderLineIds,
+        openMallOrderNumber: r.vendorOrderNumber || null,
+        productName: r.productName,
+        productSku: r.productSku,
+        quantity: r.quantity,
+        openMallPrice: r.openMallPrice,
+        vendorPriceExcludeVat: r.vendorPriceExcludeVat,
+        totalOptionPrice: r.totalOptionPrice || 0,
+        selectedOptions: r.selectedOptions || [],
+        priceMismatch: r.priceMismatch,
+        success: r.success,
       })),
+      orderResult: {
+        placed: vendorOrderNumbers.length > 0,
+        vendorOrderNumbers: vendorOrderNumbers,
+        vendorOrderNumber: vendorOrderNumbers[0] || null,
+      },
+      hasPriceMismatch: priceMismatchList.length > 0,
       priceMismatchCount: priceMismatchList.length,
-      priceMismatches: priceMismatches,
-      optionFailedCount: optionFailedProducts.length,
-      optionFailedProducts: optionFailedProducts,
-      steps,
+      priceMismatches: priceMismatchesForRes,
+      optionFailedCount: optionFailedProductsForRes.length,
+      optionFailedProducts: optionFailedProductsForRes,
       cartUrl: "https://mart.baemin.com/cart",
-      notes: "법인폰(010-7749-7515) 기재 필수",
+      notes: "법인폰(010-7749-7515) 기재 필수 / 개별 상품 주문 방식 적용",
     });
   } catch (error) {
     console.error("[baemin] 주문 처리 에러:", error);
-    errorCollector.addError(
-      ORDER_STEPS.ORDER_PLACEMENT,
-      ERROR_CODES.UNEXPECTED_ERROR,
-      error.message,
-      { purchaseOrderId }
-    );
+    errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, error.message, { purchaseOrderId });
     await saveOrderResults(authToken, {
       purchaseOrderId,
-      products: addedProducts || [],
+      products: (addedProducts || []).map((p) => ({
+        orderLineIds: p.orderLineIds,
+        openMallOrderNumber: p.openMallOrderNumber || null,
+      })),
       priceMismatches: [],
-      optionFailedProducts: [],
+      optionFailedProducts: optionFailedProducts?.map((p) => ({
+        productVariantVendorId: p.productVariantVendorId,
+        reason: p.reason,
+      })) || [],
       automationErrors: errorCollector.getErrors(),
       lineIds,
       success: false,
@@ -2086,10 +2325,9 @@ async function processBaeminOrder(
     });
     return res.json({
       success: false,
-      message: error.message,
-      purchaseOrderId,
-      steps,
-      automationErrors: errorCollector.getErrors(),
+      vendor: vendor.name,
+      message: `주문 처리 에러: ${error.message}`,
+      automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
     });
   }
 }
