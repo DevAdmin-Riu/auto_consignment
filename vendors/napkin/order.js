@@ -583,6 +583,7 @@ async function processNapkinOrder(
         automationErrors: errorCollector.getErrors(),
         lineIds,
         success: false,
+        vendor: "napkin",
       });
       return res.json({
         success: false,
@@ -758,6 +759,7 @@ async function processNapkinOrder(
         automationErrors: errorCollector.getErrors(),
         lineIds,
         success: false,
+        vendor: "napkin",
       });
       return res.json({
         success: false,
@@ -1314,6 +1316,7 @@ async function processNapkinOrder(
       automationErrors: [],
       lineIds,
       success: true,
+      vendor: "napkin",
     });
 
     // dialog 핸들러 제거 (다른 협력사와 충돌 방지)
@@ -1372,6 +1375,7 @@ async function processNapkinOrder(
       automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : [],
       lineIds,
       success: false,
+        vendor: "napkin",
     });
     return res.json({
       success: false,

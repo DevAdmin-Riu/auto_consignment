@@ -1372,6 +1372,7 @@ async function processNaverOrder(
         automationErrors: errorCollector.getErrors(),
         lineIds,
         success: false,
+        vendor: "naver",
       });
       return res.json({
         success: false,
@@ -1475,6 +1476,7 @@ async function processNaverOrder(
           automationErrors: errorCollector.getErrors(),
           lineIds,
           success: false,
+          vendor: "naver",
         });
         return res.json({
           success: false,
@@ -1502,6 +1504,7 @@ async function processNaverOrder(
         automationErrors: errorCollector.getErrors(),
         lineIds,
         success: false,
+        vendor: "naver",
       });
       return res.json({
         success: false,
@@ -1757,6 +1760,7 @@ async function processNaverOrder(
           automationErrors: [],
           lineIds,
           success: true,
+          vendor: "naver",
         });
 
         // dialog 핸들러 제거 (다른 협력사와 충돌 방지)
@@ -1814,6 +1818,7 @@ async function processNaverOrder(
           automationErrors: errorCollector.getErrors(),
           lineIds,
           success: false,
+        vendor: "naver",
         });
         return res.json({
           success: false,
@@ -1844,6 +1849,7 @@ async function processNaverOrder(
       automationErrors: errorCollector.getErrors(),
       lineIds,
       success: false, // 결제 실패이므로 대행접수/출고 안함
+      vendor: "naver",
     });
     return res.json({
       success: true,
@@ -1881,6 +1887,7 @@ async function processNaverOrder(
       automationErrors: errorCollector.getErrors(),
       lineIds,
       success: false,
+        vendor: "naver",
     });
     return res.json({
       success: false,

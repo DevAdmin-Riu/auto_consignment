@@ -1638,6 +1638,7 @@ async function processAdpiaOrder(
         automationErrors: errorCollector.getErrors(),
         lineIds,
         success: false,
+        vendor: "adpia",
       });
       return res.json({
         success: false,
@@ -1690,6 +1691,7 @@ async function processAdpiaOrder(
             automationErrors: [],
             lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
             success: false,
+            vendor: "adpia",
           });
           continue;
         }
@@ -1780,6 +1782,7 @@ async function processAdpiaOrder(
             automationErrors: [],
             lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
             success: false,
+            vendor: "adpia",
           });
           continue;
         }
@@ -1811,6 +1814,7 @@ async function processAdpiaOrder(
             automationErrors: [],
             lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
             success: false,
+            vendor: "adpia",
           });
           continue;
         }
@@ -1847,6 +1851,7 @@ async function processAdpiaOrder(
               automationErrors: [],
               lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
               success: false,
+              vendor: "adpia",
             });
             continue;
           } else if (shippingResult.vendorOrderNumber) {
@@ -1924,6 +1929,7 @@ async function processAdpiaOrder(
           automationErrors: [],
           lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
           success: orderSuccess,
+          vendor: "adpia",
         });
 
         // 결제 성공 시 결제 로그 저장
@@ -1961,6 +1967,7 @@ async function processAdpiaOrder(
           automationErrors: errorCollector.getErrors(),
           lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
           success: false,
+        vendor: "adpia",
         });
       }
     }
@@ -2041,6 +2048,7 @@ async function processAdpiaOrder(
       automationErrors: errorCollector.getErrors(),
       lineIds,
       success: false,
+      vendor: "adpia",
     });
     return res.json({
       success: false,

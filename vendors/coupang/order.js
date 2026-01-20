@@ -387,6 +387,7 @@ async function processCoupangOrder(
       automationErrors: errorCollector.getErrors(),
       lineIds,
       success: false,
+        vendor: "coupang",
     });
     return res.json({
       success: false,
@@ -496,6 +497,7 @@ async function processCoupangOrder(
               automationErrors: errorCollector.getErrors(),
               lineIds,
               success: false,
+        vendor: "coupang",
             });
             return res.json({
               success: false,
@@ -531,6 +533,7 @@ async function processCoupangOrder(
             automationErrors: errorCollector.getErrors(),
             lineIds,
             success: false,
+        vendor: "coupang",
           });
           return res.json({
             success: false,
@@ -559,6 +562,7 @@ async function processCoupangOrder(
           automationErrors: errorCollector.getErrors(),
           lineIds,
           success: false,
+        vendor: "coupang",
         });
         return res.json({
           success: false,
@@ -585,6 +589,7 @@ async function processCoupangOrder(
         automationErrors: errorCollector.getErrors(),
         lineIds,
         success: false,
+        vendor: "coupang",
       });
       return res.json({
         success: false,
@@ -973,6 +978,7 @@ async function processCoupangOrder(
       automationErrors: [],
       lineIds,
       success: true,
+      vendor: "coupang",
     });
   } else {
     await saveOrderResults(authToken, {
@@ -983,6 +989,7 @@ async function processCoupangOrder(
       automationErrors: errorCollector.getErrors(),
       lineIds,
       success: false,
+        vendor: "coupang",
     });
   }
 

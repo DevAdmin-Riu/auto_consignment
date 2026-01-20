@@ -52,16 +52,10 @@ const SELECTORS = {
     "#root > div > div.sc-jCbqOc.iPvcFH > div.sc-jephDI.fmkuTR > section > div.sc-eAkcsE.jxnmef > div.sc-gtMvKj.EzUvH > div > button",
   optionItemText: "span.sc-futgFh.bBkBPv",
 
-  // 수량/장바구니 - 선택된 옵션 영역
-  selectedOptionContainer: "div.sc-fnaAzo.dUYoKs",
-  selectedOptionItem: "div.sc-kZHVfI.ftRkgJ",
-  // 마지막 선택된 옵션의 수량 입력
-  quantityInputLast:
-    "div.sc-fnaAzo.dUYoKs > div.sc-kZHVfI.ftRkgJ:last-child input.bm-goods-quantity__input",
-  quantityPlusLast:
-    "div.sc-fnaAzo.dUYoKs > div.sc-kZHVfI.ftRkgJ:last-child button.bm-goods-quantity__plus",
-  quantityMinusLast:
-    "div.sc-fnaAzo.dUYoKs > div.sc-kZHVfI.ftRkgJ:last-child button.bm-goods-quantity__minus",
+  // 수량/장바구니 - 선택된 옵션 영역 (BEM 네이밍 기반 안정적 셀렉터)
+  quantityPlusButton: "button.bm-goods-quantity__plus",
+  quantityMinusButton: "button.bm-goods-quantity__minus",
+  quantityInput: "input.bm-goods-quantity__input",
 
   // 장바구니 담기 버튼
   addToCartButton:
@@ -329,78 +323,150 @@ async function navigateToProduct(page, productUrl) {
 
 /**
  * 옵션 선택 (단일)
+ * - Chrome Recorder에서 추출한 안정적인 셀렉터 사용
+ * - data-testid='sanity-goods-detail-option-list' 가 핵심
+ * @param {Page} page - Puppeteer 페이지
+ * @param {string} targetValue - 선택할 옵션 값 (예: "검정")
+ * @param {string} optionTitle - 옵션 타이틀 (예: "색상") - 드롭다운 버튼 찾기용
  */
-async function selectSingleOption(page, targetValue) {
+async function selectSingleOption(page, targetValue, optionTitle = null) {
   try {
-    // 1. 옵션 드롭다운 버튼 클릭
-    const dropdownBtn = await waitFor(
-      page,
-      SELECTORS.optionDropdownButton,
-      3000
-    );
+    // 1. 옵션 드롭다운 버튼 찾기
     await delay(1100);
-    if (!dropdownBtn) {
+    const dropdownBtn = await page.evaluateHandle((title) => {
+      const buttons = Array.from(document.querySelectorAll('button'));
+
+      // 방법 1: title로 드롭다운 찾기 (가장 정확 - 여러 옵션이 있을 때 필수)
+      if (title) {
+        const titleBtn = buttons.find(b => b.textContent.includes(title));
+        if (titleBtn) return titleBtn;
+      }
+
+      // 방법 2: downArrow 이미지를 가진 버튼 (단일 옵션일 때)
+      const btnWithArrow = document.querySelector('button:has(img[alt="downArrow"])');
+      if (btnWithArrow) return btnWithArrow;
+
+      // 방법 3: "옵션을 선택해주세요" 텍스트를 포함하는 버튼 (fallback)
+      return buttons.find(b => b.textContent.includes('옵션을 선택해주세요')) || null;
+    }, optionTitle);
+
+    const btnElement = dropdownBtn.asElement();
+    if (!btnElement) {
       console.log(
-        "[baemin] 옵션 드롭다운 버튼 없음 - 옵션이 없는 상품일 수 있음"
+        `[baemin] 옵션 드롭다운 버튼 없음 (title: "${optionTitle || 'N/A'}") - 옵션이 없는 상품일 수 있음`
       );
       return { success: true, selectedOption: null, price: 0 };
     }
 
-    console.log("[baemin] 옵션 드롭다운 버튼 클릭...");
-    await dropdownBtn.click();
-    await delay(1100);
+    console.log(`[baemin] 옵션 드롭다운 버튼 클릭 (title: "${optionTitle || '자동감지'}")...`);
+    await btnElement.click();
+    await delay(1500); // 드롭다운 애니메이션 대기
 
-    // 2. 옵션 목록 대기
-    await waitFor(page, SELECTORS.optionItemText, 3000);
-    await delay(1100);
-    const optionItems = await page.$$(SELECTORS.optionItemText);
-    console.log(`[baemin] 옵션 목록 개수: ${optionItems.length}`);
+    // 2. 옵션 목록에서 targetValue와 매칭되는 옵션 찾기
+    // Chrome Recorder에서 발견: data-testid='sanity-goods-detail-option-list'
+    const matchResult = await page.evaluate((target) => {
+      // 핵심: data-testid로 옵션 리스트 컨테이너 찾기 (가장 안정적)
+      const optionList = document.querySelector("[data-testid='sanity-goods-detail-option-list']");
+      let optionItems = [];
 
-    if (optionItems.length === 0) {
-      console.log("[baemin] 옵션 목록이 비어있음");
-      return { success: false, reason: "옵션 목록이 비어있음" };
-    }
-
-    // 3. 옵션 텍스트들 추출 및 매칭
-    let matchedOption = null;
-    let matchedIndex = -1;
-    let optionPrice = 0;
-
-    for (let i = 0; i < optionItems.length; i++) {
-      const optionText = await page.evaluate(
-        (el) => el.textContent.trim(),
-        optionItems[i]
-      );
-      console.log(`[baemin] 옵션 ${i + 1}: "${optionText}"`);
-
-      if (
-        optionText.includes(targetValue) ||
-        targetValue.includes(optionText.replace(/^\d+\.\s*/, "")) ||
-        optionText === targetValue
-      ) {
-        matchedOption = optionText;
-        matchedIndex = i;
-
-        // 옵션 텍스트에서 가격 추출 (예: "옵션명 (+1,000원)" 또는 "옵션명 1,000원")
-        const priceMatch = optionText.match(/[\+\-]?\s*([\d,]+)\s*원/);
-        if (priceMatch) {
-          optionPrice = parseInt(priceMatch[1].replace(/,/g, ""), 10);
-        }
-
-        console.log(`[baemin] ✅ 매칭된 옵션: "${optionText}" (가격: ${optionPrice}원)`);
-        break;
+      if (optionList) {
+        // 옵션 리스트 내 직계 자식 div들이 각 옵션
+        optionItems = Array.from(optionList.querySelectorAll(':scope > div'));
+        console.log(`[baemin] data-testid 옵션 리스트 발견: ${optionItems.length}개 옵션`);
       }
-    }
 
-    if (matchedIndex === -1) {
+      // fallback: 일반적인 셀렉터들
+      if (optionItems.length === 0) {
+        const potentialItems = document.querySelectorAll('li, div[role="option"], [class*="option"], [class*="item"]');
+        optionItems = Array.from(potentialItems).filter(el => {
+          const text = el.textContent.trim();
+          return text && text.length > 0 && text.length < 200;
+        });
+      }
+
+      const allItems = optionItems.map((el, i) => ({
+        index: i,
+        text: el.textContent.trim(),
+        element: el
+      })).filter(item => item.text.length > 0);
+
+      // 매칭 로직
+      for (const item of allItems) {
+        const optionText = item.text;
+        const cleanText = optionText.replace(/^\d+\.\s*/, "");
+
+        if (
+          optionText.includes(target) ||
+          target.includes(cleanText) ||
+          optionText === target
+        ) {
+          // 가격 추출
+          const priceMatch = optionText.match(/[\+\-]?\s*([\d,]+)\s*원/);
+          const price = priceMatch ? parseInt(priceMatch[1].replace(/,/g, ""), 10) : 0;
+
+          return {
+            found: true,
+            index: item.index,
+            text: optionText,
+            price,
+            useDataTestId: !!document.querySelector("[data-testid='sanity-goods-detail-option-list']"),
+            allOptions: allItems.slice(0, 10).map(i => i.text) // 디버깅용
+          };
+        }
+      }
+
+      return {
+        found: false,
+        useDataTestId: !!document.querySelector("[data-testid='sanity-goods-detail-option-list']"),
+        allOptions: allItems.slice(0, 10).map(i => i.text) // 디버깅용
+      };
+    }, targetValue);
+
+    console.log(`[baemin] 옵션 검색 방식: ${matchResult.useDataTestId ? 'data-testid (안정적)' : 'fallback'}`);
+    console.log(`[baemin] 발견된 옵션들: ${JSON.stringify(matchResult.allOptions)}`);
+
+    if (!matchResult.found) {
       console.log(`[baemin] ❌ 옵션 매칭 실패: "${targetValue}"`);
       await page.keyboard.press("Escape");
       return { success: false, reason: `옵션 값 매칭 실패: ${targetValue}` };
     }
 
-    // 4. 매칭된 옵션 클릭
-    console.log(`[baemin] 옵션 클릭: "${matchedOption}"`);
-    await optionItems[matchedIndex].click();
+    const matchedOption = matchResult.text;
+    const optionPrice = matchResult.price;
+    const matchedIndex = matchResult.index;
+    console.log(`[baemin] ✅ 매칭된 옵션: "${matchedOption}" (인덱스: ${matchedIndex}, 가격: ${optionPrice}원)`);
+
+    // 3. 매칭된 옵션 클릭 (data-testid 우선, fallback으로 텍스트 매칭)
+    const clickResult = await page.evaluate((targetIndex, targetText, useDataTestId) => {
+      // 방법 1: data-testid 리스트에서 인덱스로 클릭 (가장 정확)
+      if (useDataTestId) {
+        const optionList = document.querySelector("[data-testid='sanity-goods-detail-option-list']");
+        if (optionList) {
+          const items = optionList.querySelectorAll(':scope > div');
+          if (items[targetIndex]) {
+            items[targetIndex].click();
+            return { clicked: true, method: 'data-testid-index' };
+          }
+        }
+      }
+
+      // 방법 2: 텍스트 매칭으로 클릭 (fallback)
+      const elements = document.querySelectorAll('li, div[role="option"], [class*="option"], [class*="item"], span, button');
+      for (const el of elements) {
+        if (el.textContent.trim() === targetText) {
+          el.click();
+          return { clicked: true, method: 'text-match' };
+        }
+      }
+      return { clicked: false };
+    }, matchedIndex, matchedOption, matchResult.useDataTestId);
+
+    if (!clickResult.clicked) {
+      console.log(`[baemin] ❌ 옵션 클릭 실패: "${matchedOption}"`);
+      return { success: false, reason: `옵션 클릭 실패: ${matchedOption}` };
+    }
+
+    console.log(`[baemin] 옵션 클릭 성공 (방식: ${clickResult.method})`);
     await delay(1100);
 
     console.log(`[baemin] 옵션 선택 완료: "${matchedOption}"`);
@@ -460,10 +526,11 @@ async function selectOption(page, optionValue, quantity = 1) {
       for (let i = 0; i < setOptions.length; i++) {
         const option = setOptions[i];
         const targetValue = option.value || option;
+        const optionTitle = option.title || null;  // 드롭다운 버튼 찾기용
 
-        console.log(`[baemin] 세트 ${s + 1}, 옵션 ${i + 1}: "${targetValue}"`);
+        console.log(`[baemin] 세트 ${s + 1}, 옵션 ${i + 1}: title="${optionTitle}", value="${targetValue}"`);
 
-        const result = await selectSingleOption(page, targetValue);
+        const result = await selectSingleOption(page, targetValue, optionTitle);
 
         if (!result.success) {
           return {
@@ -527,6 +594,8 @@ async function getProductPrice(page) {
 
 /**
  * 수량 설정 (마지막 선택된 옵션의 수량)
+ * - 옵션 선택 시 옵션 박스가 아래로 쌓이는 구조
+ * - 모든 + 버튼 중 마지막 것을 클릭하여 수량 조절
  */
 async function setQuantity(page, quantity) {
   console.log(`[baemin] 수량 설정: ${quantity}`);
@@ -537,33 +606,36 @@ async function setQuantity(page, quantity) {
   }
 
   try {
-    // 마지막 선택된 옵션의 수량 입력창 찾기
-    const qtyInput = await waitFor(page, SELECTORS.quantityInputLast, 3000);
-    await delay(1100);
-    if (qtyInput) {
-      console.log("[baemin] 수량 입력창 발견, 값 입력...");
-      await qtyInput.click({ clickCount: 3 });
-      await qtyInput.type(String(quantity), { delay: 50 });
-      await page.keyboard.press("Tab");
-      await delay(1100);
-      console.log(`[baemin] 수량 입력 완료: ${quantity}`);
-      return true;
-    }
+    await delay(500);
 
-    // 입력창 없으면 + 버튼으로 수량 조절
-    const plusBtn = await waitFor(page, SELECTORS.quantityPlusLast, 3000);
-    await delay(1100);
-    if (plusBtn) {
-      console.log(`[baemin] + 버튼으로 수량 조절 (${quantity - 1}회 클릭)...`);
-      for (let i = 1; i < quantity; i++) {
-        await plusBtn.click();
-        await delay(300);
+    // 모든 + 버튼 찾아서 마지막 것 클릭 (옵션 박스가 쌓이는 구조)
+    const clickCount = quantity - 1;
+    console.log(`[baemin] + 버튼으로 수량 조절 (${clickCount}회 클릭)...`);
+
+    const result = await page.evaluate((selector, clicks) => {
+      const plusButtons = document.querySelectorAll(selector);
+      if (plusButtons.length === 0) {
+        return { success: false, reason: "수량 + 버튼을 찾을 수 없음", count: 0 };
       }
-      console.log(`[baemin] 수량 조절 완료: ${quantity}`);
+
+      // 마지막 + 버튼 (가장 최근 선택된 옵션)
+      const lastPlusBtn = plusButtons[plusButtons.length - 1];
+      console.log(`[baemin] + 버튼 ${plusButtons.length}개 발견, 마지막 버튼 클릭`);
+
+      for (let i = 0; i < clicks; i++) {
+        lastPlusBtn.click();
+      }
+
+      return { success: true, buttonCount: plusButtons.length, clicks };
+    }, SELECTORS.quantityPlusButton, clickCount);
+
+    if (result.success) {
+      console.log(`[baemin] 수량 조절 완료: ${quantity}개 (버튼 ${result.buttonCount}개 중 마지막, ${result.clicks}회 클릭)`);
+      await delay(300);
       return true;
     }
 
-    console.log("[baemin] 수량 입력 요소를 찾을 수 없음");
+    console.log(`[baemin] ${result.reason}`);
     return false;
   } catch (error) {
     console.error("[baemin] 수량 설정 실패:", error.message);
@@ -578,24 +650,40 @@ async function addToCart(page) {
   console.log("[baemin] 장바구니 담기...");
 
   try {
-    // 1. 장바구니 담기 버튼 클릭
-    const cartBtn = await waitFor(page, SELECTORS.addToCartButton, 5000);
+    // 1. 장바구니 담기 버튼 클릭 (텍스트 기반으로 찾기)
     await delay(1100);
-    if (!cartBtn) {
+    const cartBtnClicked = await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const cartBtn = buttons.find(btn => btn.textContent.trim() === '장바구니 담기');
+      if (cartBtn) {
+        cartBtn.click();
+        return true;
+      }
+      return false;
+    });
+
+    if (!cartBtnClicked) {
       console.log("[baemin] 장바구니 버튼을 찾을 수 없음");
       return false;
     }
 
-    await cartBtn.click();
     await delay(1100);
     console.log("[baemin] 장바구니 담기 버튼 클릭됨");
 
-    // 2. 장바구니 이동 모달 버튼 클릭
-    const goToCartBtn = await waitFor(page, SELECTORS.goToCartButton, 5000);
-    await delay(1100);
-    if (goToCartBtn) {
+    // 2. 장바구니 이동 모달 버튼 클릭 (텍스트 기반으로 찾기)
+    await delay(1500); // 모달 로딩 대기
+    const goToCartClicked = await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button'));
+      const goToCartBtn = buttons.find(btn => btn.textContent.trim() === '장바구니 이동');
+      if (goToCartBtn) {
+        goToCartBtn.click();
+        return true;
+      }
+      return false;
+    });
+
+    if (goToCartClicked) {
       console.log("[baemin] 장바구니 이동 버튼 클릭...");
-      await goToCartBtn.click();
       await delay(1100);
       console.log("[baemin] 장바구니 페이지로 이동 완료");
     } else {
@@ -1174,7 +1262,31 @@ async function proceedToCheckout(page) {
       }
     }
 
-    // 4. 결제 페이지 이동 대기
+    // 4. "확인" 모달 처리 (때때로 나타남)
+    console.log("[baemin] 확인 모달 체크 중...");
+    await delay(500);
+
+    const confirmClicked = await page.evaluate(() => {
+      // 모달 내 "확인" 버튼 찾기
+      const buttons = document.querySelectorAll("button");
+      for (const btn of buttons) {
+        const text = (btn.innerText || btn.textContent || "").trim();
+        if (text === "확인") {
+          btn.click();
+          return { clicked: true, text };
+        }
+      }
+      return { clicked: false };
+    });
+
+    if (confirmClicked.clicked) {
+      console.log(`[baemin] 확인 모달 버튼 클릭: "${confirmClicked.text}"`);
+      await delay(1100);
+    } else {
+      console.log("[baemin] 확인 모달 없음, 계속 진행");
+    }
+
+    // 5. 결제 페이지 이동 대기
     await page
       .waitForNavigation({ waitUntil: "domcontentloaded", timeout: 10000 })
       .catch(() => {});
@@ -1632,6 +1744,7 @@ async function processBaeminOrder(
         automationErrors: errorCollector.getErrors(),
         lineIds,
         success: false,
+        vendor: "baemin",
       });
       return res.json({
         success: false,
@@ -1779,6 +1892,16 @@ async function processBaeminOrder(
       url: checkoutResult.url,
     });
 
+    // checkout 실패 시 에러 수집
+    if (!checkoutResult.success) {
+      errorCollector.addError(
+        ORDER_STEPS.ORDER_PLACEMENT,
+        ERROR_CODES.NAVIGATION_FAILED,
+        checkoutResult.message || "결제 페이지 진입 실패",
+        { purchaseOrderId }
+      );
+    }
+
     // 5. 배송지 입력
     if (checkoutResult.success && shippingAddress) {
       const addressResult = await enterShippingAddress(page, shippingAddress);
@@ -1787,6 +1910,16 @@ async function processBaeminOrder(
         success: addressResult.success,
         message: addressResult.message,
       });
+
+      // 배송지 입력 실패 시 에러 수집
+      if (!addressResult.success) {
+        errorCollector.addError(
+          ORDER_STEPS.ORDER_PLACEMENT,
+          ERROR_CODES.ELEMENT_NOT_FOUND,
+          addressResult.message || "배송지 입력 실패",
+          { purchaseOrderId }
+        );
+      }
 
       // 6. 결제 처리 (네이버페이)
       if (addressResult.success) {
@@ -1798,6 +1931,16 @@ async function processBaeminOrder(
           url: paymentResult.url,
           orderNumber: paymentResult.orderNumber,
         });
+
+        // 결제 실패 시 에러 수집
+        if (!paymentResult.success) {
+          errorCollector.addError(
+            ORDER_STEPS.PAYMENT,
+            ERROR_CODES.PAYMENT_FAILED,
+            paymentResult.message || "결제 실패",
+            { purchaseOrderId }
+          );
+        }
 
         // 결제 성공 시 주문번호를 각 상품에 설정
         if (paymentResult.success && paymentResult.orderNumber) {
@@ -1835,6 +1978,7 @@ async function processBaeminOrder(
         automationErrors: errorCollector.getErrors(),
         lineIds,
         success: false,
+        vendor: "baemin",
       });
       return res.json({
         success: false,
@@ -1888,6 +2032,7 @@ async function processBaeminOrder(
       automationErrors: [],
       lineIds,
       success: true,
+      vendor: "baemin",
     });
 
     return res.json({
@@ -1937,6 +2082,7 @@ async function processBaeminOrder(
       automationErrors: errorCollector.getErrors(),
       lineIds,
       success: false,
+      vendor: "baemin",
     });
     return res.json({
       success: false,

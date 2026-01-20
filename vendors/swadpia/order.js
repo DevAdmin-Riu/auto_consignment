@@ -1804,6 +1804,7 @@ async function processSwadpiaOrder(
         automationErrors: [],
         lineIds,
         success: true,
+        vendor: "swadpia",
       });
     } else {
       // 실패: 장바구니 검증 실패 또는 결제 실패
@@ -1815,6 +1816,7 @@ async function processSwadpiaOrder(
         automationErrors: errorCollector.getErrors(),
         lineIds,
         success: false,
+        vendor: "swadpia",
       });
     }
 
