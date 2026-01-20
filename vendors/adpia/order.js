@@ -139,8 +139,6 @@ const SELECTORS = {
   orderPage: {
     // 수량 입력 (트리플 클릭 후 타이핑)
     quantityInput: "#holder_num",
-    // 결제금액 (가격 확인용)
-    totalPrice: "", // TODO: 결제금액 셀렉터
     // 파일 업로드 (plupload - 동적 ID)
     fileInput: 'input[type="file"]',
     // 교정확인 후 인쇄 체크박스
@@ -791,63 +789,6 @@ async function findProductByCode(page, productCode) {
     success: false,
     message: `제품을 찾을 수 없음: ${productCode}`,
   };
-}
-
-/**
- * 상품 가격 추출
- */
-async function getProductPrice(page) {
-  // TODO: SELECTORS.product.price
-  // 가격 텍스트에서 숫자만 추출
-  // VAT 포함/미포함 여부 확인 필요
-  return null;
-}
-
-/**
- * 옵션 선택
- */
-async function selectOption(page, optionValue) {
-  console.log(`[adpia] 옵션 선택: ${optionValue}`);
-
-  // 1. 옵션 select 박스 찾기
-  // TODO: SELECTORS.product.optionSelect
-
-  // 2. 옵션 값으로 선택
-  // - 정확히 일치하는 옵션 찾기
-  // - 부분 일치로 찾기 (공백 제거 후 비교)
-
-  return { success: false, message: "옵션 선택 미구현" };
-}
-
-/**
- * 수량 설정
- */
-async function setQuantity(page, quantity) {
-  console.log(`[adpia] 수량 설정: ${quantity}`);
-
-  // 1. 수량 입력 필드 찾기
-  // TODO: SELECTORS.product.quantityInput
-
-  // 2. 기존 값 지우고 새 값 입력
-  // 또는 +/- 버튼으로 수량 조절
-  // TODO: SELECTORS.product.quantityPlus / quantityMinus
-
-  return { success: false, message: "수량 설정 미구현" };
-}
-
-/**
- * 장바구니 담기
- */
-async function addToCart(page) {
-  console.log("[adpia] 장바구니 담기...");
-
-  // 1. 장바구니 담기 버튼 클릭
-  // TODO: SELECTORS.product.addToCartBtn
-
-  // 2. 확인 팝업 처리 (있는 경우)
-  // TODO: SELECTORS.product.confirmPopup
-
-  return { success: false, message: "장바구니 담기 미구현" };
 }
 
 /**
@@ -1633,29 +1574,6 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
     payBrowser.off("targetcreated", targetCreatedHandler);
     return { success: false, message: error.message };
   }
-}
-
-/**
- * 결제 처리
- * TODO: 셀렉터 제공 후 구현 예정
- */
-async function processPayment(page) {
-  console.log("[adpia] 결제 처리...");
-
-  // TODO: 사용자가 셀렉터 제공 후 구현
-  // SELECTORS.order 에 셀렉터 필요:
-  // - cardPayment: 카드 결제 선택
-  // - agreeAll: 전체 동의 체크박스
-  // - payBtn: 결제하기 버튼
-  //
-  // SELECTORS.payment 에 셀렉터 필요 (PG사 iframe):
-  // - iframe: 결제 iframe
-  // - cardSelect: 카드사 선택
-  // - agreeBtn: 동의 버튼
-  // - nextBtn: 다음 버튼
-
-  console.log("[adpia] 결제 처리 미구현 (셀렉터 필요)");
-  return { success: false, message: "결제 처리 미구현 - 셀렉터 필요" };
 }
 
 /**
