@@ -624,28 +624,53 @@ async function processCoupangOrder(
         detail: paymentClicked,
       });
 
-      // 쿠팡페이 비밀번호 입력
+      // 쿠팡페이 비밀번호 입력 (재시도 포함)
       if (vendor.paymentPin) {
         console.log("Step 7-1: 쿠팡페이 비밀번호 입력...");
-        try {
-          const pinEntered = await enterCoupangPayPin(page, vendor.paymentPin);
-          console.log("비밀번호 입력 결과:", JSON.stringify(pinEntered));
-          steps.push({
-            step: "payment_pin",
-            success: pinEntered.success,
-            detail: pinEntered,
-          });
 
-          if (pinEntered.success) {
-            await delay(3000); // 결제 처리 대기
+        const maxPinRetries = 5;
+        let pinSuccess = false;
+        let lastPinResult = null;
+
+        for (let pinRetry = 1; pinRetry <= maxPinRetries && !pinSuccess; pinRetry++) {
+          try {
+            console.log(`[쿠팡페이] 비밀번호 입력 시도 ${pinRetry}/${maxPinRetries}`);
+            const pinEntered = await enterCoupangPayPin(page, vendor.paymentPin);
+            console.log("비밀번호 입력 결과:", JSON.stringify(pinEntered));
+            lastPinResult = pinEntered;
+
+            if (pinEntered.success) {
+              // 5초 대기 후 키패드가 아직 존재하는지 확인
+              await delay(5000);
+
+              const keypadStillExists = await checkKeypadExists(page);
+              console.log(`[쿠팡페이] 키패드 존재 여부: ${keypadStillExists}`);
+
+              if (keypadStillExists) {
+                console.log(`[쿠팡페이] 비밀번호 입력 실패 - 키패드가 아직 존재함 (재시도 ${pinRetry}/${maxPinRetries})`);
+                // 재시도 전 잠시 대기
+                await delay(2000);
+              } else {
+                // 키패드가 사라짐 = 비밀번호 입력 성공
+                pinSuccess = true;
+                console.log("[쿠팡페이] 비밀번호 입력 성공 - 키패드 사라짐");
+              }
+            }
+          } catch (e) {
+            console.log(`비밀번호 입력 실패 (시도 ${pinRetry}):`, e.message);
+            lastPinResult = { success: false, error: e.message };
           }
-        } catch (e) {
-          console.log("비밀번호 입력 실패:", e.message);
-          steps.push({
-            step: "payment_pin",
-            success: false,
-            error: e.message,
-          });
+        }
+
+        steps.push({
+          step: "payment_pin",
+          success: pinSuccess,
+          detail: lastPinResult,
+          retryCount: maxPinRetries,
+        });
+
+        if (pinSuccess) {
+          await delay(3000); // 결제 처리 대기
         }
       }
 
@@ -1919,6 +1944,55 @@ async function adjustCartQuantity(page, vendorItemId, targetQuantity) {
 
   console.log(`[수량 조정] 결과:`, JSON.stringify(adjusted));
   return adjusted;
+}
+
+/**
+ * 쿠팡페이 키패드 존재 여부 확인
+ * - 비밀번호 입력 후 키패드가 아직 존재하면 입력 실패로 판단
+ * @param {Page} page - Puppeteer 페이지 인스턴스
+ * @returns {Promise<boolean>} 키패드가 존재하면 true
+ */
+async function checkKeypadExists(page) {
+  try {
+    // iframe에서 키패드 확인
+    const frames = page.frames();
+    for (const frame of frames) {
+      try {
+        const url = frame.url();
+        if (
+          url.includes("payment.coupang.com") ||
+          url.includes("coupay") ||
+          url.includes("pay.coupang") ||
+          url.includes("rocketpay")
+        ) {
+          const hasKeypad = await frame.evaluate(() => {
+            const padKeys = document.querySelectorAll(".pad-key[data-key]");
+            const padCnt = document.querySelectorAll(".pad-cnt");
+            // 키패드 버튼이 10개 이상 있거나 PIN 입력 UI(6칸)가 있으면 키패드 존재
+            return padKeys.length >= 10 || padCnt.length === 6;
+          });
+
+          if (hasKeypad) {
+            return true;
+          }
+        }
+      } catch (e) {
+        // 프레임 접근 실패 - 무시
+      }
+    }
+
+    // 메인 페이지에서도 확인
+    const hasKeypadInMain = await page.evaluate(() => {
+      const padKeys = document.querySelectorAll(".pad-key[data-key]");
+      const padCnt = document.querySelectorAll(".pad-cnt");
+      return padKeys.length >= 10 || padCnt.length === 6;
+    });
+
+    return hasKeypadInMain;
+  } catch (e) {
+    console.log(`[쿠팡페이] 키패드 존재 확인 실패: ${e.message}`);
+    return false; // 확인 실패 시 false 반환 (재시도 안함)
+  }
 }
 
 /**
