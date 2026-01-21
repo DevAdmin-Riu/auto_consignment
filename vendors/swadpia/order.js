@@ -1558,64 +1558,73 @@ async function placeOrder(page, shippingAddress) {
       }
     }
 
-    if (paymentPopup) {
-      // 결제창 dialog 핸들러 등록 (설치 안내, ISP 안내 등 alert 자동 처리)
-      const paymentDialogHandler = async (dialog) => {
-        console.log(
-          "[swadpia] 결제창 Dialog:",
-          dialog.type(),
-          dialog.message()
-        );
-        await dialog.accept();
+    if (!paymentPopup) {
+      console.log("[swadpia] 결제창을 찾을 수 없음 - 재시도 필요");
+      // 전역 dialog 핸들러 제거
+      page.off("dialog", globalDialogHandler);
+      return {
+        success: false,
+        paymentPopupNotFound: true,
+        error: "결제창을 찾을 수 없음",
+        orderPageUrl,
+        paymentPageUrl,
       };
-      paymentPopup.on("dialog", paymentDialogHandler);
+    }
 
-      // 결제창 로드 대기
-      await new Promise((r) => setTimeout(r, 2000));
+    // 결제창 dialog 핸들러 등록 (설치 안내, ISP 안내 등 alert 자동 처리)
+    const paymentDialogHandler = async (dialog) => {
+      console.log(
+        "[swadpia] 결제창 Dialog:",
+        dialog.type(),
+        dialog.message()
+      );
+      await dialog.accept();
+    };
+    paymentPopup.on("dialog", paymentDialogHandler);
 
-      // 15. 기타결제 버튼 클릭
-      console.log("[swadpia] 기타결제 버튼 클릭...");
-      const otherPaymentBtn = "#inapppay-dap1 > div.block2 > div.left > a";
+    // 결제창 로드 대기
+    await new Promise((r) => setTimeout(r, 2000));
+
+    // 15. 기타결제 버튼 클릭
+    console.log("[swadpia] 기타결제 버튼 클릭...");
+    const otherPaymentBtn = "#inapppay-dap1 > div.block2 > div.left > a";
+
+    try {
+      await paymentPopup.waitForSelector(otherPaymentBtn, { timeout: 60000 });
+      await paymentPopup.click(otherPaymentBtn);
+      console.log("[swadpia] 기타결제 버튼 클릭 완료");
+      await new Promise((r) => setTimeout(r, 3000));
+
+      // 16. 인증서 등록/결제 버튼 클릭
+      console.log("[swadpia] 인증서 등록/결제 버튼 클릭...");
+      const certPaymentBtn =
+        "#inapppay-dap2 > div.block1 > div.left > a.pay-item-s.pay-ctf";
 
       try {
-        await paymentPopup.waitForSelector(otherPaymentBtn, { timeout: 60000 });
-        await paymentPopup.click(otherPaymentBtn);
-        console.log("[swadpia] 기타결제 버튼 클릭 완료");
+        await paymentPopup.waitForSelector(certPaymentBtn, {
+          timeout: 60000,
+        });
+        await paymentPopup.click(certPaymentBtn);
+        console.log("[swadpia] 인증서 등록/결제 버튼 클릭 완료");
         await new Promise((r) => setTimeout(r, 3000));
 
-        // 16. 인증서 등록/결제 버튼 클릭
-        console.log("[swadpia] 인증서 등록/결제 버튼 클릭...");
-        const certPaymentBtn =
-          "#inapppay-dap2 > div.block1 > div.left > a.pay-item-s.pay-ctf";
-
-        try {
-          await paymentPopup.waitForSelector(certPaymentBtn, {
-            timeout: 60000,
-          });
-          await paymentPopup.click(certPaymentBtn);
-          console.log("[swadpia] 인증서 등록/결제 버튼 클릭 완료");
-          await new Promise((r) => setTimeout(r, 3000));
-
-          // 17. ISP/페이북 네이티브 윈도우 자동화
-          console.log("[swadpia] ISP 네이티브 결제창 자동화 시작...");
-          const ispResult = await automateISPPayment();
-          if (ispResult.success) {
-            console.log("[swadpia] ISP 결제 자동화 완료");
-          } else {
-            console.log("[swadpia] ISP 결제 자동화 실패:", ispResult.error);
-            console.log("[swadpia] 수동 결제가 필요합니다.");
-          }
-        } catch (certError) {
-          console.log(
-            "[swadpia] 인증서 등록/결제 버튼 클릭 실패:",
-            certError.message
-          );
+        // 17. ISP/페이북 네이티브 윈도우 자동화
+        console.log("[swadpia] ISP 네이티브 결제창 자동화 시작...");
+        const ispResult = await automateISPPayment();
+        if (ispResult.success) {
+          console.log("[swadpia] ISP 결제 자동화 완료");
+        } else {
+          console.log("[swadpia] ISP 결제 자동화 실패:", ispResult.error);
+          console.log("[swadpia] 수동 결제가 필요합니다.");
         }
-      } catch (e) {
-        console.log("[swadpia] 기타결제 버튼 클릭 실패:", e.message);
+      } catch (certError) {
+        console.log(
+          "[swadpia] 인증서 등록/결제 버튼 클릭 실패:",
+          certError.message
+        );
       }
-    } else {
-      console.log("[swadpia] 결제창을 찾을 수 없음");
+    } catch (e) {
+      console.log("[swadpia] 기타결제 버튼 클릭 실패:", e.message);
     }
 
     // 결제 완료 대기 (ISP 결제 완료까지 충분히 대기)
@@ -1823,9 +1832,40 @@ async function processSwadpiaOrder(
 
     // 11. 전체 주문하기 (장바구니 검증 통과 시)
     let orderResult = null;
+    const MAX_PAYMENT_RETRY = 5; // 결제창 미출현 시 최대 재시도 횟수
+    let paymentRetryCount = 0;
+
     if (cartVerification?.isValid) {
-      console.log("[swadpia] 전체 주문하기 진행...");
-      orderResult = await placeOrder(page, shippingAddress);
+      while (paymentRetryCount <= MAX_PAYMENT_RETRY) {
+        if (paymentRetryCount > 0) {
+          console.log(
+            `\n[swadpia] ========== 결제 재시도 ${paymentRetryCount}/${MAX_PAYMENT_RETRY} ==========`
+          );
+          // 장바구니로 이동하여 다시 주문 진행
+          console.log("[swadpia] 장바구니 페이지로 이동...");
+          await page.goto(SELECTORS.cartPage.url, {
+            waitUntil: "networkidle2",
+            timeout: 60000,
+          });
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+
+        console.log("[swadpia] 전체 주문하기 진행...");
+        orderResult = await placeOrder(page, shippingAddress);
+
+        // 결제창 미출현 시 재시도
+        if (orderResult?.paymentPopupNotFound) {
+          console.log("[swadpia] 결제창 미출현 - 재시도 준비...");
+          paymentRetryCount++;
+          if (paymentRetryCount <= MAX_PAYMENT_RETRY) {
+            await new Promise((r) => setTimeout(r, 2000));
+            continue;
+          }
+        }
+
+        // 성공이거나 다른 에러면 루프 종료
+        break;
+      }
 
       // Collect payment error if order failed
       if (!orderResult?.success && orderResult?.error) {
@@ -1883,7 +1923,8 @@ async function processSwadpiaOrder(
       vendor: vendor.name,
       purchaseOrderId: purchaseOrderId || null,
       purchaseOrderLineIds: poLineIds || [],  // PurchaseOrderLinesReceive mutation용
-      retryCount,
+      retryCount,  // 장바구니 재시도 횟수
+      paymentRetryCount,  // 결제창 재시도 횟수
       products: products.map((p) => ({
         orderLineIds: p.orderLineIds,
         openMallOrderNumber: orderResult?.vendorOrderNumber || null,
