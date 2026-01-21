@@ -117,15 +117,11 @@ async function handleVendorOrder(req, res) {
       products, // 여러 상품 배열
       shippingAddress,
       orderData,
-      poLineIds: rawPoLineIds, // PurchaseOrderLine ID 배열 (대행접수용) - 새 이름
-      lineIds, // PurchaseOrderLine ID 배열 (대행접수용) - 레거시 이름 (n8n 호환)
+      poLineIds, // PurchaseOrderLine ID 배열 (대행접수용)
       purchaseOrderId: rawPurchaseOrderId, // 발주 ID (단일)
       purchaseOrderIds, // 발주 ID들 (배열, n8n에서 전달)
       graphqlUrl, // GraphQL API URL (n8n에서 전달)
     } = req.body;
-
-    // poLineIds 처리: poLineIds 우선, 없으면 lineIds 사용 (하위 호환)
-    const poLineIds = rawPoLineIds || lineIds || [];
 
     // purchaseOrderId 처리: purchaseOrderIds 배열 우선, 없으면 단일 값 사용
     const purchaseOrderId = (purchaseOrderIds && purchaseOrderIds.length > 0)
