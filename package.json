@@ -34,7 +34,7 @@
     "puppeteer-real-browser": "^1.4.4",
     "screenshot-desktop": "^1.15.3",
     "sharp": "^0.34.5",
-    "tesseract.js": "^6.0.1",
+    "tesseract.js": "^7.0.0",
     "xlsx": "^0.18.5"
   }
 }
