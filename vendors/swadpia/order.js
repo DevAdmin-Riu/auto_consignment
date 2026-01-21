@@ -976,9 +976,8 @@ function parsePhoneNumber(phone) {
  * 전체 주문하기 (장바구니에서 주문 실행)
  * @param {Page} page - Puppeteer 페이지
  * @param {object} shippingAddress - 배송지 정보
- * @param {string} ispPassword - ISP 결제 비밀번호
  */
-async function placeOrder(page, shippingAddress, ispPassword) {
+async function placeOrder(page, shippingAddress) {
   console.log("[swadpia] 전체 주문하기 시작...");
 
   // 전역 dialog 핸들러 (함수 전체에서 사용)
@@ -1564,17 +1563,13 @@ async function placeOrder(page, shippingAddress, ispPassword) {
           await new Promise((r) => setTimeout(r, 3000));
 
           // 17. ISP/페이북 네이티브 윈도우 자동화
-          if (ispPassword) {
-            console.log("[swadpia] ISP 네이티브 결제창 자동화 시작...");
-            const ispResult = await automateISPPayment(ispPassword);
-            if (ispResult.success) {
-              console.log("[swadpia] ISP 결제 자동화 완료");
-            } else {
-              console.log("[swadpia] ISP 결제 자동화 실패:", ispResult.error);
-              console.log("[swadpia] 수동 결제가 필요합니다.");
-            }
+          console.log("[swadpia] ISP 네이티브 결제창 자동화 시작...");
+          const ispResult = await automateISPPayment();
+          if (ispResult.success) {
+            console.log("[swadpia] ISP 결제 자동화 완료");
           } else {
-            console.log("[swadpia] ISP 비밀번호 미설정 - 수동 결제 필요");
+            console.log("[swadpia] ISP 결제 자동화 실패:", ispResult.error);
+            console.log("[swadpia] 수동 결제가 필요합니다.");
           }
         } catch (certError) {
           console.log(
@@ -1796,10 +1791,7 @@ async function processSwadpiaOrder(
     let orderResult = null;
     if (cartVerification?.isValid) {
       console.log("[swadpia] 전체 주문하기 진행...");
-      // vendor.ispPassword: ISP 결제 비밀번호 (환경변수에서 가져옴 - BC카드 ISP 공용)
-      const ispPassword =
-        vendor.ispPassword || getEnv("BC_ISP_PASSWORD") || "";
-      orderResult = await placeOrder(page, shippingAddress, ispPassword);
+      orderResult = await placeOrder(page, shippingAddress);
 
       // Collect payment error if order failed
       if (!orderResult?.success && orderResult?.error) {

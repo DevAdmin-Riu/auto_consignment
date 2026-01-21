@@ -17,7 +17,6 @@
  * 8. 결제하기
  */
 
-const { getEnv } = require("../config");
 const fs = require("fs");
 const path = require("path");
 const {
@@ -40,7 +39,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * ISP/페이북 결제 래퍼 함수 (adpia 전용)
  * - 결제창에서 발생하는 alert를 처리하면서 공통 ISP 함수 호출
  */
-async function automateISPPaymentWithAlertHandler(ispPassword, paymentPopup = null) {
+async function automateISPPaymentWithAlertHandler(paymentPopup = null) {
   // alert 핸들러 (대기 루프 중 발생하는 alert 처리)
   const handledDialogs = new WeakSet();
   const ispLoopAlertHandler = async (dialog) => {
@@ -114,7 +113,7 @@ async function automateISPPaymentWithAlertHandler(ispPassword, paymentPopup = nu
 
   try {
     // 공통 ISP 결제 함수 호출
-    const result = await automateISPPayment(ispPassword);
+    const result = await automateISPPayment();
     return result;
   } finally {
     // 핸들러 제거
@@ -1454,7 +1453,7 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
                 await delay(3000);
 
                 console.log("[adpia] ISP 네이티브 결제창 자동화 시작...");
-                const ispResult = await automateISPPaymentWithAlertHandler(ispPassword, paymentPopup);
+                const ispResult = await automateISPPaymentWithAlertHandler(paymentPopup);
 
                 // 핸들러 제거
                 page.off("dialog", ispAlertHandler);
@@ -1590,12 +1589,6 @@ async function processAdpiaOrder(
 
   const errorCollector = createOrderErrorCollector("adpia");
   const shippingInfo = shippingAddress; // 기존 코드와 호환을 위해 alias
-
-  // ISP 비밀번호 (환경변수에서 가져옴 - BC카드 ISP 공용)
-  const ispPassword = vendor.ispPassword || getEnv("BC_ISP_PASSWORD") || "";
-  console.log(
-    `[adpia] ISP 비밀번호 설정 확인: ${ispPassword ? "있음" : "없음"}`
-  );
 
   const results = [];
   const downloadedFiles = []; // 다운로드한 파일 경로들

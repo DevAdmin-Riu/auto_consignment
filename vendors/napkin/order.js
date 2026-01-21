@@ -10,7 +10,6 @@
  * 6. 주문/결제
  */
 
-const { getEnv } = require("../config");
 const {
   createOrderErrorCollector,
   ORDER_STEPS,
@@ -1214,18 +1213,13 @@ async function processNapkinOrder(
                     await delay(3000);
 
                     // ISP/페이북 네이티브 윈도우 자동화
-                    const ispPassword = vendor.ispPassword || getEnv("BC_ISP_PASSWORD") || "";
-                    if (ispPassword) {
-                      console.log("[napkin] ISP 네이티브 결제창 자동화 시작...");
-                      const ispResult = await automateISPPayment(ispPassword);
-                      if (ispResult.success) {
-                        console.log("[napkin] ✅ ISP 결제 자동화 완료");
-                      } else {
-                        console.log("[napkin] ⚠️ ISP 결제 자동화 실패:", ispResult.error);
-                        console.log("[napkin] 수동 결제가 필요합니다.");
-                      }
+                    console.log("[napkin] ISP 네이티브 결제창 자동화 시작...");
+                    const ispResult = await automateISPPayment();
+                    if (ispResult.success) {
+                      console.log("[napkin] ✅ ISP 결제 자동화 완료");
                     } else {
-                      console.log("[napkin] ⚠️ ISP 비밀번호 미설정 - 수동 결제 필요");
+                      console.log("[napkin] ⚠️ ISP 결제 자동화 실패:", ispResult.error);
+                      console.log("[napkin] 수동 결제가 필요합니다.");
                     }
                   } catch (certError) {
                     console.log("[napkin] ⚠️ 인증서 등록/결제 버튼 클릭 실패:", certError.message);
