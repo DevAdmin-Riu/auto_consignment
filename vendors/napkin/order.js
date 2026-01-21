@@ -1,13 +1,33 @@
 /**
  * 냅킨코리아 주문 모듈
  *
+ * 처리 방식: 배치 (여러 상품 장바구니 → 일괄 결제)
+ *
  * 흐름:
  * 1. 로그인
- * 2. 상품 페이지 이동
- * 3. 옵션 선택 (있는 경우)
- * 4. 수량 설정
- * 5. 장바구니 담기
- * 6. 주문/결제
+ * 2. 장바구니 비우기
+ * 3. 각 상품별:
+ *    - 상품 페이지 이동
+ *    - 옵션 선택 (openMallOptions - 2D 구조 지원)
+ *    - 수량 설정 (세트상품 박스별 수량 처리)
+ *    - 장바구니 담기
+ * 4. 모든 상품 담은 후 → 주문/결제 (ISP/페이북)
+ * 5. saveOrderResults 호출
+ *
+ * 데이터 흐름:
+ * - 입력: { products, shippingAddress, poLineIds, purchaseOrderId }
+ * - poLineIds: PurchaseOrderLine ID 배열 (대행접수용) - n8n에서 전달
+ * - products[].orderLineIds: OrderLine ID 배열 (주문번호 업데이트용)
+ *
+ * saveOrderResults 호출 시:
+ * - success: true → 대행접수 + 출고처리 진행
+ * - success: false → 옵션불일치/에러로그만 저장
+ * - products[].orderLineIds: 주문번호 업데이트에 사용
+ * - poLineIds: 대행접수(receivePurchaseOrderLines)에 사용
+ *
+ * 특이사항:
+ * - 세트 상품: 박스별 수량 개별 입력 필요
+ * - ISP 결제: automateISPPayment() 사용
  */
 
 const {
@@ -554,7 +574,7 @@ async function processNapkinOrder(
   res,
   page,
   vendor,
-  { products, purchaseOrderId, shippingAddress, lineIds },
+  { products, purchaseOrderId, shippingAddress, poLineIds },
   authToken
 ) {
   console.log("=".repeat(50));
@@ -563,8 +583,8 @@ async function processNapkinOrder(
   console.log("[napkin] 상품 수:", products?.length);
   console.log("=".repeat(50));
 
-  // lineIds 직접 사용
-  const purchaseOrderLineIds = lineIds || [];
+  // poLineIds 직접 사용
+  const purchaseOrderLineIds = poLineIds || [];
 
   // 에러 수집기 초기화
   const errorCollector = createOrderErrorCollector("napkin");
@@ -580,7 +600,7 @@ async function processNapkinOrder(
         priceMismatches: [],
         optionFailedProducts: [],
         automationErrors: errorCollector.getErrors(),
-        lineIds,
+        poLineIds,
         success: false,
         vendor: "napkin",
       });
@@ -756,7 +776,7 @@ async function processNapkinOrder(
         priceMismatches: [],
         optionFailedProducts,
         automationErrors: errorCollector.getErrors(),
-        lineIds,
+        poLineIds,
         success: false,
         vendor: "napkin",
       });
@@ -766,7 +786,7 @@ async function processNapkinOrder(
         purchaseOrderId,
         message: "모든 상품 처리 실패",
         results,
-        lineIds: purchaseOrderLineIds,
+        poLineIds: purchaseOrderLineIds,
         automationErrors: errorCollector.getErrors(),
       });
     }
@@ -1308,7 +1328,7 @@ async function processNapkinOrder(
       })) || [],
       optionFailedProducts: [],
       automationErrors: [],
-      lineIds,
+      poLineIds,
       success: true,
       vendor: "napkin",
     });
@@ -1367,7 +1387,7 @@ async function processNapkinOrder(
       priceMismatches: [],
       optionFailedProducts: [],
       automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : [],
-      lineIds,
+      poLineIds,
       success: false,
         vendor: "napkin",
     });

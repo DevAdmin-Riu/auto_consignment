@@ -1,20 +1,40 @@
 /**
  * 애드피아몰 주문 모듈
  *
+ * 처리 방식: 개별 (상품별 개별 주문/결제)
+ *
  * 흐름:
  * 1. 로그인
- * 2. 장바구니 비우기
- * 3. favor 페이지에서 제품코드로 상품 찾기 → 주문하러 가기
- * 4. 주문 페이지에서:
- *    - 수량 입력 (#holder_num)
- *    - 결제금액에서 가격 확인
- *    - 파일 업로드 (input[type="file"])
- *    - 교정확인 후 인쇄 체크박스 (#is_proof_file)
- *    - 장바구니 버튼 클릭
- * 5. 장바구니 → 주문서 이동
- * 6. 배송지 입력
- * 7. 결제수단 선택
- * 8. 결제하기
+ * 2. 디자인 파일 다운로드
+ * 3. 각 상품별 루프:
+ *    - 장바구니 비우기
+ *    - favor 페이지에서 제품코드로 상품 찾기 → 주문하러 가기
+ *    - 주문 페이지에서:
+ *      - 수량 입력 (#holder_num)
+ *      - 가격 확인
+ *      - 파일 업로드
+ *      - 교정확인 후 인쇄 체크박스 (#is_proof_file)
+ *      - 장바구니 담기
+ *    - 주문서 이동
+ *    - 배송지 입력
+ *    - 결제 (ISP/페이북)
+ *    - saveOrderResults 호출 (상품별)
+ *
+ * 데이터 흐름:
+ * - 입력: { products, shippingAddress, poLineIds, purchaseOrderId }
+ * - poLineIds: PurchaseOrderLine ID 배열 (대행접수용) - n8n에서 전달
+ * - products[].orderLineIds: OrderLine ID 배열 (주문번호 업데이트용)
+ *
+ * saveOrderResults 호출 시 (상품별):
+ * - success: true/false → 해당 상품의 처리 결과
+ * - products[].orderLineIds: 주문번호 업데이트에 사용
+ * - poLineIds: poLineIds[productIndex]를 배열로 감싸서 전달
+ *   예: poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : []
+ *
+ * 특이사항:
+ * - 디자인 파일 업로드 필수
+ * - ISP 결제: automateISPPaymentWithAlertHandler() 사용 (alert 처리 포함)
+ * - 결제 성공 시 createPaymentLogs() 호출
  */
 
 const fs = require("fs");
@@ -1582,7 +1602,7 @@ async function processAdpiaOrder(
   res,
   page,
   vendor,
-  { products, shippingAddress, lineIds, purchaseOrderId },
+  { products, shippingAddress, poLineIds, purchaseOrderId },
   authToken
 ) {
   console.log(`[adpia] 주문 시작: ${products.length}개 상품`);
@@ -1629,7 +1649,7 @@ async function processAdpiaOrder(
         priceMismatches: [],
         optionFailedProducts: [],
         automationErrors: errorCollector.getErrors(),
-        lineIds,
+        poLineIds,
         success: false,
         vendor: "adpia",
       });
@@ -1658,7 +1678,7 @@ async function processAdpiaOrder(
 
         if (!findResult.success) {
           results.push({
-            lineId: lineIds?.[productIndex],
+            lineId: poLineIds?.[productIndex],
             productVariantVendorId: product.productVariantVendorId,
             productSku: product.productSku,
             productName: product.productName,
@@ -1682,7 +1702,7 @@ async function processAdpiaOrder(
               reason: findResult.message,
             }],
             automationErrors: [],
-            lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
+            poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
             success: false,
             vendor: "adpia",
           });
@@ -1743,7 +1763,7 @@ async function processAdpiaOrder(
         // 장바구니 담기 실패 시
         if (!orderPageResult.success) {
           results.push({
-            lineId: lineIds?.[productIndex],
+            lineId: poLineIds?.[productIndex],
             productVariantVendorId: product.productVariantVendorId,
             productSku: product.productSku,
             productName: product.productName,
@@ -1773,7 +1793,7 @@ async function processAdpiaOrder(
               reason: orderPageResult.message,
             }] : [],
             automationErrors: [],
-            lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
+            poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
             success: false,
             vendor: "adpia",
           });
@@ -1785,7 +1805,7 @@ async function processAdpiaOrder(
         if (!orderFormResult.success) {
           console.log("[adpia] 주문서 이동 실패:", orderFormResult.message);
           results.push({
-            lineId: lineIds?.[productIndex],
+            lineId: poLineIds?.[productIndex],
             productVariantVendorId: product.productVariantVendorId,
             productSku: product.productSku,
             productName: product.productName,
@@ -1805,7 +1825,7 @@ async function processAdpiaOrder(
             }] : [],
             optionFailedProducts: [],
             automationErrors: [],
-            lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
+            poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
             success: false,
             vendor: "adpia",
           });
@@ -1822,7 +1842,7 @@ async function processAdpiaOrder(
           if (!shippingResult.success) {
             console.log("[adpia] 배송지 입력/결제 실패:", shippingResult.message);
             results.push({
-              lineId: lineIds?.[productIndex],
+              lineId: poLineIds?.[productIndex],
               productVariantVendorId: product.productVariantVendorId,
               productSku: product.productSku,
               productName: product.productName,
@@ -1842,7 +1862,7 @@ async function processAdpiaOrder(
               }] : [],
               optionFailedProducts: [],
               automationErrors: [],
-              lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
+              poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
               success: false,
               vendor: "adpia",
             });
@@ -1873,7 +1893,7 @@ async function processAdpiaOrder(
         // 2-8. 결과 저장 및 saveOrderResults 호출
         orderSuccess = !!vendorOrderNumber;
         const resultEntry = {
-          lineId: lineIds?.[productIndex],
+          lineId: poLineIds?.[productIndex],
           productVariantVendorId: product.productVariantVendorId,
           productSku: product.productSku,
           productName: product.productName,
@@ -1920,7 +1940,7 @@ async function processAdpiaOrder(
           }] : [],
           optionFailedProducts: [],
           automationErrors: [],
-          lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
+          poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
           success: orderSuccess,
           vendor: "adpia",
         });
@@ -1941,11 +1961,11 @@ async function processAdpiaOrder(
         console.error(`[adpia] 상품 처리 에러:`, error.message);
         errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, error.message, {
           purchaseOrderId,
-          purchaseOrderLineId: lineIds?.[productIndex],
+          purchaseOrderLineId: poLineIds?.[productIndex],
           productVariantVendorId: product.productVariantVendorId,
         });
         results.push({
-          lineId: lineIds?.[productIndex],
+          lineId: poLineIds?.[productIndex],
           productSku: product.productSku,
           productName: product.productName,
           success: false,
@@ -1958,7 +1978,7 @@ async function processAdpiaOrder(
           priceMismatches: [],
           optionFailedProducts: [],
           automationErrors: errorCollector.getErrors(),
-          lineIds: lineIds?.[productIndex] ? [lineIds[productIndex]] : [],
+          poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
           success: false,
         vendor: "adpia",
         });
@@ -2002,7 +2022,7 @@ async function processAdpiaOrder(
       message: `${successProducts.length}/${products.length}개 상품 주문 완료`,
       vendor: vendor.name,
       purchaseOrderId: purchaseOrderId || null,
-      purchaseOrderLineIds: lineIds || [],
+      purchaseOrderLineIds: poLineIds || [],
       products: results.map((r) => ({
         orderLineIds: products.find((p) => p.productSku === r.productSku)?.orderLineIds,
         openMallOrderNumber: r.vendorOrderNumber || null,
@@ -2039,7 +2059,7 @@ async function processAdpiaOrder(
         reason: p.reason,
       })) || [],
       automationErrors: errorCollector.getErrors(),
-      lineIds,
+      poLineIds,
       success: false,
       vendor: "adpia",
     });

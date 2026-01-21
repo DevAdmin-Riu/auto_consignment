@@ -117,7 +117,7 @@ async function handleVendorOrder(req, res) {
       products, // 여러 상품 배열
       shippingAddress,
       orderData,
-      lineIds, // 주문 라인 ID들
+      poLineIds, // PurchaseOrderLine ID 배열 (대행접수용)
       purchaseOrderId: rawPurchaseOrderId, // 발주 ID (단일)
       purchaseOrderIds, // 발주 ID들 (배열, n8n에서 전달)
       graphqlUrl, // GraphQL API URL (n8n에서 전달)
@@ -198,7 +198,7 @@ async function handleVendorOrder(req, res) {
           products: productsList,
           shippingAddress: resolvedShippingAddress,
           orderData,
-          lineIds,
+          poLineIds,
           purchaseOrderId,
           authToken,
         });
@@ -258,7 +258,7 @@ async function handleVendorOrder(req, res) {
 async function handleProductSearchOrder(
   res,
   vendor,
-  { products, shippingAddress, orderData, lineIds, purchaseOrderId, authToken }
+  { products, shippingAddress, orderData, poLineIds, purchaseOrderId, authToken }
 ) {
   let { browser, page } = await getBrowser(vendor.key);
 
@@ -279,7 +279,7 @@ async function handleProductSearchOrder(
         {
           products,
           shippingAddress,
-          lineIds,
+          poLineIds,
           purchaseOrderId,
         },
         authToken
@@ -293,7 +293,7 @@ async function handleProductSearchOrder(
         {
           products,
           shippingAddress,
-          lineIds,
+          poLineIds,
           purchaseOrderId,
         },
         authToken
@@ -307,7 +307,7 @@ async function handleProductSearchOrder(
         {
           products,
           shippingAddress,
-          lineIds,
+          poLineIds,
           purchaseOrderId,
         },
         authToken
@@ -321,7 +321,7 @@ async function handleProductSearchOrder(
         {
           products,
           shippingAddress,
-          lineIds,
+          poLineIds,
           purchaseOrderId,
         },
         authToken
@@ -343,7 +343,7 @@ async function handleProductSearchOrder(
         {
           products,
           shippingAddress,
-          lineIds,
+          poLineIds,
           purchaseOrderId,
         },
         authToken
@@ -357,7 +357,7 @@ async function handleProductSearchOrder(
         {
           products,
           shippingAddress,
-          lineIds,
+          poLineIds,
           purchaseOrderId,
         },
         authToken

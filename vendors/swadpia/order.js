@@ -1,3 +1,37 @@
+/**
+ * 성원애드피아 주문 모듈
+ *
+ * 처리 방식: 배치 (여러 상품 장바구니 → 일괄 결제)
+ *
+ * 흐름:
+ * 1. 로그인
+ * 2. 장바구니 비우기
+ * 3. 디자인 파일 다운로드 (products[].designFileUrl)
+ * 4. 각 상품별:
+ *    - 상품 페이지 이동
+ *    - 옵션 선택 (openMallOptions - 2D 구조 지원)
+ *    - 수량 설정 (openMallQtyPerUnit 적용)
+ *    - 파일 업로드
+ *    - 장바구니 담기
+ * 5. 모든 상품 담은 후 → 주문/결제 (ISP/페이북)
+ * 6. saveOrderResults 호출
+ *
+ * 데이터 흐름:
+ * - 입력: { products, shippingAddress, poLineIds, purchaseOrderId }
+ * - poLineIds: PurchaseOrderLine ID 배열 (대행접수용) - n8n에서 전달
+ * - products[].orderLineIds: OrderLine ID 배열 (주문번호 업데이트용)
+ *
+ * saveOrderResults 호출 시:
+ * - success: true → 대행접수 + 출고처리 진행
+ * - success: false → 옵션불일치/에러로그만 저장
+ * - products[].orderLineIds: 주문번호 업데이트에 사용
+ * - poLineIds: 대행접수(receivePurchaseOrderLines)에 사용
+ *
+ * 특이사항:
+ * - 디자인 파일 업로드 필수
+ * - ISP 결제: automateISPPayment() 사용
+ */
+
 const { getPage, closeBrowser } = require("../../lib/browser");
 const fs = require("fs");
 const path = require("path");
@@ -1638,7 +1672,7 @@ async function processSwadpiaOrder(
   res,
   page,
   vendor,
-  { products, shippingAddress, lineIds, purchaseOrderId },
+  { products, shippingAddress, poLineIds, purchaseOrderId },
   authToken
 ) {
   const downloadedFiles = []; // 다운로드한 파일 경로들
@@ -1823,7 +1857,7 @@ async function processSwadpiaOrder(
         })) || [],
         optionFailedProducts: [],
         automationErrors: [],
-        lineIds,
+        poLineIds,
         success: true,
         vendor: "swadpia",
       });
@@ -1835,7 +1869,7 @@ async function processSwadpiaOrder(
         priceMismatches: [],
         optionFailedProducts: [],
         automationErrors: errorCollector.getErrors(),
-        lineIds,
+        poLineIds,
         success: false,
         vendor: "swadpia",
       });
@@ -1848,7 +1882,7 @@ async function processSwadpiaOrder(
         : `${products.length}개 상품 장바구니 담기 완료`,
       vendor: vendor.name,
       purchaseOrderId: purchaseOrderId || null,
-      purchaseOrderLineIds: lineIds || [],  // PurchaseOrderLinesReceive mutation용
+      purchaseOrderLineIds: poLineIds || [],  // PurchaseOrderLinesReceive mutation용
       retryCount,
       products: products.map((p) => ({
         orderLineIds: p.orderLineIds,

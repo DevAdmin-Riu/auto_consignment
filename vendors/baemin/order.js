@@ -1,13 +1,29 @@
 /**
  * 배민상회 주문 자동화 모듈
  *
+ * 처리 방식: 개별 (상품별 개별 주문/결제)
+ *
  * 흐름:
  * 1. 로그인 (ID/PW)
- * 2. 상품 페이지 이동
- * 3. 옵션 선택 (있는 경우)
- * 4. 수량 설정
- * 5. 장바구니 담기
- * 6. 결제 (네이버페이)
+ * 2. 각 상품별 루프:
+ *    - 장바구니 비우기
+ *    - 상품 페이지 이동
+ *    - 옵션 선택 (openMallOptions - 2D 구조 지원)
+ *    - 수량 설정 (openMallQtyPerUnit 적용)
+ *    - 장바구니 담기
+ *    - 결제 (네이버페이)
+ *    - saveOrderResults 호출 (상품별)
+ *
+ * 데이터 흐름:
+ * - 입력: { products, shippingAddress, poLineIds, purchaseOrderId }
+ * - poLineIds: PurchaseOrderLine ID 배열 (대행접수용) - n8n에서 전달
+ * - products[].orderLineIds: OrderLine ID 배열 (주문번호 업데이트용)
+ *
+ * saveOrderResults 호출 시 (상품별):
+ * - success: true/false → 해당 상품의 처리 결과
+ * - products[].orderLineIds: 주문번호 업데이트에 사용
+ * - poLineIds: poLineIds[productIndex]를 배열로 감싸서 전달
+ *   예: poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : []
  */
 
 const fs = require("fs");
@@ -1894,13 +1910,13 @@ async function processBaeminOrder(
   res,
   page,
   vendor,
-  { products, purchaseOrderId, shippingAddress, lineIds },
+  { products, purchaseOrderId, shippingAddress, poLineIds },
   authToken
 ) {
   console.log("\n========================================");
   console.log("[baemin] 배민상회 주문 처리 시작 (개별 상품 주문 방식)");
   console.log(`[baemin] 상품 수: ${products?.length || 0}`);
-  console.log(`[baemin] lineIds: ${JSON.stringify(lineIds || [])}`);
+  console.log(`[baemin] poLineIds: ${JSON.stringify(poLineIds || [])}`);
   console.log("========================================\n");
 
   const results = [];
@@ -1926,7 +1942,7 @@ async function processBaeminOrder(
         priceMismatches: [],
         optionFailedProducts: [],
         automationErrors: errorCollector.getErrors(),
-        lineIds,
+        poLineIds,
         success: false,
         vendor: "baemin",
       });
@@ -1960,7 +1976,7 @@ async function processBaeminOrder(
         const navResult = await navigateToProduct(page, product.productUrl);
         if (!navResult.success) {
           results.push({
-            lineId: lineIds?.[productIndex],
+            lineId: poLineIds?.[productIndex],
             productVariantVendorId: product.productVariantVendorId,
             productSku: product.productSku,
             productName: product.productName,
@@ -1974,7 +1990,7 @@ async function processBaeminOrder(
             priceMismatches: [],
             optionFailedProducts: [],
             automationErrors: [],
-            lineIds: product.orderLineIds || [],
+            poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
             success: false,
             vendor: "baemin",
           });
@@ -2002,7 +2018,7 @@ async function processBaeminOrder(
               reason: optionResult.reason,
             });
             results.push({
-              lineId: lineIds?.[productIndex],
+              lineId: poLineIds?.[productIndex],
               productVariantVendorId: product.productVariantVendorId,
               productSku: product.productSku,
               productName: product.productName,
@@ -2019,7 +2035,7 @@ async function processBaeminOrder(
                 reason: optionResult.reason,
               }],
               automationErrors: [],
-              lineIds: product.orderLineIds || [],
+              poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
               success: false,
               vendor: "baemin",
             });
@@ -2039,7 +2055,7 @@ async function processBaeminOrder(
         const addedToCart = await addToCart(page);
         if (!addedToCart) {
           results.push({
-            lineId: lineIds?.[productIndex],
+            lineId: poLineIds?.[productIndex],
             productVariantVendorId: product.productVariantVendorId,
             productSku: product.productSku,
             productName: product.productName,
@@ -2052,7 +2068,7 @@ async function processBaeminOrder(
             priceMismatches: [],
             optionFailedProducts: [],
             automationErrors: [],
-            lineIds: product.orderLineIds || [],
+            poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
             success: false,
             vendor: "baemin",
           });
@@ -2087,7 +2103,7 @@ async function processBaeminOrder(
         if (!checkoutResult.success) {
           console.log("[baemin] 결제 페이지 진입 실패:", checkoutResult.message);
           results.push({
-            lineId: lineIds?.[productIndex],
+            lineId: poLineIds?.[productIndex],
             productVariantVendorId: product.productVariantVendorId,
             productSku: product.productSku,
             productName: product.productName,
@@ -2106,7 +2122,7 @@ async function processBaeminOrder(
             }] : [],
             optionFailedProducts: [],
             automationErrors: [],
-            lineIds: product.orderLineIds || [],
+            poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
             success: false,
             vendor: "baemin",
           });
@@ -2119,7 +2135,7 @@ async function processBaeminOrder(
           if (!addressResult.success) {
             console.log("[baemin] 배송지 입력 실패:", addressResult.message);
             results.push({
-              lineId: lineIds?.[productIndex],
+              lineId: poLineIds?.[productIndex],
               productVariantVendorId: product.productVariantVendorId,
               productSku: product.productSku,
               productName: product.productName,
@@ -2138,7 +2154,7 @@ async function processBaeminOrder(
               }] : [],
               optionFailedProducts: [],
               automationErrors: [],
-              lineIds: product.orderLineIds || [],
+              poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
               success: false,
               vendor: "baemin",
             });
@@ -2158,7 +2174,7 @@ async function processBaeminOrder(
 
         // 2-11. 결과 저장
         const resultEntry = {
-          lineId: lineIds?.[productIndex],
+          lineId: poLineIds?.[productIndex],
           productVariantVendorId: product.productVariantVendorId,
           productSku: product.productSku,
           productName: product.productName,
@@ -2199,7 +2215,7 @@ async function processBaeminOrder(
           }] : [],
           optionFailedProducts: [],
           automationErrors: [],
-          lineIds: product.orderLineIds || [],
+          poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
           success: orderSuccess,
           vendor: "baemin",
         });
@@ -2220,11 +2236,11 @@ async function processBaeminOrder(
         console.error(`[baemin] 상품 처리 에러:`, error.message);
         errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, error.message, {
           purchaseOrderId,
-          purchaseOrderLineId: lineIds?.[productIndex],
+          purchaseOrderLineId: poLineIds?.[productIndex],
           productVariantVendorId: product.productVariantVendorId,
         });
         results.push({
-          lineId: lineIds?.[productIndex],
+          lineId: poLineIds?.[productIndex],
           productSku: product.productSku,
           productName: product.productName,
           success: false,
@@ -2237,7 +2253,7 @@ async function processBaeminOrder(
           priceMismatches: [],
           optionFailedProducts: [],
           automationErrors: errorCollector.getErrors(),
-          lineIds: product.orderLineIds || [],
+          poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
           success: false,
           vendor: "baemin",
         });
@@ -2277,7 +2293,7 @@ async function processBaeminOrder(
       message: `${successProducts.length}/${products.length}개 상품 주문 완료`,
       vendor: vendor.name,
       purchaseOrderId: purchaseOrderId || null,
-      purchaseOrderLineIds: lineIds || [],
+      purchaseOrderLineIds: poLineIds || [],
       products: results.map((r) => ({
         orderLineIds: products.find((p) => p.productSku === r.productSku)?.orderLineIds,
         openMallOrderNumber: r.vendorOrderNumber || null,
@@ -2319,7 +2335,7 @@ async function processBaeminOrder(
         reason: p.reason,
       })) || [],
       automationErrors: errorCollector.getErrors(),
-      lineIds,
+      poLineIds,
       success: false,
       vendor: "baemin",
     });

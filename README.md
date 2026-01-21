@@ -64,7 +64,7 @@ npm run restart
     "streetAddress1": "서울시 강남구 테헤란로 123",
     "streetAddress2": "101호 가게이름"
   },
-  "lineIds": ["UHVyY2hhc2VPcmRlckxpbmU6MTIzNDU="]
+  "poLineIds": ["UHVyY2hhc2VPcmRlckxpbmU6MTIzNDU="]
 }
 ```
 

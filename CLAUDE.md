@@ -54,7 +54,7 @@ saveOrderResults(authToken, {
   priceMismatches,      // 가격 불일치 [{productVariantVendorId, vendorPriceExcludeVat, openMallPrice}]
   optionFailedProducts, // 옵션 실패 상품 [{productVariantVendorId, reason}]
   automationErrors,     // 에러 목록 (AutomationErrorCollector.getErrors())
-  lineIds,              // 대행접수용 발주 라인 ID 배열
+  poLineIds,            // 대행접수용 PurchaseOrderLine ID 배열
   success,              // 주문 성공 여부 (true/false) ⭐ 중요
   vendor                // 협력사명 (에러 로그용)
 })
@@ -101,7 +101,7 @@ saveOrderResults(authToken, {
 
 ### 주문번호 누락 시
 - 에러 로그에 `ORDER_NUMBER_MISSING` 코드로 기록
-- 해당 상품의 lineIds는 대행접수/출고처리에서 제외
+- 해당 상품의 poLineIds는 대행접수/출고처리에서 제외
 
 ## 데이터 흐름 (전체)
 
@@ -146,7 +146,7 @@ await graphqlClient.saveOrderResults(authToken, {
     productVariantVendorId: p.productVariantVendorId
   })),
   priceMismatches,
-  lineIds: successProducts.flatMap(p => p.orderLineIds),
+  poLineIds,  // 대행접수용 PurchaseOrderLine ID 배열 (서버에서 전달받은 것)
   success: true,  // ⭐ 반드시 true 전달
   vendor: "naver"
 });

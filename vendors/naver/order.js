@@ -1,12 +1,26 @@
 /**
  * 네이버 스마트스토어 주문 모듈
  *
+ * 처리 방식: 배치 (여러 상품 장바구니 → 일괄 결제)
+ *
  * 흐름:
  * 1. 상품 페이지 이동
- * 2. 옵션 선택 (openMallOptions)
- * 3. 수량 설정
+ * 2. 옵션 선택 (openMallOptions - 2D 구조 지원)
+ * 3. 수량 설정 (openMallQtyPerUnit 적용)
  * 4. 장바구니 담기
- * 5. 주문/결제 (네이버페이)
+ * 5. 모든 상품 담은 후 → 주문/결제 (네이버페이)
+ * 6. saveOrderResults 호출
+ *
+ * 데이터 흐름:
+ * - 입력: { products, shippingAddress, poLineIds, purchaseOrderId }
+ * - poLineIds: PurchaseOrderLine ID 배열 (대행접수용) - n8n에서 전달
+ * - products[].orderLineIds: OrderLine ID 배열 (주문번호 업데이트용)
+ *
+ * saveOrderResults 호출 시:
+ * - success: true → 대행접수 + 출고처리 진행
+ * - success: false → 옵션불일치/에러로그만 저장
+ * - products[].orderLineIds: 주문번호 업데이트에 사용
+ * - poLineIds: 대행접수(receivePurchaseOrderLines)에 사용
  */
 
 const { login } = require("./login");
@@ -1341,7 +1355,7 @@ async function processNaverOrder(
   res,
   page,
   vendor,
-  { products, shippingAddress, lineIds, purchaseOrderId },
+  { products, shippingAddress, poLineIds, purchaseOrderId },
   authToken
 ) {
   const steps = [];
@@ -1370,7 +1384,7 @@ async function processNaverOrder(
         priceMismatches: [],
         optionFailedProducts: [],
         automationErrors: errorCollector.getErrors(),
-        lineIds,
+        poLineIds,
         success: false,
         vendor: "naver",
       });
@@ -1474,7 +1488,7 @@ async function processNaverOrder(
             reason: p.optionFailReason,
           })),
           automationErrors: errorCollector.getErrors(),
-          lineIds,
+          poLineIds,
           success: false,
           vendor: "naver",
         });
@@ -1502,7 +1516,7 @@ async function processNaverOrder(
         priceMismatches: [],
         optionFailedProducts: [],
         automationErrors: errorCollector.getErrors(),
-        lineIds,
+        poLineIds,
         success: false,
         vendor: "naver",
       });
@@ -1758,7 +1772,7 @@ async function processNaverOrder(
           })),
           optionFailedProducts: [],
           automationErrors: [],
-          lineIds,
+          poLineIds,
           success: true,
           vendor: "naver",
         });
@@ -1775,7 +1789,7 @@ async function processNaverOrder(
           message: orderNumber ? "결제 완료" : "결제 완료 (주문번호 확인 필요)",
           orderNumber,
           purchaseOrderId,
-          purchaseOrderLineIds: lineIds || [], // PurchaseOrderLinesReceive mutation용
+          purchaseOrderLineIds: poLineIds || [], // PurchaseOrderLinesReceive mutation용
           // 상품별 결과 (mutation용 orderLineIds 포함)
           products: addedProducts.map((p) => ({
             orderLineIds: p.orderLineIds, // n8n에서 배열로 전달됨
@@ -1816,7 +1830,7 @@ async function processNaverOrder(
           priceMismatches: [],
           optionFailedProducts: [],
           automationErrors: errorCollector.getErrors(),
-          lineIds,
+          poLineIds,
           success: false,
         vendor: "naver",
         });
@@ -1847,7 +1861,7 @@ async function processNaverOrder(
       priceMismatches: [],
       optionFailedProducts: [],
       automationErrors: errorCollector.getErrors(),
-      lineIds,
+      poLineIds,
       success: false, // 결제 실패이므로 대행접수/출고 안함
       vendor: "naver",
     });
@@ -1885,7 +1899,7 @@ async function processNaverOrder(
       priceMismatches: [],
       optionFailedProducts: [],
       automationErrors: errorCollector.getErrors(),
-      lineIds,
+      poLineIds,
       success: false,
         vendor: "naver",
     });
