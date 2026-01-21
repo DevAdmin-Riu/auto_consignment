@@ -679,6 +679,16 @@ async function addProductsToCart(page, products, downloadedFiles) {
           console.log("[swadpia] iframe에 접근할 수 없음");
         }
 
+        // 8-1. 교정확인 후 인쇄 라디오 버튼 클릭 (있으면)
+        const proofFileRadio = await page.$(
+          'input[name="is_proof_file_chk1"][value="1"]'
+        );
+        if (proofFileRadio) {
+          await proofFileRadio.click();
+          console.log("[swadpia] 교정확인 후 인쇄 선택 완료");
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+
         // 9. 장바구니 저장 버튼 클릭 (파일 업로드 시작 및 완료 후 자동으로 장바구니 페이지로 이동됨)
         console.log("[swadpia] 장바구니 저장 버튼 클릭...");
 
