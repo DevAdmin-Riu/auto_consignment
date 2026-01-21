@@ -688,16 +688,22 @@ async function addProductsToCart(page, products, downloadedFiles) {
           console.log("[swadpia] 교정확인 후 인쇄 선택 완료");
           await new Promise((resolve) => setTimeout(resolve, 500));
 
-          // 담당자 휴대폰 번호 입력 (010-8405-1314)
-          // 첫 번째 셀렉트는 기본값이 010이므로 생략
-          const hp2Input = await page.$("#is_proof_hp2");
-          const hp3Input = await page.$("#is_proof_hp3");
-          if (hp2Input && hp3Input) {
-            await hp2Input.click({ clickCount: 3 });
-            await hp2Input.type("8405");
-            await hp3Input.click({ clickCount: 3 });
-            await hp3Input.type("1314");
-            console.log("[swadpia] 담당자 연락처 입력 완료 (010-8405-1314)");
+          // 담당자 휴대폰 번호 입력
+          const proofPhone = process.env.SWADPIA_PROOF_PHONE || "010-8405-1314";
+          const phoneParts = proofPhone.split("-");
+          if (phoneParts.length === 3) {
+            const [hp1, hp2, hp3] = phoneParts;
+            const hp1Select = await page.$("#is_proof_hp1");
+            const hp2Input = await page.$("#is_proof_hp2");
+            const hp3Input = await page.$("#is_proof_hp3");
+            if (hp1Select && hp2Input && hp3Input) {
+              await hp1Select.select(hp1);
+              await hp2Input.click({ clickCount: 3 });
+              await hp2Input.type(hp2);
+              await hp3Input.click({ clickCount: 3 });
+              await hp3Input.type(hp3);
+              console.log(`[swadpia] 담당자 연락처 입력 완료 (${proofPhone})`);
+            }
           }
         }
 
