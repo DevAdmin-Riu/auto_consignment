@@ -161,16 +161,55 @@ await graphqlClient.saveOrderResults(authToken, {
 });
 ```
 
+## 협력사별 주문 방식
+
+| 벤더 | 주문 방식 | 결제 방식 | 설명 |
+|------|----------|----------|------|
+| **naver** | 배치 | 네이버페이 (후불) | 여러 상품 장바구니 → 일괄 결제 |
+| **coupang** | 배치 | 후불 | 여러 상품 장바구니 → 일괄 결제 |
+| **napkin** | 배치 | ISP/페이북 (선불) | 여러 상품 장바구니 → 일괄 결제 |
+| **swadpia** | 배치 | ISP/페이북 (선불) | 여러 상품 장바구니 → 일괄 결제 |
+| **baemin** | 개별 | 후불 | 상품별 개별 주문/결제 (saveOrderResults 상품별 호출) |
+| **adpia** | 개별 | ISP/페이북 (선불) | 상품별 개별 주문/결제 (saveOrderResults 상품별 호출) |
+
+### 배치 vs 개별 차이점
+
+**배치 (Batch)**:
+- 모든 상품을 장바구니에 담고 한번에 결제
+- saveOrderResults 1회 호출 (전체 상품)
+- n8n에서 같은 배송지+같은 상품 합치기 가능
+
+**개별 (Individual)**:
+- 상품 1개씩 장바구니 → 결제 사이클
+- saveOrderResults 상품별 호출
+- 각 상품마다 별도 주문번호 생성
+- `poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : []` 형태로 전달
+
+> ⚠️ **n8n 주의사항**: 개별 방식 벤더(baemin, adpia)는 같은 상품을 합치면 안됨
+
 ## 협력사별 특이사항
 
 ### Naver
 - iframe 내 주소 검색 처리 필요
 - `--disable-web-security` 브라우저 옵션 필요
 
+### Coupang
+- 장바구니 수량 검증 후 불일치 시 재시도
+- OCR로 주문번호 추출
+
 ### Adpia
-- 상품별 개별 주문 처리 (processIndividualOrders)
+- 상품별 개별 주문 처리
 - 결제 금액 로깅 (createPaymentLogs)
+- 디자인 파일 업로드 필수
+
+### Baemin
+- 상품별 개별 주문 처리
+- 후불 결제 (선불 결제 업체가 아님)
 
 ### Napkin
 - 세트 상품 박스별 수량 처리
 - 2D 옵션 구조 지원
+
+### Swadpia
+- 디자인 파일 업로드 필수
+- 결제창 미출현 시 5회 재시도 (장바구니로 복귀)
