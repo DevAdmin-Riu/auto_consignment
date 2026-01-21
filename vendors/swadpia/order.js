@@ -10,6 +10,7 @@ const {
 } = require("../../lib/automation-error");
 const { saveOrderResults } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
+const { getEnv } = require("../config");
 
 // 임시 파일 저장 경로
 const TEMP_DIR = path.join(__dirname, "../../temp");
@@ -689,7 +690,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
           await new Promise((resolve) => setTimeout(resolve, 500));
 
           // 담당자 휴대폰 번호 입력
-          const proofPhone = process.env.SWADPIA_PROOF_PHONE || "010-8405-1314";
+          const proofPhone = getEnv("SWADPIA_PROOF_PHONE") || "010-8405-1314";
           const phoneParts = proofPhone.split("-");
           if (phoneParts.length === 3) {
             const [hp1, hp2, hp3] = phoneParts;
@@ -1797,7 +1798,7 @@ async function processSwadpiaOrder(
       console.log("[swadpia] 전체 주문하기 진행...");
       // vendor.ispPassword: ISP 결제 비밀번호 (환경변수에서 가져옴 - BC카드 ISP 공용)
       const ispPassword =
-        vendor.ispPassword || process.env.BC_ISP_PASSWORD || "";
+        vendor.ispPassword || getEnv("BC_ISP_PASSWORD") || "";
       orderResult = await placeOrder(page, shippingAddress, ispPassword);
 
       // Collect payment error if order failed
