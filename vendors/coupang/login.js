@@ -16,15 +16,50 @@ async function coupangLogin(page) {
 
   console.log("쿠팡 로그인 체크...");
 
-  // 로그인 페이지로 이동
-  await page.goto(vendor.loginUrl, {
+  // WAF 우회: 메인 페이지 먼저 방문 후 로그인 버튼 클릭 (referrer 생성)
+  console.log("[로그인] 메인 페이지 먼저 방문...");
+  await page.goto(vendor.siteUrl, {
     waitUntil: "networkidle2",
     timeout: 30000,
   });
+  await delay(2000 + Math.random() * 1000);
 
-  await delay(2000);
+  // Access Denied 체크
+  let pageContent = await page.content();
+  if (pageContent.includes("Access Denied")) {
+    throw new Error("Access Denied by Coupang WAF");
+  }
 
-  // 현재 URL 확인 - 로그인 페이지가 아니면 이미 로그인됨
+  // 이미 로그인 되어있는지 확인 (마이쿠팡 버튼 존재 여부)
+  const isAlreadyLoggedIn = await page.evaluate(() => {
+    // 로그인 상태면 "마이쿠팡" 또는 사용자 이름이 표시됨
+    const myPageLink = document.querySelector('a[title="마이쿠팡"], a[href*="mypage"]');
+    const loginLink = document.querySelector('a[title="로그인"]');
+    return myPageLink !== null && loginLink === null;
+  });
+
+  if (isAlreadyLoggedIn) {
+    console.log("쿠팡 이미 로그인됨, 스킵");
+    return true;
+  }
+
+  // 로그인 버튼 클릭으로 로그인 페이지 이동 (자연스러운 navigation)
+  console.log("[로그인] 로그인 버튼 클릭...");
+  const loginLink = await page.$('a[title="로그인"]');
+  if (loginLink) {
+    await loginLink.click();
+    await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 });
+  } else {
+    // fallback: 직접 URL 이동
+    console.log("[로그인] 로그인 버튼 없음, 직접 이동...");
+    await page.goto(vendor.loginUrl, {
+      waitUntil: "networkidle2",
+      timeout: 30000,
+    });
+  }
+  await delay(2000 + Math.random() * 1000);
+
+  // 현재 URL 확인
   const currentUrl = page.url();
   console.log("[로그인 체크] 현재 URL:", currentUrl);
 
@@ -34,7 +69,7 @@ async function coupangLogin(page) {
   }
 
   // Access Denied 체크
-  const pageContent = await page.content();
+  pageContent = await page.content();
   if (pageContent.includes("Access Denied")) {
     throw new Error("Access Denied by Coupang WAF");
   }

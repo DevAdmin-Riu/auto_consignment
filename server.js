@@ -87,6 +87,14 @@ async function processQueue() {
   } finally {
     isProcessing = false;
     resolve();
+
+    // WAF 우회: 다음 주문 처리 전 딜레이 (5-10초 랜덤)
+    if (requestQueue.length > 0) {
+      const delayMs = 5000 + Math.random() * 5000;
+      console.log(`[큐] 다음 주문까지 ${(delayMs / 1000).toFixed(1)}초 대기...`);
+      await delay(delayMs);
+    }
+
     processQueue();
   }
 }
