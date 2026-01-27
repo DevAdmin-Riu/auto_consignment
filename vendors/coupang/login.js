@@ -49,15 +49,12 @@ async function coupangLogin(page) {
   if (loginLink) {
     await loginLink.click();
     await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 30000 });
+    await delay(2000 + Math.random() * 1000);
   } else {
-    // fallback: 직접 URL 이동
-    console.log("[로그인] 로그인 버튼 없음, 직접 이동...");
-    await page.goto(vendor.loginUrl, {
-      waitUntil: "networkidle2",
-      timeout: 30000,
-    });
+    // 로그인 버튼 없으면 이미 로그인된 것으로 간주 (직접 URL 이동 시 WAF 차단됨)
+    console.log("[로그인] 로그인 버튼 없음, 이미 로그인된 것으로 간주");
+    return true;
   }
-  await delay(2000 + Math.random() * 1000);
 
   // 현재 URL 확인
   const currentUrl = page.url();

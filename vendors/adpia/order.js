@@ -440,9 +440,20 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
     await delay(3000); // 업로드 시작 대기
 
     // 5. 업로드 완료 대기 (진행률이 90% 이상 도달 후 떨어지면 완료로 간주, 최대 120초)
+    // 빠른 업로드 시 진행률 1%인데 모달이 떠있는 경우도 처리
     let maxProgress = 0;
+    let modalFoundEarly = false;
     for (let i = 0; i < 120; i++) {
       await delay(1000);
+
+      // 모달이 이미 떠있는지 확인 (빠른 업로드 완료 시)
+      const hasModal = await page.$(SELECTORS.orderPage.modalConfirmBtn);
+      if (hasModal) {
+        console.log("[adpia] 파일 업로드 완료 (모달 감지 - 빠른 업로드)");
+        modalFoundEarly = true;
+        break;
+      }
+
       const progress = await page.evaluate(() => {
         const barEl = document.querySelector("#pluprogress #bar");
         if (!barEl) return null;
@@ -471,12 +482,14 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       }
     }
 
-    // 6. 업로드 완료 후 모달 대기 (최대 30초)
-    console.log("[adpia] 모달 대기 중...");
+    // 6. 업로드 완료 후 모달 대기 (빠른 업로드로 이미 감지된 경우 즉시 처리, 최대 30초)
+    if (!modalFoundEarly) {
+      console.log("[adpia] 모달 대기 중...");
+    }
     const modalConfirmBtn = await waitFor(
       page,
       SELECTORS.orderPage.modalConfirmBtn,
-      30000
+      modalFoundEarly ? 5000 : 30000 // 빠른 업로드 시 대기 시간 단축
     );
 
     let uploadFailed = false;

@@ -155,7 +155,12 @@ app.post("/api/vendor/tracking", async (req, res) => {
 
       // 벤더별 tracking 함수 호출
       const trackingHandler = trackingHandlers[vendor];
-      const results = await trackingHandler(page, vendorConfig, openMallOrderNumbers);
+      const trackingResponse = await trackingHandler(page, vendorConfig, openMallOrderNumbers);
+
+      // 반환 형식 처리: { results: [...], automationErrors: ... } 또는 배열
+      const results = Array.isArray(trackingResponse)
+        ? trackingResponse
+        : trackingResponse?.results || [];
 
       // 송장번호가 있는 것만 fulfillmentMap과 병합하여 추가
       for (const r of results) {
