@@ -714,10 +714,21 @@ async function addProductsToCart(page, products, downloadedFiles) {
           console.log("[swadpia] iframe에 접근할 수 없음");
         }
 
-        // 8-1. 교정확인 후 인쇄 라디오 버튼 클릭 (있으면)
-        const proofFileRadio = await page.$(
-          'input[name="is_proof_file_chk1"][value="1"]'
-        );
+        // 8-1. 교정확인 후 인쇄 라디오 버튼 클릭
+        // - 뜨는 상품도 있고, 안 뜨는 상품도 있음
+        // - 뜨더라도 늦게 나타날 수 있음 → 최대 5초 대기
+        console.log("[swadpia] 교정확인 라디오 버튼 확인 중...");
+        let proofFileRadio = null;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          proofFileRadio = await page.$(
+            'input[name="is_proof_file_chk1"][value="1"]'
+          );
+          if (proofFileRadio) break;
+          if (attempt < 4) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+          }
+        }
+
         if (proofFileRadio) {
           await proofFileRadio.click();
           console.log("[swadpia] 교정확인 후 인쇄 선택 완료");
@@ -740,6 +751,8 @@ async function addProductsToCart(page, products, downloadedFiles) {
               console.log(`[swadpia] 담당자 연락처 입력 완료 (${proofPhone})`);
             }
           }
+        } else {
+          console.log("[swadpia] 교정확인 라디오 버튼 없음 (스킵)");
         }
 
         // 9. 장바구니 저장 버튼 클릭 (파일 업로드 시작 및 완료 후 자동으로 장바구니 페이지로 이동됨)
