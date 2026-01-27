@@ -158,6 +158,8 @@ const SELECTORS = {
   orderPage: {
     // 수량 입력 (트리플 클릭 후 타이핑)
     quantityInput: "#holder_num",
+    // RTN-112326 등 일부 제품의 대체 수량 입력 필드
+    quantityInputAlt: "input.input30[isnumber]",
     // 파일 업로드 (plupload - 동적 ID)
     fileInput: 'input[type="file"]',
     // 교정확인 후 인쇄 체크박스
@@ -165,6 +167,9 @@ const SELECTORS = {
     // 장바구니 담기 버튼
     addToCartBtn:
       "#calcarea > div.order_list_re > div.ng-star-inserted > button.btn_m.or_white_02.ng-star-inserted",
+    // RTN-112326 등 일부 제품의 대체 장바구니 담기 버튼
+    addToCartBtnAlt:
+      "#calcarea > div.order_list_re > div:nth-child(4) > button.btn_m.or_white_02",
     // 모달 확인 버튼 (alertify.js)
     modalConfirmBtn: ".ajs-modal button.ajs-button.btn_orange",
   },
@@ -354,11 +359,21 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       console.log(`[adpia] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`);
     }
     console.log(`[adpia] 수량 입력: ${actualQuantity}`);
-    const quantityInput = await waitFor(
+    // 기본 셀렉터 시도
+    let quantityInput = await waitFor(
       page,
       SELECTORS.orderPage.quantityInput,
-      10000
+      5000
     );
+    // 기본 셀렉터 없으면 대체 셀렉터 시도 (RTN-112326 등)
+    if (!quantityInput) {
+      console.log("[adpia] 기본 수량 필드 없음, 대체 셀렉터 시도...");
+      quantityInput = await waitFor(
+        page,
+        SELECTORS.orderPage.quantityInputAlt,
+        5000
+      );
+    }
     if (quantityInput) {
       await quantityInput.click({ clickCount: 3 });
       await delay(500);
@@ -382,21 +397,37 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
     }
   }
 
-  // 3. 교정확인 후 인쇄 체크박스 체크
+  // 3. 교정확인 후 인쇄 체크박스 체크 (일부 제품에는 없을 수 있음)
   await delay(1000);
   console.log("[adpia] 교정확인 후 인쇄 체크박스 체크");
-  const proofCheckbox = await page.$(SELECTORS.orderPage.proofCheckbox);
-  if (proofCheckbox) {
-    const isChecked = await page.$eval(
-      SELECTORS.orderPage.proofCheckbox,
-      (el) => el.checked
-    );
-    if (!isChecked) {
-      await proofCheckbox.click();
-      await delay(1000);
+  try {
+    const proofCheckbox = await page.$(SELECTORS.orderPage.proofCheckbox);
+    if (proofCheckbox) {
+      // 체크박스가 보이는지 확인
+      const isVisible = await page.$eval(
+        SELECTORS.orderPage.proofCheckbox,
+        (el) => {
+          const style = window.getComputedStyle(el);
+          return style.display !== "none" && style.visibility !== "hidden";
+        }
+      );
+      if (isVisible) {
+        const isChecked = await page.$eval(
+          SELECTORS.orderPage.proofCheckbox,
+          (el) => el.checked
+        );
+        if (!isChecked) {
+          await proofCheckbox.click();
+          await delay(1000);
+        }
+      } else {
+        console.log("[adpia] 교정확인 체크박스가 숨겨져 있음 (스킵)");
+      }
+    } else {
+      console.log("[adpia] 교정확인 체크박스 없음 (스킵)");
     }
-  } else {
-    console.log("[adpia] 교정확인 체크박스를 찾을 수 없음");
+  } catch (checkboxError) {
+    console.log("[adpia] 교정확인 체크박스 처리 스킵:", checkboxError.message);
   }
 
   // 4. 장바구니 담기 버튼 클릭 → 업로드 시작 → 업로드 완료 후 모달 뜸
@@ -424,11 +455,21 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
 
     await delay(1000);
     console.log("[adpia] 장바구니 담기 버튼 클릭");
-    const addToCartBtn = await waitFor(
+    // 기본 셀렉터 시도
+    let addToCartBtn = await waitFor(
       page,
       SELECTORS.orderPage.addToCartBtn,
-      10000
+      5000
     );
+    // 기본 셀렉터 없으면 대체 셀렉터 시도 (RTN-112326 등)
+    if (!addToCartBtn) {
+      console.log("[adpia] 기본 장바구니 버튼 없음, 대체 셀렉터 시도...");
+      addToCartBtn = await waitFor(
+        page,
+        SELECTORS.orderPage.addToCartBtnAlt,
+        5000
+      );
+    }
 
     if (!addToCartBtn) {
       console.log("[adpia] 장바구니 담기 버튼을 찾을 수 없음");
@@ -1434,148 +1475,142 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
               });
 
               // 19. ISP/페이북 네이티브 윈도우 자동화
-              if (ispPassword) {
-                // dialog 핸들러 먼저 등록 (버튼 클릭 전에!)
-                const ispAlertHandler = async (dialog) => {
-                  console.log("[adpia] ISP Alert 감지:", dialog.type(), dialog.message());
+              // dialog 핸들러 먼저 등록 (버튼 클릭 전에!)
+              const ispAlertHandler = async (dialog) => {
+                console.log("[adpia] ISP Alert 감지:", dialog.type(), dialog.message());
+                try {
+                  await dialog.accept();
+                  console.log("[adpia] ISP Alert 자동 닫힘");
+                } catch (e) {
+                  // 이미 처리됨
+                }
+              };
+              page.on("dialog", ispAlertHandler);
+              paymentPopup.on("dialog", ispAlertHandler);
+              console.log("[adpia] ✅ dialog 핸들러 등록 완료");
+
+              // 메인 페이지와 결제창에 window.alert 오버라이드
+              try {
+                await page.evaluate(() => {
+                  window.alert = (msg) => {
+                    console.log("[Main Page Override] alert:", msg);
+                  };
+                  window.confirm = (msg) => {
+                    console.log("[Main Page Override] confirm:", msg);
+                    return true;
+                  };
+                });
+                console.log("[adpia] ✅ 메인 페이지 alert 오버라이드 완료");
+              } catch (e) {
+                console.log("[adpia] 메인 페이지 오버라이드 실패:", e.message);
+              }
+
+              try {
+                await paymentPopup.evaluate(() => {
+                  window.alert = (msg) => {
+                    console.log("[Payment Popup Override] alert:", msg);
+                  };
+                  window.confirm = (msg) => {
+                    console.log("[Payment Popup Override] confirm:", msg);
+                    return true;
+                  };
+                });
+                console.log("[adpia] ✅ 결제창 alert 오버라이드 완료");
+              } catch (e) {
+                console.log("[adpia] 결제창 오버라이드 실패:", e.message);
+              }
+
+              // 인증서 버튼 클릭 (alert 핸들러 등록 후)
+              await paymentPopup.click(certPaymentBtn);
+              console.log("[adpia] ✅ 인증서 등록/결제 버튼 클릭 완료");
+              await delay(3000);
+
+              // ISP 네이티브 결제창 자동화 (냅킨/성원애드피아와 동일)
+              console.log("[adpia] ISP 네이티브 결제창 자동화 시작...");
+              const ispResult = await automateISPPaymentWithAlertHandler(paymentPopup);
+
+              // 핸들러 제거
+              page.off("dialog", ispAlertHandler);
+              paymentPopup.off("dialog", ispAlertHandler);
+
+              if (ispResult.success) {
+                console.log("[adpia] ✅ ISP 결제 자동화 완료");
+
+                // 20. 결제 완료 대기 - 결제창이 닫힐 때까지 대기
+                console.log("[adpia] 20. 결제 완료 대기 중...");
+                for (let i = 0; i < 60; i++) {
+                  await delay(1000);
+                  // 결제창이 닫혔는지 확인
                   try {
-                    await dialog.accept();
-                    console.log("[adpia] ISP Alert 자동 닫힘");
-                  } catch (e) {
-                    // 이미 처리됨
-                  }
-                };
-                page.on("dialog", ispAlertHandler);
-                paymentPopup.on("dialog", ispAlertHandler);
-                console.log("[adpia] ✅ dialog 핸들러 등록 완료");
-
-                // 메인 페이지와 결제창에 window.alert 오버라이드
-                try {
-                  await page.evaluate(() => {
-                    window.alert = (msg) => {
-                      console.log("[Main Page Override] alert:", msg);
-                    };
-                    window.confirm = (msg) => {
-                      console.log("[Main Page Override] confirm:", msg);
-                      return true;
-                    };
-                  });
-                  console.log("[adpia] ✅ 메인 페이지 alert 오버라이드 완료");
-                } catch (e) {
-                  console.log("[adpia] 메인 페이지 오버라이드 실패:", e.message);
-                }
-
-                try {
-                  await paymentPopup.evaluate(() => {
-                    window.alert = (msg) => {
-                      console.log("[Payment Popup Override] alert:", msg);
-                    };
-                    window.confirm = (msg) => {
-                      console.log("[Payment Popup Override] confirm:", msg);
-                      return true;
-                    };
-                  });
-                  console.log("[adpia] ✅ 결제창 alert 오버라이드 완료");
-                } catch (e) {
-                  console.log("[adpia] 결제창 오버라이드 실패:", e.message);
-                }
-
-                // 인증서 버튼 클릭 (alert 핸들러 등록 후)
-                await paymentPopup.click(certPaymentBtn);
-                console.log("[adpia] ✅ 인증서 등록/결제 버튼 클릭 완료");
-                await delay(3000);
-
-                console.log("[adpia] ISP 네이티브 결제창 자동화 시작...");
-                const ispResult = await automateISPPaymentWithAlertHandler(paymentPopup);
-
-                // 핸들러 제거
-                page.off("dialog", ispAlertHandler);
-                paymentPopup.off("dialog", ispAlertHandler);
-
-                if (ispResult.success) {
-                  console.log("[adpia] ✅ ISP 결제 자동화 완료");
-
-                  // 20. 결제 완료 대기 - 결제창이 닫힐 때까지 대기
-                  console.log("[adpia] 20. 결제 완료 대기 중...");
-                  for (let i = 0; i < 60; i++) {
-                    await delay(1000);
-                    // 결제창이 닫혔는지 확인
-                    try {
-                      const isClosed = paymentPopup.isClosed();
-                      if (isClosed) {
-                        console.log("[adpia] 결제창 닫힘 확인");
-                        break;
-                      }
-                    } catch (e) {
-                      // 창이 닫히면 에러 발생할 수 있음
-                      console.log("[adpia] 결제창 닫힘 확인 (에러)");
+                    const isClosed = paymentPopup.isClosed();
+                    if (isClosed) {
+                      console.log("[adpia] 결제창 닫힘 확인");
                       break;
                     }
-                    if (i % 10 === 0) {
-                      console.log(`[adpia] 결제 완료 대기 중... ${i}초`);
-                    }
+                  } catch (e) {
+                    // 창이 닫히면 에러 발생할 수 있음
+                    console.log("[adpia] 결제창 닫힘 확인 (에러)");
+                    break;
                   }
+                  if (i % 10 === 0) {
+                    console.log(`[adpia] 결제 완료 대기 중... ${i}초`);
+                  }
+                }
 
-                  // 메인 페이지 결제 완료 확인
-                  await delay(3000);
-                  const currentUrl = page.url();
-                  console.log("[adpia] 결제 후 URL:", currentUrl);
+                // 메인 페이지 결제 완료 확인
+                await delay(3000);
+                const currentUrl = page.url();
+                console.log("[adpia] 결제 후 URL:", currentUrl);
 
-                  // 21. 주문번호 추출
-                  console.log("[adpia] 21. 주문번호 추출 시도...");
-                  let vendorOrderNumber = null;
-                  try {
-                    // 주문 완료 페이지로 이동했는지 확인
-                    if (
-                      currentUrl.includes("orderresult") ||
-                      currentUrl.includes("order/result")
-                    ) {
-                      await page.waitForSelector(SELECTORS.order.orderNumber, {
-                        timeout: 10000,
-                      });
+                // 21. 주문번호 추출
+                console.log("[adpia] 21. 주문번호 추출 시도...");
+                let vendorOrderNumber = null;
+                try {
+                  // 주문 완료 페이지로 이동했는지 확인
+                  if (
+                    currentUrl.includes("orderresult") ||
+                    currentUrl.includes("order/result")
+                  ) {
+                    await page.waitForSelector(SELECTORS.order.orderNumber, {
+                      timeout: 10000,
+                    });
+                    vendorOrderNumber = await page.$eval(
+                      SELECTORS.order.orderNumber,
+                      (el) => el.textContent?.trim()
+                    );
+                    console.log("[adpia] ✅ 주문번호:", vendorOrderNumber);
+                  } else {
+                    // 페이지 이동 대기 후 재시도
+                    await delay(3000);
+                    const orderNumberEl = await page.$(
+                      SELECTORS.order.orderNumber
+                    );
+                    if (orderNumberEl) {
                       vendorOrderNumber = await page.$eval(
                         SELECTORS.order.orderNumber,
                         (el) => el.textContent?.trim()
                       );
                       console.log("[adpia] ✅ 주문번호:", vendorOrderNumber);
-                    } else {
-                      // 페이지 이동 대기 후 재시도
-                      await delay(3000);
-                      const orderNumberEl = await page.$(
-                        SELECTORS.order.orderNumber
-                      );
-                      if (orderNumberEl) {
-                        vendorOrderNumber = await page.$eval(
-                          SELECTORS.order.orderNumber,
-                          (el) => el.textContent?.trim()
-                        );
-                        console.log("[adpia] ✅ 주문번호:", vendorOrderNumber);
-                      }
                     }
-                  } catch (e) {
-                    console.log("[adpia] 주문번호 추출 실패:", e.message);
                   }
-
-                  // targetcreated 핸들러 제거
-                  payBrowser.off("targetcreated", targetCreatedHandler);
-
-                  return {
-                    success: true,
-                    message: "결제 완료",
-                    vendorOrderNumber,
-                  };
-                } else {
-                  console.log(
-                    "[adpia] ⚠️ ISP 결제 자동화 실패:",
-                    ispResult.error
-                  );
-                  console.log("[adpia] 수동 결제가 필요합니다.");
+                } catch (e) {
+                  console.log("[adpia] 주문번호 추출 실패:", e.message);
                 }
+
+                // targetcreated 핸들러 제거
+                payBrowser.off("targetcreated", targetCreatedHandler);
+
+                return {
+                  success: true,
+                  message: "결제 완료",
+                  vendorOrderNumber,
+                };
               } else {
-                // ISP 비밀번호 없으면 버튼만 클릭하고 수동 대기
-                await paymentPopup.click(certPaymentBtn);
-                console.log("[adpia] ✅ 인증서 등록/결제 버튼 클릭 완료");
-                console.log("[adpia] ISP 비밀번호 미설정 - 수동 결제 필요");
+                console.log(
+                  "[adpia] ⚠️ ISP 결제 자동화 실패:",
+                  ispResult.error
+                );
+                console.log("[adpia] 수동 결제가 필요합니다.");
               }
             } catch (certError) {
               console.log(
@@ -1622,6 +1657,7 @@ async function processAdpiaOrder(
 
   const errorCollector = createOrderErrorCollector("adpia");
   const shippingInfo = shippingAddress; // 기존 코드와 호환을 위해 alias
+  const ispPassword = vendor.ispPassword || process.env.BC_ISP_PASSWORD || null;
 
   const results = [];
   const downloadedFiles = []; // 다운로드한 파일 경로들

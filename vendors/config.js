@@ -83,7 +83,7 @@ const VENDORS = {
     paymentMethod: "coupang_pay",
     automationType: "product_search",
   },
-  // 냅킨코리아 - 카드 결제
+  // 냅킨코리아 - ISP/페이북 결제
   냅킨코리아: {
     key: "napkin",
     loginUrl: "https://www.napkinkorea.co.kr/member/login.html",
@@ -93,6 +93,9 @@ const VENDORS = {
     },
     get password() {
       return getEnv("NAPKIN_PASSWORD");
+    },
+    get ispPassword() {
+      return getEnv("BC_ISP_PASSWORD");
     },
     paymentMethod: "card",
     automationType: "product_search",
@@ -131,7 +134,7 @@ const VENDORS = {
     paymentMethod: "naver_pay",
     automationType: "product_search",
   },
-  // 성원애드피아
+  // 성원애드피아 - ISP/페이북 결제
   성원애드피아: {
     key: "swadpia",
     loginUrl: "https://www.swadpia.co.kr/member/re_login",
@@ -141,6 +144,9 @@ const VENDORS = {
     },
     get password() {
       return getEnv("SWADPIA_PASSWORD");
+    },
+    get ispPassword() {
+      return getEnv("BC_ISP_PASSWORD");
     },
     paymentMethod: "card",
     automationType: "product_search",
@@ -155,6 +161,9 @@ const VENDORS = {
     },
     get password() {
       return getEnv("ADPIA_PASSWORD");
+    },
+    get ispPassword() {
+      return getEnv("BC_ISP_PASSWORD");
     },
     paymentMethod: "card",
     requiresProofing: true,
