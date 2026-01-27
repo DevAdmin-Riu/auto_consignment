@@ -937,6 +937,8 @@ async function processNapkinOrder(
       }
 
       // 7-7. 휴대폰 번호 입력
+      // 주소 변경 시 당일배송 여부 렌더링이 발생하므로
+      // 먼저 phoneFirst를 클릭하여 렌더링 트리거 후 대기
       const phone = shippingAddress.phone || shippingAddress.recipientPhone || "";
       if (phone) {
         // 숫자만 추출
@@ -954,20 +956,19 @@ async function processNapkinOrder(
 
           console.log(`[napkin] 휴대폰: ${first}-${middle}-${last}`);
 
+          // 앞자리 select 클릭 → 렌더링 트리거 후 대기
+          await page.click(SELECTORS.order.phoneFirst);
+          await delay(1500);
+
           // 앞자리 선택 (select)
           await page.select(SELECTORS.order.phoneFirst, first);
-          await delay(800); // select 반영 대기
+          await delay(800);
 
           // 가운데 4자리
           const middleInput = await page.$(SELECTORS.order.phoneMiddle);
           if (middleInput) {
-            await middleInput.click();
-            await delay(300);
-            await page.keyboard.down('Control');
-            await page.keyboard.press('a');
-            await page.keyboard.up('Control');
-            await page.keyboard.press('Backspace');
-            await delay(300);
+            await middleInput.click({ clickCount: 3 });
+            await delay(500);
             await page.keyboard.type(middle, { delay: 80 });
             await delay(600);
           }
@@ -975,13 +976,8 @@ async function processNapkinOrder(
           // 마지막 4자리
           const lastInput = await page.$(SELECTORS.order.phoneLast);
           if (lastInput) {
-            await lastInput.click();
-            await delay(300);
-            await page.keyboard.down('Control');
-            await page.keyboard.press('a');
-            await page.keyboard.up('Control');
-            await page.keyboard.press('Backspace');
-            await delay(300);
+            await lastInput.click({ clickCount: 3 });
+            await delay(500);
             await page.keyboard.type(last, { delay: 80 });
             await delay(600);
           }
