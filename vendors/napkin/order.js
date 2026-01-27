@@ -820,11 +820,11 @@ async function processNapkinOrder(
 
     // 6. 배송지 직접입력 버튼 클릭
     console.log("[napkin] 배송지 직접입력 버튼 클릭...");
-    await delay(1500); // 페이지 로딩 대기
+    await delay(2000); // 페이지 로딩 대기 (늘림)
     const newAddressBtn = await waitFor(page, SELECTORS.order.newAddressBtn, 5000);
     if (newAddressBtn) {
       await page.evaluate(el => el.click(), newAddressBtn);
-      await delay(1000);
+      await delay(2000); // 탭 전환 대기 (늘림)
     } else {
       console.log("[napkin] 배송지 직접입력 버튼 없음");
     }
@@ -840,9 +840,9 @@ async function processNapkinOrder(
         const nameInput = await page.$(SELECTORS.order.receiverName);
         if (nameInput) {
           await nameInput.click({ clickCount: 3 });
-          await delay(100);
+          await delay(300); // 선택 대기 (늘림)
           await page.keyboard.type(receiverName, { delay: 50 });
-          await delay(300);
+          await delay(500); // 입력 완료 대기 (늘림)
         }
       }
 
@@ -926,13 +926,13 @@ async function processNapkinOrder(
       const detailAddress = shippingAddress.streetAddress2 || shippingAddress.addressDetail || "";
       if (detailAddress) {
         console.log(`[napkin] 상세주소: ${detailAddress}`);
-        await delay(500);
+        await delay(700); // 주소 선택 후 대기 (늘림)
         const detailInput = await page.$(SELECTORS.order.addressDetail);
         if (detailInput) {
           await detailInput.click({ clickCount: 3 });
-          await delay(100);
+          await delay(300); // 선택 대기 (늘림)
           await page.keyboard.type(detailAddress, { delay: 50 });
-          await delay(300);
+          await delay(500); // 입력 완료 대기 (늘림)
         }
       }
 
@@ -956,24 +956,24 @@ async function processNapkinOrder(
 
           // 앞자리 선택 (select)
           await page.select(SELECTORS.order.phoneFirst, first);
-          await delay(200);
+          await delay(500); // select 반영 대기 (늘림)
 
           // 가운데 4자리
           const middleInput = await page.$(SELECTORS.order.phoneMiddle);
           if (middleInput) {
             await middleInput.click({ clickCount: 3 });
-            await delay(100);
+            await delay(300); // 선택 대기 (늘림)
             await page.keyboard.type(middle, { delay: 50 });
-            await delay(200);
+            await delay(400); // 입력 완료 대기 (늘림)
           }
 
           // 마지막 4자리
           const lastInput = await page.$(SELECTORS.order.phoneLast);
           if (lastInput) {
             await lastInput.click({ clickCount: 3 });
-            await delay(100);
+            await delay(300); // 선택 대기 (늘림)
             await page.keyboard.type(last, { delay: 50 });
-            await delay(200);
+            await delay(400); // 입력 완료 대기 (늘림)
           }
         }
       }
