@@ -956,24 +956,24 @@ async function processNapkinOrder(
 
           // 앞자리 선택 (select)
           await page.select(SELECTORS.order.phoneFirst, first);
-          await delay(500); // select 반영 대기 (늘림)
+          await delay(800); // select 반영 대기
 
           // 가운데 4자리
           const middleInput = await page.$(SELECTORS.order.phoneMiddle);
           if (middleInput) {
             await middleInput.click({ clickCount: 3 });
-            await delay(300); // 선택 대기 (늘림)
-            await page.keyboard.type(middle, { delay: 50 });
-            await delay(400); // 입력 완료 대기 (늘림)
+            await delay(500); // 선택 대기
+            await page.keyboard.type(middle, { delay: 80 });
+            await delay(600); // 입력 완료 대기
           }
 
           // 마지막 4자리
           const lastInput = await page.$(SELECTORS.order.phoneLast);
           if (lastInput) {
             await lastInput.click({ clickCount: 3 });
-            await delay(300); // 선택 대기 (늘림)
-            await page.keyboard.type(last, { delay: 50 });
-            await delay(400); // 입력 완료 대기 (늘림)
+            await delay(500); // 선택 대기
+            await page.keyboard.type(last, { delay: 80 });
+            await delay(600); // 입력 완료 대기
           }
         }
       }
