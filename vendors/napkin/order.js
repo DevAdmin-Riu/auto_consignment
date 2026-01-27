@@ -961,19 +961,29 @@ async function processNapkinOrder(
           // 가운데 4자리
           const middleInput = await page.$(SELECTORS.order.phoneMiddle);
           if (middleInput) {
-            await middleInput.click({ clickCount: 3 });
-            await delay(500); // 선택 대기
+            await middleInput.click();
+            await delay(300);
+            await page.keyboard.down('Control');
+            await page.keyboard.press('a');
+            await page.keyboard.up('Control');
+            await page.keyboard.press('Backspace');
+            await delay(300);
             await page.keyboard.type(middle, { delay: 80 });
-            await delay(600); // 입력 완료 대기
+            await delay(600);
           }
 
           // 마지막 4자리
           const lastInput = await page.$(SELECTORS.order.phoneLast);
           if (lastInput) {
-            await lastInput.click({ clickCount: 3 });
-            await delay(500); // 선택 대기
+            await lastInput.click();
+            await delay(300);
+            await page.keyboard.down('Control');
+            await page.keyboard.press('a');
+            await page.keyboard.up('Control');
+            await page.keyboard.press('Backspace');
+            await delay(300);
             await page.keyboard.type(last, { delay: 80 });
-            await delay(600); // 입력 완료 대기
+            await delay(600);
           }
         }
       }
