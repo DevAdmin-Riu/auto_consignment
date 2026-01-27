@@ -1628,6 +1628,14 @@ async function placeOrder(page, shippingAddress) {
           console.log("[swadpia] ISP 결제 자동화 완료");
         } else {
           console.log("[swadpia] ISP 결제 자동화 실패:", ispResult.error);
+          if (ispResult.error === "페이북 창을 찾을 수 없음") {
+            page.off("dialog", globalDialogHandler);
+            return {
+              success: false,
+              ispWindowNotFound: true,
+              error: "ISP 결제창을 찾을 수 없음",
+            };
+          }
           console.log("[swadpia] 수동 결제가 필요합니다.");
         }
       } catch (certError) {
@@ -1866,9 +1874,10 @@ async function processSwadpiaOrder(
         console.log("[swadpia] 전체 주문하기 진행...");
         orderResult = await placeOrder(page, shippingAddress);
 
-        // 결제창 미출현 시 재시도
-        if (orderResult?.paymentPopupNotFound) {
-          console.log("[swadpia] 결제창 미출현 - 재시도 준비...");
+        // 결제창 미출현 또는 ISP 결제창 미출현 시 재시도
+        if (orderResult?.paymentPopupNotFound || orderResult?.ispWindowNotFound) {
+          const reason = orderResult?.paymentPopupNotFound ? "결제창 미출현" : "ISP 결제창 미출현";
+          console.log(`[swadpia] ${reason} - 재시도 준비...`);
           paymentRetryCount++;
           if (paymentRetryCount <= MAX_PAYMENT_RETRY) {
             await new Promise((r) => setTimeout(r, 2000));

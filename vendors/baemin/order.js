@@ -1148,7 +1148,7 @@ async function enterShippingAddress(page, shippingAddress) {
               break;
             }
           } catch (e) {
-            // 프레임 접근 실패 - 무시
+            console.log(`[baemin] 프레임 접근 실패: ${e.message}`);
           }
         }
 

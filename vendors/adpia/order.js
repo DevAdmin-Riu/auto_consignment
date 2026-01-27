@@ -1610,6 +1610,14 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
                   "[adpia] ⚠️ ISP 결제 자동화 실패:",
                   ispResult.error
                 );
+                if (ispResult.error === "페이북 창을 찾을 수 없음") {
+                  payBrowser.off("targetcreated", targetCreatedHandler);
+                  return {
+                    success: false,
+                    ispWindowNotFound: true,
+                    message: "ISP 결제창을 찾을 수 없음",
+                  };
+                }
                 console.log("[adpia] 수동 결제가 필요합니다.");
               }
             } catch (certError) {
@@ -1881,15 +1889,44 @@ async function processAdpiaOrder(
           continue;
         }
 
-        // 2-6. 배송지 입력 + 결제
+        // 2-6. 배송지 입력 + 결제 (ISP 결제창 미출현 시 최대 5회 재시도)
         if (shippingInfo) {
-          const shippingResult = await fillShippingInfo(
-            page,
-            shippingInfo,
-            ispPassword
-          );
-          if (!shippingResult.success) {
-            console.log("[adpia] 배송지 입력/결제 실패:", shippingResult.message);
+          const MAX_ISP_RETRY = 5;
+          let ispRetryCount = 0;
+          let shippingResult = null;
+
+          while (ispRetryCount <= MAX_ISP_RETRY) {
+            if (ispRetryCount > 0) {
+              console.log(`\n[adpia] ========== ISP 결제 재시도 ${ispRetryCount}/${MAX_ISP_RETRY} ==========`);
+              console.log("[adpia] 장바구니로 이동하여 재주문...");
+              // 장바구니 → 주문서 이동
+              const retryOrderForm = await goToOrderForm(page);
+              if (!retryOrderForm.success) {
+                console.log("[adpia] 주문서 재이동 실패 - 재시도 중단");
+                shippingResult = { success: false, message: "주문서 재이동 실패" };
+                break;
+              }
+            }
+
+            shippingResult = await fillShippingInfo(
+              page,
+              shippingInfo,
+              ispPassword
+            );
+
+            if (shippingResult?.ispWindowNotFound) {
+              ispRetryCount++;
+              if (ispRetryCount <= MAX_ISP_RETRY) {
+                console.log("[adpia] ISP 결제창 미출현 - 장바구니로 돌아가서 재시도...");
+                await delay(2000);
+                continue;
+              }
+            }
+            break;
+          }
+
+          if (!shippingResult?.success) {
+            console.log("[adpia] 배송지 입력/결제 실패:", shippingResult?.message);
             results.push({
               lineId: poLineIds?.[productIndex],
               productVariantVendorId: product.productVariantVendorId,
@@ -1898,7 +1935,7 @@ async function processAdpiaOrder(
               quantity: product.quantity,
               price: openMallPrice,
               success: false,
-              message: shippingResult.message,
+              message: shippingResult?.message,
               priceInfo,
             });
             await saveOrderResults(authToken, {
