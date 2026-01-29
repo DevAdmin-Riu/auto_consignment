@@ -2196,7 +2196,7 @@ async function enterCoupangPayPin(page, pin) {
       negate: true,
       psm: "10",
       blur: 0.7,
-      gamma: 0.8,
+      gamma: 1.0,
       size: 200,
     },
     // 높은 대비 설정
@@ -2272,7 +2272,7 @@ async function enterCoupangPayPin(page, pin) {
       threshold: 200,
       negate: true,
       psm: "10",
-      blur: 0.2,
+      blur: 0.3,
       gamma: 2.2,
       size: 300,
     },
