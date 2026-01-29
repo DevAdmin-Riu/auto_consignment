@@ -730,26 +730,46 @@ async function addProductsToCart(page, products, downloadedFiles) {
         }
 
         if (proofFileRadio) {
-          await proofFileRadio.click();
-          console.log("[swadpia] 교정확인 후 인쇄 선택 완료");
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          try {
+            // 요소가 보이는지 확인
+            const isVisible = await proofFileRadio.evaluate((el) => {
+              const style = window.getComputedStyle(el);
+              const rect = el.getBoundingClientRect();
+              return (
+                style.display !== "none" &&
+                style.visibility !== "hidden" &&
+                rect.width > 0 &&
+                rect.height > 0
+              );
+            });
 
-          // 담당자 휴대폰 번호 입력
-          const proofPhone = getEnv("SWADPIA_PROOF_PHONE") || "010-8405-1314";
-          const phoneParts = proofPhone.split("-");
-          if (phoneParts.length === 3) {
-            const [hp1, hp2, hp3] = phoneParts;
-            const hp1Select = await page.$("#is_proof_hp1");
-            const hp2Input = await page.$("#is_proof_hp2");
-            const hp3Input = await page.$("#is_proof_hp3");
-            if (hp1Select && hp2Input && hp3Input) {
-              await hp1Select.select(hp1);
-              await hp2Input.click({ clickCount: 3 });
-              await hp2Input.type(hp2);
-              await hp3Input.click({ clickCount: 3 });
-              await hp3Input.type(hp3);
-              console.log(`[swadpia] 담당자 연락처 입력 완료 (${proofPhone})`);
+            if (isVisible) {
+              await proofFileRadio.click();
+              console.log("[swadpia] 교정확인 후 인쇄 선택 완료");
+              await new Promise((resolve) => setTimeout(resolve, 500));
+
+              // 담당자 휴대폰 번호 입력
+              const proofPhone = getEnv("SWADPIA_PROOF_PHONE") || "010-8405-1314";
+              const phoneParts = proofPhone.split("-");
+              if (phoneParts.length === 3) {
+                const [hp1, hp2, hp3] = phoneParts;
+                const hp1Select = await page.$("#is_proof_hp1");
+                const hp2Input = await page.$("#is_proof_hp2");
+                const hp3Input = await page.$("#is_proof_hp3");
+                if (hp1Select && hp2Input && hp3Input) {
+                  await hp1Select.select(hp1);
+                  await hp2Input.click({ clickCount: 3 });
+                  await hp2Input.type(hp2);
+                  await hp3Input.click({ clickCount: 3 });
+                  await hp3Input.type(hp3);
+                  console.log(`[swadpia] 담당자 연락처 입력 완료 (${proofPhone})`);
+                }
+              }
+            } else {
+              console.log("[swadpia] 교정확인 라디오 버튼이 숨겨져 있음 (스킵)");
             }
+          } catch (proofError) {
+            console.log(`[swadpia] 교정확인 클릭 실패, 스킵: ${proofError.message}`);
           }
         } else {
           console.log("[swadpia] 교정확인 라디오 버튼 없음 (스킵)");
