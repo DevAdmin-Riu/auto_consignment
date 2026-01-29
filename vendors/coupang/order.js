@@ -2167,7 +2167,8 @@ async function enterCoupangPayPin(page, pin) {
   }
 
   // OCR로 각 버튼의 숫자 인식 (재시도 포함)
-  let digitMap = {}; // { "1": buttonIndex, "2": buttonIndex, ... }
+  let digitMap = {}; // { "1": { index: buttonIndex, confidence: 96 }, ... }
+  let digitMapSimple = {}; // { "1": buttonIndex, ... } - 클릭용 단순 맵
   let ocrResults = [];
   let buttonHandles = [];
   const maxOcrRetries = 12;
@@ -2286,13 +2287,15 @@ async function enterCoupangPayPin(page, pin) {
     // 첫 시도에서만 초기화, 이후에는 기존 결과 유지
     if (ocrAttempt === 1) {
       digitMap = {};
+      digitMapSimple = {};
       ocrResults = [];
     }
 
-    // 전체 스크린샷 (디버깅용)
+    // 전체 스크린샷 (디버깅용) - 시도 횟수 포함
+    const sessionId = Date.now();
     const keypadScreenshot = path.join(
       tempDir,
-      `keypad_full_${Date.now()}.png`
+      `keypad_attempt_${ocrAttempt}_${sessionId}.png`
     );
     try {
       await page.screenshot({ path: keypadScreenshot, fullPage: false });
@@ -2301,12 +2304,15 @@ async function enterCoupangPayPin(page, pin) {
       console.log(`[쿠팡페이] 전체 스크린샷 실패: ${e.message}`);
     }
 
+    // 이번 시도의 OCR 결과 저장용
+    const attemptResults = [];
+
     // iframe에서 버튼 ElementHandle 가져오기
     buttonHandles = await pinFrame.$$(buttonInfo.usedSelector);
     console.log(`[쿠팡페이] 버튼 ElementHandle ${buttonHandles.length}개 획득`);
 
     // 이미 매핑된 버튼 인덱스 목록
-    const mappedButtonIndices = new Set(Object.values(digitMap));
+    const mappedButtonIndices = new Set(Object.values(digitMapSimple));
 
     // 각 버튼 요소를 직접 캡처해서 OCR
     for (let i = 0; i < buttonHandles.length && i < 10; i++) {
@@ -2317,10 +2323,10 @@ async function enterCoupangPayPin(page, pin) {
 
       try {
         const btnHandle = buttonHandles[i];
-        const screenshotPath = path.join(tempDir, `btn_${i}_${Date.now()}.png`);
+        const screenshotPath = path.join(tempDir, `btn_${i}_attempt_${ocrAttempt}_${sessionId}.png`);
         const processedPath = path.join(
           tempDir,
-          `btn_${i}_processed_${Date.now()}.png`
+          `btn_${i}_processed_attempt_${ocrAttempt}_${sessionId}.png`
         );
 
         // 버튼 요소 직접 스크린샷 (iframe 좌표 문제 해결)
@@ -2380,18 +2386,30 @@ async function enterCoupangPayPin(page, pin) {
         }
 
         if (recognizedDigit) {
-          // 이미 매핑된 숫자가 아닐 때만 추가 (중복 방지)
+          // 이미 매핑된 숫자가 있는지 확인
           if (!digitMap.hasOwnProperty(recognizedDigit)) {
-            digitMap[recognizedDigit] = i;
+            // 새로운 숫자 추가
+            digitMap[recognizedDigit] = { index: i, confidence };
+            digitMapSimple[recognizedDigit] = i;
             console.log(
               `[쿠팡페이] ✅ 버튼 ${i}: "${recognizedDigit}" (신뢰도: ${confidence.toFixed(
                 1
               )}%)`
             );
           } else {
-            console.log(
-              `[쿠팡페이] 버튼 ${i}: 중복 숫자 "${recognizedDigit}" 무시`
-            );
+            // 중복 - 신뢰도 비교해서 더 높은 것 사용
+            const existing = digitMap[recognizedDigit];
+            if (confidence > existing.confidence) {
+              console.log(
+                `[쿠팡페이] 🔄 버튼 ${i}: "${recognizedDigit}" 신뢰도 더 높음 (${confidence.toFixed(1)}% > ${existing.confidence.toFixed(1)}%), 교체`
+              );
+              digitMap[recognizedDigit] = { index: i, confidence };
+              digitMapSimple[recognizedDigit] = i;
+            } else {
+              console.log(
+                `[쿠팡페이] 버튼 ${i}: 중복 숫자 "${recognizedDigit}" (${confidence.toFixed(1)}% ≤ ${existing.confidence.toFixed(1)}%) 무시`
+              );
+            }
           }
         } else {
           console.log(
@@ -2399,22 +2417,52 @@ async function enterCoupangPayPin(page, pin) {
           );
         }
 
-        // 임시 파일 삭제
+        // 디버깅용 결과 저장
+        attemptResults.push({
+          buttonIndex: i,
+          dataKey: buttonInfo.buttons[i]?.dataKey,
+          rawText: text.trim(),
+          recognizedDigit,
+          confidence,
+          screenshotPath,
+          processedPath,
+        });
+
+        // 원본 스크린샷만 삭제 (전처리 이미지는 디버깅용으로 유지)
         try {
           fs.unlinkSync(screenshotPath);
-        } catch (e) {}
-        try {
-          fs.unlinkSync(processedPath);
         } catch (e) {}
       } catch (e) {
         console.log(`[쿠팡페이] 버튼 ${i} OCR 실패: ${e.message}`);
         if (ocrAttempt === 1) {
           ocrResults.push({ index: i, error: e.message });
         }
+        attemptResults.push({
+          buttonIndex: i,
+          error: e.message,
+        });
       }
     }
 
-    console.log(`[쿠팡페이] OCR 완료. 매핑:`, JSON.stringify(digitMap));
+    // 시도별 로그 파일 저장
+    const logPath = path.join(tempDir, `ocr_attempt_${ocrAttempt}_${sessionId}.json`);
+    try {
+      const logData = {
+        attempt: ocrAttempt,
+        config,
+        timestamp: new Date().toISOString(),
+        keypadScreenshot,
+        results: attemptResults,
+        digitMapSimple: { ...digitMapSimple },
+        missingDigits: requiredDigits.filter((d) => !digitMapSimple.hasOwnProperty(d)),
+      };
+      fs.writeFileSync(logPath, JSON.stringify(logData, null, 2), "utf-8");
+      console.log(`[쿠팡페이] OCR 로그 저장: ${logPath}`);
+    } catch (e) {
+      console.log(`[쿠팡페이] OCR 로그 저장 실패: ${e.message}`);
+    }
+
+    console.log(`[쿠팡페이] OCR 완료. 매핑:`, JSON.stringify(digitMapSimple));
     console.log(
       `[쿠팡페이] 인식된 숫자: ${Object.keys(digitMap).sort().join(", ")}`
     );
@@ -2432,7 +2480,7 @@ async function enterCoupangPayPin(page, pin) {
       // 추론 로직: 미인식 버튼과 누락 숫자가 각각 1개면 자동 매핑
       const unmappedButtonIndices = [];
       for (let i = 0; i < Math.min(buttonHandles.length, 10); i++) {
-        if (!Object.values(digitMap).includes(i)) {
+        if (!Object.values(digitMapSimple).includes(i)) {
           unmappedButtonIndices.push(i);
         }
       }
@@ -2440,7 +2488,8 @@ async function enterCoupangPayPin(page, pin) {
       if (unmappedButtonIndices.length === 1 && missingDigits.length === 1) {
         const inferredBtn = unmappedButtonIndices[0];
         const inferredDigit = missingDigits[0];
-        digitMap[inferredDigit] = inferredBtn;
+        digitMapSimple[inferredDigit] = inferredBtn;
+        digitMap[inferredDigit] = { index: inferredBtn, confidence: 0 };
         console.log(
           `[쿠팡페이] 🎯 추론: 버튼 ${inferredBtn} = 숫자 "${inferredDigit}" (유일하게 남은 버튼/숫자)`
         );
@@ -2463,7 +2512,8 @@ async function enterCoupangPayPin(page, pin) {
           );
           // 순서대로 매핑 (완벽하지 않지만 시도)
           for (let idx = 0; idx < unmappedButtonIndices.length; idx++) {
-            digitMap[missingDigits[idx]] = unmappedButtonIndices[idx];
+            digitMapSimple[missingDigits[idx]] = unmappedButtonIndices[idx];
+            digitMap[missingDigits[idx]] = { index: unmappedButtonIndices[idx], confidence: 0 };
             console.log(
               `[쿠팡페이] 🎯 추론 매핑: 버튼 ${unmappedButtonIndices[idx]} = 숫자 "${missingDigits[idx]}"`
             );
@@ -2479,7 +2529,7 @@ async function enterCoupangPayPin(page, pin) {
   const pinDigits = pin.split("");
 
   for (const digit of pinDigits) {
-    const btnIndex = digitMap[digit];
+    const btnIndex = digitMapSimple[digit];
 
     if (btnIndex === undefined) {
       console.log(`[쿠팡페이] 숫자 ${digit} 버튼을 찾을 수 없음`);
@@ -2514,7 +2564,8 @@ async function enterCoupangPayPin(page, pin) {
     method: "ocr_keypad",
     clickedCount: successCount,
     results: pinResults,
-    digitMap,
+    digitMap: digitMapSimple, // 단순 버튼 인덱스 맵
+    digitMapWithConfidence: digitMap, // 신뢰도 포함 맵 (디버깅용)
     ocrResults: ocrResults.slice(0, 12), // 디버깅 정보
   };
 
