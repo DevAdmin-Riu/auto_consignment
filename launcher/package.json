@@ -1,0 +1,22 @@
+{
+  "name": "pojangboss-launcher",
+  "productName": "포장보스 자동화 관리자",
+  "version": "1.0.0",
+  "description": "포장보스 자동화 관리자",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "^1.0.1"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.11.1",
+    "@electron-forge/maker-squirrel": "^7.11.1",
+    "@electron-forge/maker-zip": "^7.11.1",
+    "@electron-forge/plugin-auto-unpack-natives": "^7.11.1",
+    "electron": "40.0.0"
+  }
+}

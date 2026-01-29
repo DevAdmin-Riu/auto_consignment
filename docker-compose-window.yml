@@ -12,24 +12,11 @@ services:
       - .:/home/node/vendor-automation
     environment:
       - TZ=Asia/Seoul
-      # OAuth 콜백 URL (ngrok 사용 시)
       - WEBHOOK_URL=https://resolutive-naoma-unideographically.ngrok-free.dev/
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false
       - N8N_ALLOW_ENV_ACCESS=AUTH_TOKEN,GRAPHQL_URL,CONTENT_TYPE,MALL_URL
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
-      # Allow external npm modules in Code node
       - NODE_FUNCTION_ALLOW_EXTERNAL=xlsx,xlsx-js-style
-      # GraphQL API (아래 중 하나 선택)
-      - GRAPHQL_URL=https://resolutive-naoma-unideographically.ngrok-free.dev/graphql/ # 로컬 (ngrok 통해 맥북 연결)
-      # - GRAPHQL_URL=http://host.docker.internal:8080/graphql/ # 로컬 (맥북에서만)
-      # - GRAPHQL_URL=https://stage-api.pojangboss.com/graphql/ # 스테이지
-      # - GRAPHQL_URL=https://api.pojangboss.com/graphql/ # 프로덕션
-      # Frontend URL (발주 확인 링크용)
-      - MALL_URL=http://localhost:7000 # 로컬
-      # - MALL_URL=https://stage.pojangboss.com # 스테이지
-      # - MALL_URL=https://pojangboss.com # 프로덕션
-      # Auth Token (로그인 후 개발자도구에서 복사)
-      # 로컬 (맥북 DB용)
-      - AUTH_TOKEN=JWT eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpYXQiOjE3Njg1NDgwNzUsImV4cCI6NDkyMjE0ODA3NSwidG9rZW4iOiJFZ0JlM2R6N25TNEEiLCJsb2dpbl9pZCI6ImNoYmtrMTIzIiwidHlwZSI6ImFjY2VzcyIsInVzZXJfaWQiOiJWWE5sY2pveCIsImlzX3N0YWZmIjp0cnVlLCJpc19ocV9zdGFmZiI6ZmFsc2UsImlzX3ZlbmRvcl9zdGFmZiI6ZmFsc2UsInJlcXVlc3Rfb3JpZ2luIjoiTUFMTCJ9.PXzA4zu6oNqXMLCdGX_yec2FimkifAi1P4u_yahgU4I
-      # 실서버
-      # - AUTH_TOKEN=JWT eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3Njg0MzcyNDEsImV4cCI6NDkyMjAzNzI0MSwidG9rZW4iOiJFZ0JlM2R6N25TNEEiLCJsb2dpbl9pZCI6ImNoYmtrMTIzIiwidHlwZSI6ImFjY2VzcyIsInVzZXJfaWQiOiJWWE5sY2pveCIsImlzX3N0YWZmIjp0cnVlLCJpc19ocV9zdGFmZiI6ZmFsc2UsImlzX3ZlbmRvcl9zdGFmZiI6ZmFsc2UsInJlcXVlc3Rfb3JpZ2luIjpudWxsfQ.NHeeZpH_Ei_nXFdDs7EnBvnZTDt_iRje3pDmwVA1-SE
+      - GRAPHQL_URL=https://api.pojangboss.com/graphql/
+      - MALL_URL=https://pojangboss.com
+      - AUTH_TOKEN=JWT eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpYXQiOjE3Njg0MzcyNDEsImV4cCI6NDkyMjAzNzI0MSwidG9rZW4iOiJFZ0JlM2R6N25TNEEiLCJsb2dpbl9pZCI6ImNoYmtrMTIzIiwidHlwZSI6ImFjY2VzcyIsInVzZXJfaWQiOiJWWE5sY2pveCIsImlzX3N0YWZmIjp0cnVlLCJpc19ocV9zdGFmZiI6ZmFsc2UsImlzX3ZlbmRvcl9zdGFmZiI6ZmFsc2UsInJlcXVlc3Rfb3JpZ2luIjpudWxsfQ.NHeeZpH_Ei_nXFdDs7EnBvnZTDt_iRje3pDmwVA1-SE

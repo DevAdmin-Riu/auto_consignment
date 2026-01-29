@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>포장보스 자동화 관리자</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <!-- 헤더 -->
+    <header class="header">
+      <h1>포장보스 자동화 관리자</h1>
+      <div class="header-controls">
+        <label for="env-select">환경:</label>
+        <select id="env-select"></select>
+        <button id="btn-settings" class="btn btn-icon" title="설정">&#9881;</button>
+      </div>
+    </header>
+
+    <!-- 전체 제어 -->
+    <div class="global-controls">
+      <button id="btn-start-all" class="btn btn-primary">&#9654; 전체 시작</button>
+      <button id="btn-stop-all" class="btn btn-danger">&#9632; 전체 중지</button>
+    </div>
+
+    <!-- 서비스 카드 -->
+    <div class="services">
+      <div class="service-card" data-service="n8n">
+        <div class="service-header">
+          <span class="status-dot" id="status-n8n"></span>
+          <span class="service-name">n8n</span>
+          <span class="service-port">:5678</span>
+        </div>
+        <div class="service-actions">
+          <button class="btn btn-sm btn-start" data-action="start" data-service="n8n">시작</button>
+          <button class="btn btn-sm btn-restart" data-action="restart" data-service="n8n">재시작</button>
+          <button class="btn btn-sm btn-stop" data-action="stop" data-service="n8n">중지</button>
+        </div>
+      </div>
+
+      <div class="service-card" data-service="order">
+        <div class="service-header">
+          <span class="status-dot" id="status-order"></span>
+          <span class="service-name">주문 서버</span>
+          <span class="service-port">:3000</span>
+        </div>
+        <div class="service-actions">
+          <button class="btn btn-sm btn-start" data-action="start" data-service="order">시작</button>
+          <button class="btn btn-sm btn-restart" data-action="restart" data-service="order">재시작</button>
+          <button class="btn btn-sm btn-stop" data-action="stop" data-service="order">중지</button>
+        </div>
+      </div>
+
+      <div class="service-card" data-service="tracking">
+        <div class="service-header">
+          <span class="status-dot" id="status-tracking"></span>
+          <span class="service-name">송장 서버</span>
+          <span class="service-port">:3001</span>
+        </div>
+        <div class="service-actions">
+          <button class="btn btn-sm btn-start" data-action="start" data-service="tracking">시작</button>
+          <button class="btn btn-sm btn-restart" data-action="restart" data-service="tracking">재시작</button>
+          <button class="btn btn-sm btn-stop" data-action="stop" data-service="tracking">중지</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 워크플로우 섹션 -->
+    <div class="section">
+      <div class="section-header">
+        <h2>워크플로우</h2>
+        <button id="btn-refresh-workflows" class="btn btn-sm">새로고침</button>
+        <button id="btn-open-n8n" class="btn btn-sm btn-link">n8n 열기</button>
+      </div>
+      <div id="workflow-list" class="workflow-list">
+        <div class="placeholder">n8n API 키를 설정하면 워크플로우 목록이 표시됩니다</div>
+      </div>
+    </div>
+
+    <!-- 로그 섹션 -->
+    <div class="section log-section">
+      <div class="section-header">
+        <h2>로그</h2>
+        <div class="log-tabs">
+          <button class="log-tab active" data-tab="all">전체</button>
+          <button class="log-tab" data-tab="n8n">n8n</button>
+          <button class="log-tab" data-tab="order">주문</button>
+          <button class="log-tab" data-tab="tracking">송장</button>
+        </div>
+        <button id="btn-clear-logs" class="btn btn-sm">지우기</button>
+      </div>
+      <div id="log-container" class="log-container"></div>
+    </div>
+  </div>
+
+  <!-- 설정 모달 -->
+  <div id="settings-modal" class="modal" style="display:none">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>설정</h3>
+        <button id="btn-close-settings" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="input-api-key">n8n API 키</label>
+          <input type="text" id="input-api-key" placeholder="n8n 설정 > API에서 생성">
+          <p class="form-hint">n8n 관리 화면 > Settings > API > Create API Key</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btn-save-settings" class="btn btn-primary">저장</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
