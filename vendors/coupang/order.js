@@ -2172,100 +2172,100 @@ async function enterCoupangPayPin(page, pin) {
   let buttonHandles = [];
   const maxOcrRetries = 12;
   // 각 재시도마다 다른 설정 사용 (threshold, negate, PSM, blur, gamma, size)
-  // 개선된 전처리 설정 - 큰 이미지 + 다양한 조합으로 인식률 향상
+  // 개선된 전처리 설정 - 다양한 조합으로 인식률 향상
   const ocrConfigs = [
-    // 고해상도 기본 설정 (400px - 더 정확한 인식)
+    // 기본 설정들 (blur 추가)
     {
       threshold: 128,
       negate: true,
       psm: "10",
-      blur: 0.3,
+      blur: 0.5,
       gamma: 1.0,
-      size: 400,
+      size: 200,
     },
     {
       threshold: 140,
       negate: true,
       psm: "10",
-      blur: 0.5,
+      blur: 0.3,
       gamma: 1.2,
-      size: 400,
+      size: 200,
     },
     {
       threshold: 100,
       negate: true,
       psm: "10",
-      blur: 0.3,
-      gamma: 0.9,
-      size: 400,
+      blur: 0.7,
+      gamma: 0.8,
+      size: 200,
     },
     // 높은 대비 설정
     {
       threshold: 160,
       negate: true,
       psm: "10",
-      blur: 0.3,
+      blur: 0.5,
       gamma: 1.5,
-      size: 400,
+      size: 200,
     },
     {
       threshold: 180,
       negate: true,
       psm: "10",
-      blur: 0.2,
+      blur: 0.3,
       gamma: 1.3,
-      size: 400,
+      size: 200,
     },
     // 낮은 threshold + 높은 gamma
     {
       threshold: 80,
       negate: true,
       psm: "10",
-      blur: 0.5,
+      blur: 0.8,
       gamma: 1.8,
-      size: 400,
+      size: 250,
     },
     {
       threshold: 90,
       negate: true,
       psm: "10",
-      blur: 0.4,
+      blur: 0.6,
       gamma: 2.0,
-      size: 400,
+      size: 250,
     },
     // negate 없이 (어두운 배경에 밝은 글자)
     {
       threshold: 128,
       negate: false,
       psm: "10",
-      blur: 0.3,
+      blur: 0.5,
       gamma: 1.2,
-      size: 400,
+      size: 200,
     },
     {
       threshold: 150,
       negate: false,
       psm: "10",
-      blur: 0.2,
+      blur: 0.4,
       gamma: 1.0,
-      size: 400,
+      size: 200,
     },
-    // 중간 크기로 다시 시도
+    // PSM 변경
     {
       threshold: 128,
       negate: true,
-      psm: "10",
+      psm: "7",
       blur: 0.5,
       gamma: 1.0,
-      size: 300,
+      size: 200,
     },
     {
       threshold: 128,
       negate: true,
       psm: "8",
-      blur: 0.3,
+      blur: 0.5,
       gamma: 1.2,
-      size: 400,
+      size: 200,
     },
     // 극단적 설정 (마지막 시도)
     {
@@ -2274,7 +2274,7 @@ async function enterCoupangPayPin(page, pin) {
       psm: "10",
       blur: 0.2,
       gamma: 2.2,
-      size: 500,
+      size: 300,
     },
   ];
 
@@ -2326,14 +2326,12 @@ async function enterCoupangPayPin(page, pin) {
         // 버튼 요소 직접 스크린샷 (iframe 좌표 문제 해결)
         await btnHandle.screenshot({ path: screenshotPath });
 
-        // 이미지 전처리 (sharp 사용) - 숫자 인식 최적화
+        // 이미지 전처리 (sharp 사용) - 개선된 파이프라인
+        // 새로운 설정: blur, gamma, size 추가로 인식률 향상
         const imgSize = config.size || 200;
-        const padding = 20; // 여백 추가 (Tesseract 인식률 향상)
-        const finalSize = imgSize + padding * 2;
-
         let sharpPipeline = sharp(screenshotPath)
           .grayscale()
-          .resize({ width: imgSize, height: imgSize, fit: "cover" });
+          .resize({ width: imgSize, height: imgSize, fit: "cover" }); // 더 큰 크기로 리사이즈
 
         // gamma 보정 (대비 개선)
         if (config.gamma && config.gamma !== 1.0) {
@@ -2345,38 +2343,26 @@ async function enterCoupangPayPin(page, pin) {
           sharpPipeline = sharpPipeline.blur(config.blur);
         }
 
-        // normalize와 sharpen, 이진화
+        // normalize와 sharpen
         sharpPipeline = sharpPipeline
           .normalize()
-          .sharpen({ sigma: 1.5 }) // sharpen 강화
-          .threshold(config.threshold);
+          .sharpen({ sigma: 1.2 })
+          .threshold(config.threshold); // 이진화
 
         // negate 설정에 따라 색상 반전 적용
         if (config.negate) {
           sharpPipeline = sharpPipeline.negate();
         }
 
-        // 여백 추가 (흰색 배경) - Tesseract 인식률 향상
-        sharpPipeline = sharpPipeline.extend({
-          top: padding,
-          bottom: padding,
-          left: padding,
-          right: padding,
-          background: { r: 255, g: 255, b: 255 },
-        });
-
         await sharpPipeline.toFile(processedPath);
 
-        // Tesseract OCR 실행 - tessdata_best + LSTM 모드 + 숫자 최적화
-        const tessdataPath = path.resolve(__dirname, "../../tessdata");
+        // Tesseract OCR 실행 - 설정에 따른 PSM 모드
         const {
           data: { text, confidence },
         } = await Tesseract.recognize(processedPath, "eng", {
-          langPath: tessdataPath, // tessdata_best 모델 사용
           logger: () => {},
           tessedit_char_whitelist: "0123456789",
           tessedit_pageseg_mode: config.psm, // PSM: 설정에 따라 변경
-          tessedit_ocr_engine_mode: 1, // OEM 1: LSTM only (더 정확한 인식)
         });
 
         // 인식된 텍스트에서 숫자만 추출
@@ -2393,10 +2379,7 @@ async function enterCoupangPayPin(page, pin) {
           });
         }
 
-        // 신뢰도 임계값 (50% 이상만 신뢰)
-        const MIN_CONFIDENCE = 50;
-
-        if (recognizedDigit && confidence >= MIN_CONFIDENCE) {
+        if (recognizedDigit) {
           // 이미 매핑된 숫자가 아닐 때만 추가 (중복 방지)
           if (!digitMap.hasOwnProperty(recognizedDigit)) {
             digitMap[recognizedDigit] = i;
@@ -2410,10 +2393,6 @@ async function enterCoupangPayPin(page, pin) {
               `[쿠팡페이] 버튼 ${i}: 중복 숫자 "${recognizedDigit}" 무시`
             );
           }
-        } else if (recognizedDigit && confidence < MIN_CONFIDENCE) {
-          console.log(
-            `[쿠팡페이] ⚠️ 버튼 ${i}: "${recognizedDigit}" 신뢰도 낮음 (${confidence.toFixed(1)}% < ${MIN_CONFIDENCE}%), 재시도 필요`
-          );
         } else {
           console.log(
             `[쿠팡페이] ❌ 버튼 ${i}: 인식 실패 - raw: "${text.trim()}"`

@@ -39,7 +39,6 @@ data_/
 .*/
 
 # Tesseract OCR 데이터
-tessdata/
 *.traineddata
 
 # 임시 파일
