@@ -39,6 +39,13 @@ data_/
 .*/
 
 # Tesseract OCR 데이터
-*.traineddata*.xlsx
+*.traineddata
+
+# 임시 파일
+temp/
+*.xlsx
+
+# PowerShell 스크립트
+*.ps1
 
 n8n-data.zip
