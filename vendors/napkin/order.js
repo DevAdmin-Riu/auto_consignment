@@ -205,8 +205,12 @@ async function clearCart(page) {
 
   // confirm 다이얼로그 자동 수락 설정 (named function으로 나중에 제거 가능)
   const napkinDialogHandler = async (dialog) => {
-    console.log("[napkin] confirm 다이얼로그:", dialog.message());
-    await dialog.accept();
+    try {
+      console.log("[napkin] confirm 다이얼로그:", dialog.message());
+      await dialog.accept();
+    } catch (e) {
+      console.log("[napkin] 다이얼로그 처리 실패 (이미 처리됨):", e.message);
+    }
   };
   page.on("dialog", napkinDialogHandler);
   // 핸들러 반환해서 나중에 제거할 수 있게 함
@@ -368,16 +372,40 @@ async function setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat, box
 
   if (quantityInput && quantity > 1) {
     console.log(`[napkin] 수량 입력: ${quantity} (박스 ${boxIndex})`);
-    await quantityInput.click();
-    await delay(100);
-    await quantityInput.click({ clickCount: 3 });
-    await delay(200);
-    await page.keyboard.type(String(quantity), { delay: 50 });
-    await page.evaluate(el => {
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-      el.dispatchEvent(new Event('blur', { bubbles: true }));
-    }, quantityInput);
-    await delay(2000);
+
+    try {
+      // page.evaluate로 클릭 및 값 입력 (더 안정적)
+      await page.evaluate((selector, qty) => {
+        const input = document.querySelector(selector);
+        if (input) {
+          input.focus();
+          input.select();
+          input.value = '';
+          input.value = String(qty);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+          input.dispatchEvent(new Event('blur', { bubbles: true }));
+        }
+      }, quantitySelector, quantity);
+      await delay(2000);
+    } catch (e) {
+      console.log(`[napkin] 수량 입력 실패 (page.evaluate), Puppeteer 방식 시도: ${e.message}`);
+      // 폴백: Puppeteer 방식
+      try {
+        await quantityInput.click();
+        await delay(100);
+        await quantityInput.click({ clickCount: 3 });
+        await delay(200);
+        await page.keyboard.type(String(quantity), { delay: 50 });
+        await page.evaluate(el => {
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          el.dispatchEvent(new Event('blur', { bubbles: true }));
+        }, quantityInput);
+        await delay(2000);
+      } catch (e2) {
+        console.log(`[napkin] 수량 입력 완전 실패: ${e2.message}`);
+      }
+    }
   }
 
   // 가격 정보 가져오기 (세트별로 다른 박스)
@@ -496,21 +524,50 @@ async function setQuantity(page, quantity) {
 
   const quantityInput = await page.$(SELECTORS.product.quantityInput);
   if (quantityInput) {
-    await quantityInput.click({ clickCount: 3 });
-    await delay(200);
-    await quantityInput.type(String(quantity), { delay: 50 });
-    await delay(300);
-    return { success: true };
+    try {
+      // page.evaluate로 값 입력 (더 안정적)
+      await page.evaluate((selector, qty) => {
+        const input = document.querySelector(selector);
+        if (input) {
+          input.focus();
+          input.select();
+          input.value = '';
+          input.value = String(qty);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+          input.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }, SELECTORS.product.quantityInput, quantity);
+      await delay(300);
+      return { success: true };
+    } catch (e) {
+      console.log(`[napkin] 수량 입력 실패 (page.evaluate), Puppeteer 방식 시도: ${e.message}`);
+      try {
+        await quantityInput.click({ clickCount: 3 });
+        await delay(200);
+        await quantityInput.type(String(quantity), { delay: 50 });
+        await delay(300);
+        return { success: true };
+      } catch (e2) {
+        console.log(`[napkin] 수량 입력 완전 실패: ${e2.message}`);
+      }
+    }
   }
 
   // 수량 버튼으로 설정
   const plusBtn = await page.$(SELECTORS.product.quantityPlus);
   if (plusBtn) {
-    for (let i = 1; i < quantity; i++) {
-      await plusBtn.click();
-      await delay(300);
+    try {
+      for (let i = 1; i < quantity; i++) {
+        await page.evaluate((selector) => {
+          const btn = document.querySelector(selector);
+          if (btn) btn.click();
+        }, SELECTORS.product.quantityPlus);
+        await delay(300);
+      }
+      return { success: true };
+    } catch (e) {
+      console.log(`[napkin] 수량 버튼 클릭 실패: ${e.message}`);
     }
-    return { success: true };
   }
 
   console.log("[napkin] 수량 입력 불가, 기본값 사용");
@@ -815,7 +872,7 @@ async function processNapkinOrder(
       await page.evaluate(el => el.click(), orderAllBtn);
       await delay(2000);
     } else {
-      console.log("[napkin] 전체상품 주문하기 버튼 없음");
+      throw new Error("전체상품 주문하기 버튼을 찾을 수 없음 - 장바구니가 비어있거나 페이지 오류");
     }
 
     // 6. 배송지 직접입력 버튼 클릭
@@ -826,7 +883,7 @@ async function processNapkinOrder(
       await page.evaluate(el => el.click(), newAddressBtn);
       await delay(2000); // 탭 전환 대기 (늘림)
     } else {
-      console.log("[napkin] 배송지 직접입력 버튼 없음");
+      throw new Error("배송지 직접입력 버튼을 찾을 수 없음 - 주문서 페이지 로드 실패");
     }
 
     // 7. 배송지 정보 입력
@@ -1143,8 +1200,12 @@ async function processNapkinOrder(
       // 새 페이지 생성 시 즉시 dialog 핸들러 등록 (alert 놓치지 않도록)
       let paymentPopup = null;
       const paymentDialogHandler = async (dialog) => {
-        console.log("[napkin] 결제창 Dialog:", dialog.type(), dialog.message());
-        await dialog.accept();
+        try {
+          console.log("[napkin] 결제창 Dialog:", dialog.type(), dialog.message());
+          await dialog.accept();
+        } catch (e) {
+          console.log("[napkin] 결제창 다이얼로그 처리 실패:", e.message);
+        }
       };
       const targetCreatedHandler = async (target) => {
         if (target.type() === "page") {
