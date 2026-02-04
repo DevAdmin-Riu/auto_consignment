@@ -21,7 +21,8 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // 셀렉터 상수
 const SELECTORS = {
   // 배송조회 버튼 (data 속성으로 찾기 - styled-components 클래스보다 안정적)
-  deliveryTrackingBtn: 'button[data-action-button-click-event-label="배송조회"]',
+  deliveryTrackingBtn:
+    'button[data-action-button-click-event-label="배송조회"]',
 };
 
 /**
@@ -45,7 +46,7 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
       errorCollector.addError(
         TRACKING_STEPS.LOGIN,
         ERROR_CODES.LOGIN_FAILED,
-        loginResult.message
+        loginResult.message,
       );
       return {
         results,
@@ -58,7 +59,7 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
     for (const openMallOrderNumber of openMallOrderNumbers) {
       try {
         console.log(
-          `[baemin 송장조회] 주문번호 ${openMallOrderNumber} 조회 중...`
+          `[baemin 송장조회] 주문번호 ${openMallOrderNumber} 조회 중...`,
         );
 
         // 주문 상세 페이지로 이동
@@ -79,7 +80,9 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
 
         // 셀렉터로 못찾으면 텍스트로 폴백
         if (!deliveryBtn) {
-          console.log(`[baemin 송장조회] 셀렉터로 버튼 못찾음, 텍스트로 검색...`);
+          console.log(
+            `[baemin 송장조회] 셀렉터로 버튼 못찾음, 텍스트로 검색...`,
+          );
           deliveryBtn = await page.evaluateHandle(() => {
             const buttons = document.querySelectorAll("button");
             for (const btn of buttons) {
@@ -100,14 +103,16 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
 
         if (!deliveryBtn) {
           console.log(
-            `[baemin 송장조회] ${openMallOrderNumber}: 배송조회 버튼 없음 (아직 배송 전)`
+            `[baemin 송장조회] ${openMallOrderNumber}: 배송조회 버튼 없음 (아직 배송 전)`,
           );
           continue;
         }
 
         // 배송조회 버튼 클릭
         await deliveryBtn.click();
-        console.log(`[baemin 송장조회] ${openMallOrderNumber}: 배송조회 버튼 클릭`);
+        console.log(
+          `[baemin 송장조회] ${openMallOrderNumber}: 배송조회 버튼 클릭`,
+        );
         await delay(2000);
 
         // 모달에서 송장번호, 택배사 추출
@@ -117,7 +122,8 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
 
           // "택배사 운송장번호: 숫자" 패턴 찾기
           // 예: "롯데택배 운송장번호: 260798121124"
-          const combinedPattern = /(CJ대한통운|대한통운|롯데택배|한진택배|로젠택배|우체국택배|경동택배|합동택배|천일택배|건영택배|일양로지스|대신택배|롯데|대신)\s*운송장번호[:\s]*(\d{10,14})/;
+          const combinedPattern =
+            /(CJ대한통운|대한통운|로켓배송|롯데택배|한진택배|로젠택배|우체국택배|경동택배|합동택배|천일택배|건영택배|일양로지스|대신택배|롯데|대신)\s*운송장번호[:\s]*(\d{10,14})/;
           const combinedMatch = allText.match(combinedPattern);
 
           if (combinedMatch) {
@@ -170,7 +176,7 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
           JSON.stringify({
             trackingNumber: trackingInfo.trackingNumber,
             carrier: trackingInfo.carrier,
-          })
+          }),
         );
 
         if (trackingInfo.trackingNumber) {
@@ -182,17 +188,17 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
             carrier: normalizedCarrier || trackingInfo.carrier || "알수없음",
           });
           console.log(
-            `[baemin 송장조회] ${openMallOrderNumber} → ${trackingInfo.trackingNumber} (${normalizedCarrier || trackingInfo.carrier})`
+            `[baemin 송장조회] ${openMallOrderNumber} → ${trackingInfo.trackingNumber} (${normalizedCarrier || trackingInfo.carrier})`,
           );
         } else {
           console.log(
-            `[baemin 송장조회] ${openMallOrderNumber}: 송장번호를 찾을 수 없음`
+            `[baemin 송장조회] ${openMallOrderNumber}: 송장번호를 찾을 수 없음`,
           );
 
           // 디버깅: 페이지 텍스트 일부 출력
           if (trackingInfo.pageText) {
             console.log(
-              `[baemin 송장조회] 페이지 텍스트: ${trackingInfo.pageText.substring(0, 300)}...`
+              `[baemin 송장조회] 페이지 텍스트: ${trackingInfo.pageText.substring(0, 300)}...`,
             );
           }
         }
@@ -202,19 +208,19 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
       } catch (error) {
         console.error(
           `[baemin 송장조회] ${openMallOrderNumber} 에러:`,
-          error.message
+          error.message,
         );
         errorCollector.addError(
           TRACKING_STEPS.EXTRACTION,
           ERROR_CODES.EXTRACTION_FAILED,
           error.message,
-          { openMallOrderNumber }
+          { openMallOrderNumber },
         );
       }
     }
 
     console.log(
-      `[baemin 송장조회] 완료: ${results.length}/${openMallOrderNumbers.length}건 조회됨`
+      `[baemin 송장조회] 완료: ${results.length}/${openMallOrderNumbers.length}건 조회됨`,
     );
     return {
       results,
@@ -227,7 +233,7 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
     errorCollector.addError(
       TRACKING_STEPS.EXTRACTION,
       ERROR_CODES.EXTRACTION_FAILED,
-      error.message
+      error.message,
     );
     return {
       results,
