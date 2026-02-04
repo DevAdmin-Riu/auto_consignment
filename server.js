@@ -131,10 +131,17 @@ async function handleVendorOrder(req, res) {
       graphqlUrl, // GraphQL API URL (n8n에서 전달)
     } = req.body;
 
-    // purchaseOrderId 처리: purchaseOrderIds 배열 우선, 없으면 단일 값 사용
-    const purchaseOrderId = (purchaseOrderIds && purchaseOrderIds.length > 0)
+    // purchaseOrderId 처리: purchaseOrderIds 배열 우선, 없으면 단일 값, 없으면 products에서 추출
+    let purchaseOrderId = (purchaseOrderIds && purchaseOrderIds.length > 0)
       ? purchaseOrderIds[0]
       : rawPurchaseOrderId;
+
+    if (!purchaseOrderId && products && products.length > 0) {
+      purchaseOrderId = products[0].purchaseOrderId;
+      if (purchaseOrderId) {
+        console.log(`[발주ID] products[0]에서 purchaseOrderId 추출: ${purchaseOrderId}`);
+      }
+    }
 
     // GraphQL URL 설정 (환경변수보다 요청에서 전달된 값 우선)
     if (graphqlUrl) {
