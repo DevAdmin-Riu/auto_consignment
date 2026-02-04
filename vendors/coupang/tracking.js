@@ -113,41 +113,63 @@ async function findTrackingNumber(page, openMallOrderNumber) {
       const tbody = document.querySelector(baseSelector);
       if (!tbody) return null;
 
-      const rows = tbody.querySelectorAll('tr');
-      if (rows.length === 0) return null;
-
       let carrier = null;
       let trackingNumber = null;
 
-      // 각 행을 순회하며 라벨 확인
-      for (const row of rows) {
-        const labelCell = row.querySelector('td:first-child');
-        const valueCell = row.querySelector('td:last-child');
+      // 로켓배송 여부 확인 (중첩 테이블 구조)
+      const allText = tbody.textContent || '';
+      const isRocketDelivery = allText.includes('로켓배송');
 
-        if (!labelCell || !valueCell) continue;
-
-        const label = labelCell.textContent?.trim() || '';
-        const value = valueCell.textContent?.trim() || '';
-
-        // 택배사 찾기
-        if (label.includes('택배사') || label.includes('배송사')) {
-          carrier = value;
+      if (isRocketDelivery) {
+        // 로켓배송: 중첩된 테이블에서 송장번호 찾기
+        carrier = '로켓배송';
+        const allRows = tbody.querySelectorAll('tr');
+        for (const row of allRows) {
+          const cells = row.querySelectorAll('td');
+          for (let i = 0; i < cells.length - 1; i++) {
+            const label = cells[i].textContent?.trim() || '';
+            const value = cells[i + 1].textContent?.trim() || '';
+            if (label.includes('송장')) {
+              if (value && /^[\d-]+$/.test(value) && value.length >= 10) {
+                trackingNumber = value.replace(/-/g, '');
+                break;
+              }
+            }
+          }
+          if (trackingNumber) break;
         }
+      } else {
+        // 일반배송: 기존 로직
+        const rows = tbody.querySelectorAll(':scope > tr');
+        for (const row of rows) {
+          const labelCell = row.querySelector('td:first-child');
+          const valueCell = row.querySelector('td:last-child');
 
-        // 송장번호 찾기 (라벨에 "송장" 포함)
-        if (label.includes('송장')) {
-          // 숫자로 구성된 값만 (하이픈 허용)
-          if (value && /^[\d-]+$/.test(value) && value.length >= 10) {
-            trackingNumber = value.replace(/-/g, ''); // 하이픈 제거
+          if (!labelCell || !valueCell) continue;
+
+          const label = labelCell.textContent?.trim() || '';
+          const value = valueCell.textContent?.trim() || '';
+
+          // 택배사 찾기
+          if (label.includes('택배사') || label.includes('배송사')) {
+            carrier = value;
+          }
+
+          // 송장번호 찾기 (라벨에 "송장" 포함)
+          if (label.includes('송장')) {
+            if (value && /^[\d-]+$/.test(value) && value.length >= 10) {
+              trackingNumber = value.replace(/-/g, '');
+            }
           }
         }
       }
 
-      return { carrier, trackingNumber };
+      return { carrier, trackingNumber, isRocketDelivery };
     }, SELECTORS.deliveryTableBase);
 
     if (trackingInfo?.trackingNumber) {
-      console.log(`[송장조회] 찾음: ${trackingInfo.carrier} / ${trackingInfo.trackingNumber}`);
+      const deliveryType = trackingInfo.isRocketDelivery ? '[로켓]' : '[일반]';
+      console.log(`[송장조회] ${deliveryType} 찾음: ${trackingInfo.carrier} / ${trackingInfo.trackingNumber}`);
       return {
         trackingNumber: trackingInfo.trackingNumber,
         carrier: trackingInfo.carrier || "알 수 없음",
