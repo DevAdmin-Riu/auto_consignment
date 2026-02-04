@@ -203,6 +203,13 @@ async function clearCart(page) {
   });
   await delay(1500);
 
+  // 기존 핸들러가 남아있으면 먼저 제거 (이전 주문 에러로 미제거된 경우)
+  if (page._napkinDialogHandler) {
+    page.off("dialog", page._napkinDialogHandler);
+    delete page._napkinDialogHandler;
+    console.log("[napkin] 이전 dialog 핸들러 제거");
+  }
+
   // confirm 다이얼로그 자동 수락 설정 (named function으로 나중에 제거 가능)
   const napkinDialogHandler = async (dialog) => {
     try {
@@ -852,11 +859,23 @@ async function processNapkinOrder(
     console.log("\n[napkin] 장바구니 이동 버튼 클릭...");
     const goCartBtn = await waitFor(page, SELECTORS.product.confirmGoCartBtn, 5000);
     if (goCartBtn) {
-      await goCartBtn.click();
-      await delay(2000);
+      await page.evaluate(el => el.click(), goCartBtn);
+      await delay(3000);
     } else {
       // 팝업이 없으면 직접 이동
       console.log("[napkin] 팝업 없음, 직접 장바구니 이동...");
+      await page.goto(SELECTORS.cart.url, {
+        waitUntil: "networkidle2",
+        timeout: 30000,
+      });
+      await delay(2000);
+    }
+
+    // 현재 페이지 URL 확인
+    const cartPageUrl = page.url();
+    console.log(`[napkin] 현재 URL: ${cartPageUrl}`);
+    if (!cartPageUrl.includes('basket')) {
+      console.log("[napkin] 장바구니 페이지가 아님, 직접 이동...");
       await page.goto(SELECTORS.cart.url, {
         waitUntil: "networkidle2",
         timeout: 30000,
