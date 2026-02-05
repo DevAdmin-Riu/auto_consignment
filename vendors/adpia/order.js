@@ -44,7 +44,10 @@ const {
   ORDER_STEPS,
   ERROR_CODES,
 } = require("../../lib/automation-error");
-const { saveOrderResults, createPaymentLogs } = require("../../lib/graphql-client");
+const {
+  saveOrderResults,
+  createPaymentLogs,
+} = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
 const https = require("https");
 const http = require("http");
@@ -109,8 +112,11 @@ async function automateISPPaymentWithAlertHandler(paymentPopup = null) {
       // alert/confirm 오버라이드
       try {
         await paymentPopup.evaluate(() => {
-          window.alert = (msg) => console.log('[ISP Override] alert:', msg);
-          window.confirm = (msg) => { console.log('[ISP Override] confirm:', msg); return true; };
+          window.alert = (msg) => console.log("[ISP Override] alert:", msg);
+          window.confirm = (msg) => {
+            console.log("[ISP Override] confirm:", msg);
+            return true;
+          };
         });
       } catch (e) {}
 
@@ -119,8 +125,12 @@ async function automateISPPaymentWithAlertHandler(paymentPopup = null) {
         for (const frame of paymentPopup.frames()) {
           try {
             await frame.evaluate(() => {
-              window.alert = (msg) => console.log('[ISP Frame Override] alert:', msg);
-              window.confirm = (msg) => { console.log('[ISP Frame Override] confirm:', msg); return true; };
+              window.alert = (msg) =>
+                console.log("[ISP Frame Override] alert:", msg);
+              window.confirm = (msg) => {
+                console.log("[ISP Frame Override] confirm:", msg);
+                return true;
+              };
             });
           } catch (e) {}
         }
@@ -138,10 +148,14 @@ async function automateISPPaymentWithAlertHandler(paymentPopup = null) {
   } finally {
     // 핸들러 제거
     for (const p of registeredPages) {
-      try { p.off("dialog", ispLoopAlertHandler); } catch (e) {}
+      try {
+        p.off("dialog", ispLoopAlertHandler);
+      } catch (e) {}
     }
     if (browser) {
-      try { browser.off("targetcreated", targetCreatedHandler); } catch (e) {}
+      try {
+        browser.off("targetcreated", targetCreatedHandler);
+      } catch (e) {}
     }
   }
 }
@@ -230,8 +244,7 @@ const SELECTORS = {
     cardType: "#LGD_CARDTYPE",
     cardTypeValue: "31", // 비씨
     // 전체 동의 체크박스
-    agreeAll:
-      "#ordersForm > div.list01 > div:nth-child(6) > div.table03_wrap.ng-star-inserted > table > tbody > tr:nth-child(1) > td:nth-child(3) > div > label",
+    agreeAll: "#agree_buy_all",
     // 결제하기 버튼
     payBtn: "#ordersForm > div.cart_menu > div > div.list02 > button",
     // 결제 확인 모달 버튼 (alertify.js)
@@ -343,7 +356,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
   console.log(
     `[adpia] 주문 페이지 처리: ${product.productSku}${
       retryCount > 0 ? ` (재시도 ${retryCount}/${MAX_RETRIES})` : ""
-    }`
+    }`,
   );
 
   // 페이지 로딩 대기
@@ -356,14 +369,16 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
     const qtyPerUnit = product.openMallQtyPerUnit || 1;
     const actualQuantity = baseQuantity * qtyPerUnit;
     if (qtyPerUnit > 1) {
-      console.log(`[adpia] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`);
+      console.log(
+        `[adpia] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`,
+      );
     }
     console.log(`[adpia] 수량 입력: ${actualQuantity}`);
     // 기본 셀렉터 시도
     let quantityInput = await waitFor(
       page,
       SELECTORS.orderPage.quantityInput,
-      5000
+      5000,
     );
     // 기본 셀렉터 없으면 대체 셀렉터 시도 (RTN-112326 등)
     if (!quantityInput) {
@@ -371,7 +386,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       quantityInput = await waitFor(
         page,
         SELECTORS.orderPage.quantityInputAlt,
-        5000
+        5000,
       );
     }
     if (quantityInput) {
@@ -409,12 +424,12 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
         (el) => {
           const style = window.getComputedStyle(el);
           return style.display !== "none" && style.visibility !== "hidden";
-        }
+        },
       );
       if (isVisible) {
         const isChecked = await page.$eval(
           SELECTORS.orderPage.proofCheckbox,
-          (el) => el.checked
+          (el) => el.checked,
         );
         if (!isChecked) {
           await proofCheckbox.click();
@@ -437,7 +452,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
   for (let retryCount = 0; retryCount < MAX_UPLOAD_RETRIES; retryCount++) {
     if (retryCount > 0) {
       console.log(
-        `[adpia] 파일 업로드 재시도 (${retryCount}/${MAX_UPLOAD_RETRIES - 1})...`
+        `[adpia] 파일 업로드 재시도 (${retryCount}/${MAX_UPLOAD_RETRIES - 1})...`,
       );
       await delay(2000);
 
@@ -459,7 +474,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
     let addToCartBtn = await waitFor(
       page,
       SELECTORS.orderPage.addToCartBtn,
-      5000
+      5000,
     );
     // 기본 셀렉터 없으면 대체 셀렉터 시도 (RTN-112326 등)
     if (!addToCartBtn) {
@@ -467,7 +482,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       addToCartBtn = await waitFor(
         page,
         SELECTORS.orderPage.addToCartBtnAlt,
-        5000
+        5000,
       );
     }
 
@@ -530,7 +545,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
     const modalConfirmBtn = await waitFor(
       page,
       SELECTORS.orderPage.modalConfirmBtn,
-      modalFoundEarly ? 5000 : 30000 // 빠른 업로드 시 대기 시간 단축
+      modalFoundEarly ? 5000 : 30000, // 빠른 업로드 시 대기 시간 단축
     );
 
     let uploadFailed = false;
@@ -544,7 +559,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
         if (modalContent) {
           modalText = await page.$eval(
             ".ajs-modal .ajs-content",
-            (el) => el.textContent?.trim() || ""
+            (el) => el.textContent?.trim() || "",
           );
           console.log(`[adpia] 모달 메시지: ${modalText}`);
         }
@@ -553,7 +568,10 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       }
 
       // 업로드 실패 메시지 확인
-      if (modalText.includes("업로드에 실패") || modalText.includes("업로드 실패")) {
+      if (
+        modalText.includes("업로드에 실패") ||
+        modalText.includes("업로드 실패")
+      ) {
         console.log("[adpia] ⚠️ 파일 업로드 실패 감지");
         uploadFailed = true;
       }
@@ -564,7 +582,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       // page.evaluate로 직접 클릭 (Node detached 에러 방지)
       await page.evaluate(() => {
         const btn = document.querySelector(
-          ".ajs-modal button.ajs-button.btn_orange"
+          ".ajs-modal button.ajs-button.btn_orange",
         );
         if (btn) btn.click();
       });
@@ -576,8 +594,14 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
           console.log("[adpia] 파일 업로드 재시도 준비...");
           continue; // 다음 재시도
         } else {
-          console.log("[adpia] ❌ 파일 업로드 최대 재시도 횟수 초과 - 옵션 페이지에서 재시작 필요");
-          return { success: false, message: "파일 업로드 실패", needsRestart: true };
+          console.log(
+            "[adpia] ❌ 파일 업로드 최대 재시도 횟수 초과 - 옵션 페이지에서 재시작 필요",
+          );
+          return {
+            success: false,
+            message: "파일 업로드 실패",
+            needsRestart: true,
+          };
         }
       }
     } else {
@@ -698,7 +722,7 @@ async function clearCart(page) {
 
     // 상품 행 개수 확인
     const cartItems = await page.$$(
-      "app-root cartlist table tbody tr.ng-star-inserted input[type='checkbox']"
+      "app-root cartlist table tbody tr.ng-star-inserted input[type='checkbox']",
     );
     if (cartItems.length === 0) {
       console.log("[adpia] 장바구니가 이미 비어있음");
@@ -793,14 +817,14 @@ async function findProductByCode(page, productCode) {
         return { found: false };
       },
       SELECTORS.favor,
-      productCode
+      productCode,
     );
 
     if (result.found) {
       console.log(
         `[adpia] 제품 찾음! (${currentPage}페이지, ${
           result.rowIndex + 1
-        }번째 행, 가격: ${result.price}원)`
+        }번째 행, 가격: ${result.price}원)`,
       );
 
       // 3. 해당 행의 "주문하러 가기" 버튼 클릭
@@ -836,7 +860,7 @@ async function findProductByCode(page, productCode) {
 
     // 4. 다음 페이지가 있는지 확인
     const nextPageBtn = await page.$(
-      "li.pagination-next:not(.disabled) a.page-link"
+      "li.pagination-next:not(.disabled) a.page-link",
     );
 
     if (!nextPageBtn) {
@@ -889,7 +913,7 @@ async function goToOrderForm(page) {
     }
 
     const cartItems = await page.$$(
-      "app-root cartlist table tbody tr.ng-star-inserted input[type='checkbox']"
+      "app-root cartlist table tbody tr.ng-star-inserted input[type='checkbox']",
     );
     if (cartItems.length === 0) {
       console.log("[adpia] 장바구니가 비어있음");
@@ -927,6 +951,81 @@ async function goToOrderForm(page) {
   } catch (error) {
     console.error("[adpia] 주문서 이동 실패:", error.message);
     return { success: false, message: error.message };
+  }
+}
+
+/**
+ * 주소 검색 iframe 실패 시 직접 입력
+ */
+async function directAddressInput(page, shippingInfo, searchAddress) {
+  console.log("[adpia] directAddressInput: 주소 직접 입력 시작...");
+
+  try {
+    // 우편번호 강제 입력 (#recv_post_no)
+    const postalCode = shippingInfo.postalCode || "";
+    if (postalCode) {
+      console.log(`[adpia] 우편번호 강제 입력: ${postalCode}`);
+      const result = await page.evaluate((val) => {
+        const el = document.querySelector("#recv_post_no");
+        if (el) {
+          el.readOnly = false;
+          el.disabled = false;
+          el.value = val;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          return { success: true, value: el.value };
+        }
+        return { success: false, error: "element not found" };
+      }, postalCode);
+      console.log(`[adpia] 우편번호 결과:`, result);
+      await delay(300);
+    }
+
+    // 기본주소 강제 입력 (#recv_addr_1)
+    const baseAddress = searchAddress || shippingInfo.streetAddress1 || "";
+    if (baseAddress) {
+      console.log(`[adpia] 기본주소 강제 입력: ${baseAddress}`);
+      const result = await page.evaluate((val) => {
+        const el = document.querySelector("#recv_addr_1");
+        if (el) {
+          el.readOnly = false;
+          el.disabled = false;
+          el.value = val;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          return { success: true, value: el.value };
+        }
+        return { success: false, error: "element not found" };
+      }, baseAddress);
+      console.log(`[adpia] 기본주소 결과:`, result);
+      await delay(300);
+    }
+
+    // 상세주소 강제 입력 (#recv_addr_2)
+    const detailAddress =
+      shippingInfo.streetAddress2 || shippingInfo.addressDetail || "";
+    if (detailAddress) {
+      console.log(`[adpia] 상세주소 강제 입력: ${detailAddress}`);
+      const result = await page.evaluate((val) => {
+        const el = document.querySelector("#recv_addr_2");
+        if (el) {
+          el.readOnly = false;
+          el.disabled = false;
+          // 기존 값에 추가
+          el.value = el.value ? el.value + " " + val : val;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          return { success: true, value: el.value };
+        }
+        return { success: false, error: "element not found" };
+      }, detailAddress);
+      console.log(`[adpia] 상세주소 결과:`, result);
+      await delay(300);
+    }
+
+    console.log("[adpia] directAddressInput: 완료");
+  } catch (error) {
+    console.error("[adpia] directAddressInput 에러:", error.message);
   }
 }
 
@@ -1031,7 +1130,13 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
       }
     }
 
-    // 5. 주소 검색 버튼 클릭
+    // 5. 주소 직접 입력 (iframe 검색 스킵)
+    console.log("[adpia] 5. 주소 직접 입력...");
+    const searchAddress =
+      shippingInfo.streetAddress1 || shippingInfo.address || "";
+    await directAddressInput(page, shippingInfo, searchAddress);
+
+    /* 주소 검색 버튼 클릭 - 테스트용 주석처리
     console.log("[adpia] 5. 주소 찾기 버튼 클릭...");
     await delay(1000); // 주소 찾기 버튼 클릭 전 딜레이
     const addressSearchBtn = await page.$(SELECTORS.order.addressSearchBtn);
@@ -1057,12 +1162,12 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
           if (iframeElement) {
             const iframeSrc = await page.$eval(
               "#__daum__layer_1 iframe",
-              (el) => el.src
+              (el) => el.src,
             );
             console.log(
               `[adpia] iframe 요소 발견, src: ${
                 iframeSrc?.substring(0, 50) || "about:blank"
-              }...`
+              }...`,
             );
 
             // iframe이 로드될 때까지 대기 (src가 about:blank가 아닐 때)
@@ -1090,8 +1195,8 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
               console.log(
                 `[adpia] 다음 주소 iframe URL 발견: ${frameUrl.substring(
                   0,
-                  80
-                )}...`
+                  80,
+                )}...`,
               );
               frame = f;
               console.log(`[adpia] 주소 검색 iframe 발견 (${i + 1}회)`);
@@ -1131,8 +1236,10 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
           // 먼저 frame.$()로 직접 시도
           console.log("[adpia] frame에서 #region_name 찾기 시도...");
           try {
-            addressInput = await frame.$('#region_name');
-            console.log(`[adpia] frame.$('#region_name') 결과: ${addressInput ? '찾음!' : '없음'}`);
+            addressInput = await frame.$("#region_name");
+            console.log(
+              `[adpia] frame.$('#region_name') 결과: ${addressInput ? "찾음!" : "없음"}`,
+            );
 
             if (addressInput) {
               // input 클릭하고 값 입력
@@ -1143,20 +1250,22 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
               await delay(500);
 
               // 검색 버튼 클릭
-              const searchBtn = await frame.$('button.btn_search');
-              console.log(`[adpia] 검색 버튼: ${searchBtn ? '찾음!' : '없음'}`);
+              const searchBtn = await frame.$("button.btn_search");
+              console.log(`[adpia] 검색 버튼: ${searchBtn ? "찾음!" : "없음"}`);
               if (searchBtn) {
                 await searchBtn.click();
                 console.log("[adpia] 검색 버튼 클릭");
               } else {
-                await addressInput.press('Enter');
+                await addressInput.press("Enter");
                 console.log("[adpia] Enter 키 입력");
               }
               await delay(3000);
 
               // 검색 결과 선택
-              const resultItem = await frame.$('li.list_post_item .link_post');
-              console.log(`[adpia] 검색 결과: ${resultItem ? '찾음!' : '없음'}`);
+              const resultItem = await frame.$("li.list_post_item .link_post");
+              console.log(
+                `[adpia] 검색 결과: ${resultItem ? "찾음!" : "없음"}`,
+              );
               if (resultItem) {
                 await resultItem.click();
                 console.log("[adpia] ✅ 주소 선택 완료");
@@ -1164,7 +1273,9 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
               }
             }
           } catch (frameError) {
-            console.log(`[adpia] frame.$() 에러: ${frameError.message.substring(0, 50)}`);
+            console.log(
+              `[adpia] frame.$() 에러: ${frameError.message.substring(0, 50)}`,
+            );
           }
 
           // frame.$()가 실패하면 CDP 방식으로 fallback
@@ -1172,52 +1283,59 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
             console.log("[adpia] CDP 방식으로 fallback...");
 
             for (let attempt = 1; attempt <= 3; attempt++) {
-            console.log(`[adpia] 주소 검색 시도 ${attempt}/3...`);
+              console.log(`[adpia] 주소 검색 시도 ${attempt}/3...`);
 
-            try {
-              // CDP 세션 생성
-              const client = await page.target().createCDPSession();
+              try {
+                // CDP 세션 생성
+                const client = await page.target().createCDPSession();
 
-              // 모든 frame 정보 가져오기
-              const { frameTree } = await client.send("Page.getFrameTree");
+                // 모든 frame 정보 가져오기
+                const { frameTree } = await client.send("Page.getFrameTree");
 
-              // postcode iframe의 frameId 찾기
-              let postcodeFrameId = null;
-              const findPostcodeFrame = (node) => {
-                if (node.frame?.url?.includes("postcode")) {
-                  postcodeFrameId = node.frame.id;
-                  console.log(`[adpia] postcode frame URL: ${node.frame.url.substring(0, 60)}...`);
-                  return;
-                }
-                if (node.childFrames) {
-                  for (const child of node.childFrames) {
-                    findPostcodeFrame(child);
-                    if (postcodeFrameId) return;
+                // postcode iframe의 frameId 찾기
+                let postcodeFrameId = null;
+                const findPostcodeFrame = (node) => {
+                  if (node.frame?.url?.includes("postcode")) {
+                    postcodeFrameId = node.frame.id;
+                    console.log(
+                      `[adpia] postcode frame URL: ${node.frame.url.substring(0, 60)}...`,
+                    );
+                    return;
                   }
+                  if (node.childFrames) {
+                    for (const child of node.childFrames) {
+                      findPostcodeFrame(child);
+                      if (postcodeFrameId) return;
+                    }
+                  }
+                };
+                findPostcodeFrame(frameTree);
+
+                if (!postcodeFrameId) {
+                  console.log("[adpia] postcode frame 못찾음, 다음 시도...");
+                  await client.detach();
+                  await delay(2000);
+                  continue;
                 }
-              };
-              findPostcodeFrame(frameTree);
 
-              if (!postcodeFrameId) {
-                console.log("[adpia] postcode frame 못찾음, 다음 시도...");
-                await client.detach();
-                await delay(2000);
-                continue;
-              }
+                console.log(`[adpia] postcode frameId: ${postcodeFrameId}`);
 
-              console.log(`[adpia] postcode frameId: ${postcodeFrameId}`);
+                // 해당 frame에 isolated world 생성하여 JavaScript 실행
+                const { executionContextId } = await client.send(
+                  "Page.createIsolatedWorld",
+                  {
+                    frameId: postcodeFrameId,
+                    worldName: "addressSearch",
+                  },
+                );
 
-              // 해당 frame에 isolated world 생성하여 JavaScript 실행
-              const { executionContextId } = await client.send("Page.createIsolatedWorld", {
-                frameId: postcodeFrameId,
-                worldName: "addressSearch",
-              });
+                console.log(
+                  `[adpia] executionContextId: ${executionContextId}`,
+                );
 
-              console.log(`[adpia] executionContextId: ${executionContextId}`);
-
-              // 1단계: #region_name input 찾아서 값 입력
-              const inputResult = await client.send("Runtime.evaluate", {
-                expression: `
+                // 1단계: #region_name input 찾아서 값 입력
+                const inputResult = await client.send("Runtime.evaluate", {
+                  expression: `
                   (function() {
                     const input = document.querySelector('#region_name');
                     if (input) {
@@ -1233,25 +1351,28 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
                     return { success: false, inputCount: inputs.length, firstInput: inputs[0]?.id };
                   })()
                 `,
-                contextId: executionContextId,
-                returnByValue: true,
-              });
+                  contextId: executionContextId,
+                  returnByValue: true,
+                });
 
-              console.log(`[adpia] input 결과:`, JSON.stringify(inputResult.result?.value));
+                console.log(
+                  `[adpia] input 결과:`,
+                  JSON.stringify(inputResult.result?.value),
+                );
 
-              if (!inputResult.result?.value?.success) {
-                console.log("[adpia] #region_name 못찾음");
-                await client.detach();
-                await delay(2000);
-                continue;
-              }
+                if (!inputResult.result?.value?.success) {
+                  console.log("[adpia] #region_name 못찾음");
+                  await client.detach();
+                  await delay(2000);
+                  continue;
+                }
 
-              console.log(`[adpia] ✅ 주소 입력 완료: ${searchAddress}`);
-              await delay(500);
+                console.log(`[adpia] ✅ 주소 입력 완료: ${searchAddress}`);
+                await delay(500);
 
-              // 2단계: 검색 버튼 클릭
-              const searchResult = await client.send("Runtime.evaluate", {
-                expression: `
+                // 2단계: 검색 버튼 클릭
+                const searchResult = await client.send("Runtime.evaluate", {
+                  expression: `
                   (function() {
                     const btn = document.querySelector('button.btn_search') || document.querySelector('#search_btn');
                     if (btn) {
@@ -1267,16 +1388,19 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
                     return { clicked: null };
                   })()
                 `,
-                contextId: executionContextId,
-                returnByValue: true,
-              });
+                  contextId: executionContextId,
+                  returnByValue: true,
+                });
 
-              console.log(`[adpia] 검색 버튼:`, JSON.stringify(searchResult.result?.value));
-              await delay(3000); // 검색 결과 로딩 대기
+                console.log(
+                  `[adpia] 검색 버튼:`,
+                  JSON.stringify(searchResult.result?.value),
+                );
+                await delay(3000); // 검색 결과 로딩 대기
 
-              // 3단계: 검색 결과 첫 번째 항목 클릭
-              const selectResult = await client.send("Runtime.evaluate", {
-                expression: `
+                // 3단계: 검색 결과 첫 번째 항목 클릭
+                const selectResult = await client.send("Runtime.evaluate", {
+                  expression: `
                   (function() {
                     // 결과 리스트 찾기
                     const items = document.querySelectorAll('li.list_post_item');
@@ -1291,25 +1415,27 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
                     return { selected: false, count: items.length };
                   })()
                 `,
-                contextId: executionContextId,
-                returnByValue: true,
-              });
+                  contextId: executionContextId,
+                  returnByValue: true,
+                });
 
-              console.log(`[adpia] 주소 선택:`, JSON.stringify(selectResult.result?.value));
+                console.log(
+                  `[adpia] 주소 선택:`,
+                  JSON.stringify(selectResult.result?.value),
+                );
 
-              await client.detach();
+                await client.detach();
 
-              if (selectResult.result?.value?.selected) {
-                addressSearchSuccess = true;
-                console.log(`[adpia] ✅ 주소 검색 완료 (CDP 방식)`);
-                break;
-              } else if (selectResult.result?.value?.count === 0) {
-                console.log("[adpia] 검색 결과 없음, 다음 시도...");
+                if (selectResult.result?.value?.selected) {
+                  addressSearchSuccess = true;
+                  console.log(`[adpia] ✅ 주소 검색 완료 (CDP 방식)`);
+                  break;
+                } else if (selectResult.result?.value?.count === 0) {
+                  console.log("[adpia] 검색 결과 없음, 다음 시도...");
+                }
+              } catch (e) {
+                console.log(`[adpia] CDP 방식 에러: ${e.message}`);
               }
-
-            } catch (e) {
-              console.log(`[adpia] CDP 방식 에러: ${e.message}`);
-            }
 
               await delay(2000);
             }
@@ -1319,36 +1445,22 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
             console.log("[adpia] 8. 주소 선택 완료");
             await delay(1000);
           } else {
-            console.log("[adpia] ⚠️ 주소 검색 실패");
+            console.log("[adpia] ⚠️ 주소 검색 실패, 직접 입력 시도...");
+            await directAddressInput(page, shippingInfo, searchAddress);
           }
         }
       } else {
-        console.log("[adpia] 주소 검색 iframe 못찾음");
+        console.log("[adpia] 주소 검색 iframe 못찾음, 직접 입력 시도...");
+        const searchAddress =
+          shippingInfo.streetAddress1 || shippingInfo.address || "";
+        if (searchAddress) {
+          await directAddressInput(page, shippingInfo, searchAddress);
+        }
       }
     }
+    주소 검색 버튼 클릭 주석처리 끝 */
 
-    // 9. 상세주소 입력 (#recv_addr_2 클릭 후 End 키 → 스페이스 → 상세주소)
-    const detailAddress =
-      shippingInfo.streetAddress2 || shippingInfo.addressDetail || "";
-    if (detailAddress) {
-      console.log(`[adpia] 9. 상세주소 입력: ${detailAddress}`);
-      await delay(1000);
-
-      await delay(1000); // 상세주소 입력 전 딜레이
-      const addrDetail = await page.$(SELECTORS.order.addressDetail);
-      if (addrDetail) {
-        await addrDetail.click();
-        await delay(1000); // 상세주소 입력창 클릭 후 딜레이
-        // End 키로 커서를 맨 뒤로 이동
-        await page.keyboard.press("End");
-        await delay(100);
-        // 스페이스 추가
-        await page.keyboard.type(" ", { delay: 50 });
-        // 상세주소 입력
-        await page.keyboard.type(detailAddress, { delay: 50 });
-        await delay(300);
-      }
-    }
+    // 9. 상세주소는 directAddressInput에서 처리됨
 
     // 10. 배송 방법 선택 (선불택배) - 결제 선택 전에 해야 함 (안하면 결제 초기화됨)
     console.log("[adpia] 10. 배송 방법 선택 (선불택배)...");
@@ -1356,7 +1468,7 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
     if (deliveryMethod) {
       await page.select(
         SELECTORS.order.deliveryMethod,
-        SELECTORS.order.deliveryMethodValue
+        SELECTORS.order.deliveryMethodValue,
       );
       await delay(1000);
     }
@@ -1375,18 +1487,31 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
     if (cardType) {
       await page.select(
         SELECTORS.order.cardType,
-        SELECTORS.order.cardTypeValue
+        SELECTORS.order.cardTypeValue,
       );
       await delay(1000);
     }
 
     // 13. 전체 동의 체크박스 클릭
     console.log("[adpia] 13. 전체 동의 체크박스 클릭...");
-    const agreeAll = await page.$(SELECTORS.order.agreeAll);
-    if (agreeAll) {
-      await agreeAll.click();
-      await delay(3000);
-    }
+    const agreeResult = await page.evaluate(() => {
+      const checkbox = document.querySelector("#agree_buy_all");
+      if (checkbox) {
+        checkbox.checked = true;
+        checkbox.dispatchEvent(new Event("change", { bubbles: true }));
+        checkbox.dispatchEvent(new Event("click", { bubbles: true }));
+        return { success: true, checked: checkbox.checked };
+      }
+      // label 클릭 시도
+      const label = document.querySelector('label[for="agree_buy_all"]');
+      if (label) {
+        label.click();
+        return { success: true, method: "label" };
+      }
+      return { success: false, error: "element not found" };
+    });
+    console.log("[adpia] 전체 동의 결과:", agreeResult);
+    await delay(3000);
 
     // 14. 결제하기 버튼 클릭 전 - 현재 페이지 목록 저장
     const payBrowser = page.browser();
@@ -1425,7 +1550,7 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
       const payConfirmBtn = await waitFor(
         page,
         SELECTORS.order.payConfirmBtn,
-        5000
+        5000,
       );
       if (payConfirmBtn) {
         await payConfirmBtn.click();
@@ -1477,7 +1602,11 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
               // 19. ISP/페이북 네이티브 윈도우 자동화
               // dialog 핸들러 먼저 등록 (버튼 클릭 전에!)
               const ispAlertHandler = async (dialog) => {
-                console.log("[adpia] ISP Alert 감지:", dialog.type(), dialog.message());
+                console.log(
+                  "[adpia] ISP Alert 감지:",
+                  dialog.type(),
+                  dialog.message(),
+                );
                 try {
                   await dialog.accept();
                   console.log("[adpia] ISP Alert 자동 닫힘");
@@ -1527,7 +1656,8 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
 
               // ISP 네이티브 결제창 자동화 (냅킨/성원애드피아와 동일)
               console.log("[adpia] ISP 네이티브 결제창 자동화 시작...");
-              const ispResult = await automateISPPaymentWithAlertHandler(paymentPopup);
+              const ispResult =
+                await automateISPPaymentWithAlertHandler(paymentPopup);
 
               // 핸들러 제거
               page.off("dialog", ispAlertHandler);
@@ -1576,19 +1706,19 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
                     });
                     vendorOrderNumber = await page.$eval(
                       SELECTORS.order.orderNumber,
-                      (el) => el.textContent?.trim()
+                      (el) => el.textContent?.trim(),
                     );
                     console.log("[adpia] ✅ 주문번호:", vendorOrderNumber);
                   } else {
                     // 페이지 이동 대기 후 재시도
                     await delay(3000);
                     const orderNumberEl = await page.$(
-                      SELECTORS.order.orderNumber
+                      SELECTORS.order.orderNumber,
                     );
                     if (orderNumberEl) {
                       vendorOrderNumber = await page.$eval(
                         SELECTORS.order.orderNumber,
-                        (el) => el.textContent?.trim()
+                        (el) => el.textContent?.trim(),
                       );
                       console.log("[adpia] ✅ 주문번호:", vendorOrderNumber);
                     }
@@ -1608,7 +1738,7 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
               } else {
                 console.log(
                   "[adpia] ⚠️ ISP 결제 자동화 실패:",
-                  ispResult.error
+                  ispResult.error,
                 );
                 if (ispResult.error === "페이북 창을 찾을 수 없음") {
                   payBrowser.off("targetcreated", targetCreatedHandler);
@@ -1623,7 +1753,7 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
             } catch (certError) {
               console.log(
                 "[adpia] ⚠️ 인증서 등록/결제 버튼 클릭 실패:",
-                certError.message
+                certError.message,
               );
             }
           } catch (e) {
@@ -1659,7 +1789,7 @@ async function processAdpiaOrder(
   page,
   vendor,
   { products, shippingAddress, poLineIds, purchaseOrderId },
-  authToken
+  authToken,
 ) {
   console.log(`[adpia] 주문 시작: ${products.length}개 상품`);
 
@@ -1689,7 +1819,7 @@ async function processAdpiaOrder(
         } catch (err) {
           console.error(
             `[adpia] 디자인 파일 다운로드 실패 (${product.productSku}):`,
-            err.message
+            err.message,
           );
         }
       }
@@ -1699,7 +1829,12 @@ async function processAdpiaOrder(
     // 1. 로그인
     const loginResult = await loginToAdpia(page, vendor);
     if (!loginResult.success) {
-      errorCollector.addError(ORDER_STEPS.LOGIN, ERROR_CODES.LOGIN_FAILED, loginResult.message || "로그인 실패", { purchaseOrderId });
+      errorCollector.addError(
+        ORDER_STEPS.LOGIN,
+        ERROR_CODES.LOGIN_FAILED,
+        loginResult.message || "로그인 실패",
+        { purchaseOrderId },
+      );
       await saveOrderResults(authToken, {
         purchaseOrderId,
         products: [],
@@ -1721,7 +1856,9 @@ async function processAdpiaOrder(
     // 2. 각 상품 개별 처리 (애드피아: 상품별로 장바구니 → 주문 → 결제 → saveOrderResults)
     for (let productIndex = 0; productIndex < products.length; productIndex++) {
       const product = products[productIndex];
-      console.log(`\n[adpia] ========== 상품 ${productIndex + 1}/${products.length}: ${product.productName} ==========`);
+      console.log(
+        `\n[adpia] ========== 상품 ${productIndex + 1}/${products.length}: ${product.productName} ==========`,
+      );
 
       let vendorOrderNumber = null;
       let orderSuccess = false;
@@ -1743,7 +1880,7 @@ async function processAdpiaOrder(
             message: findResult.message,
           });
           // 옵션 실패로 추적 및 saveOrderResults 호출
-          if (findResult.message?.includes('옵션')) {
+          if (findResult.message?.includes("옵션")) {
             optionFailedProducts.push({
               productVariantVendorId: product.productVariantVendorId,
               reason: findResult.message,
@@ -1754,12 +1891,16 @@ async function processAdpiaOrder(
             purchaseOrderId,
             products: [],
             priceMismatches: [],
-            optionFailedProducts: [{
-              productVariantVendorId: product.productVariantVendorId,
-              reason: findResult.message,
-            }],
+            optionFailedProducts: [
+              {
+                productVariantVendorId: product.productVariantVendorId,
+                reason: findResult.message,
+              },
+            ],
             automationErrors: [],
-            poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
+            poLineIds: poLineIds?.[productIndex]
+              ? [poLineIds[productIndex]]
+              : [],
             success: false,
             vendor: "adpia",
           });
@@ -1772,10 +1913,14 @@ async function processAdpiaOrder(
 
         // 가격 비교 로직
         const openMallPriceExcludeVat = Math.round(openMallPrice / 1.1); // VAT 제외 가격
-        const priceDifference = Math.abs(openMallPriceExcludeVat - expectedPrice);
+        const priceDifference = Math.abs(
+          openMallPriceExcludeVat - expectedPrice,
+        );
         const priceMismatch = expectedPrice > 0 && priceDifference > 10; // 10원 이상 차이나면 불일치
 
-        console.log(`[adpia] 가격 비교: 오픈몰=${openMallPrice}(VAT제외=${openMallPriceExcludeVat}) vs 시스템=${expectedPrice}, 차이=${priceDifference}원, 불일치=${priceMismatch}`);
+        console.log(
+          `[adpia] 가격 비교: 오픈몰=${openMallPrice}(VAT제외=${openMallPriceExcludeVat}) vs 시스템=${expectedPrice}, 차이=${priceDifference}원, 불일치=${priceMismatch}`,
+        );
 
         const priceInfo = {
           priceMismatch,
@@ -1787,29 +1932,47 @@ async function processAdpiaOrder(
 
         // 2-4. 주문 페이지에서 처리 (수량 입력, 파일 업로드, 장바구니 담기)
         const downloadedFile = downloadedFiles.find(
-          (f) => f.productSku === product.productSku
+          (f) => f.productSku === product.productSku,
         );
 
         const MAX_PRODUCT_RETRIES = 2;
         let orderPageResult = null;
 
-        for (let productRetry = 0; productRetry < MAX_PRODUCT_RETRIES; productRetry++) {
+        for (
+          let productRetry = 0;
+          productRetry < MAX_PRODUCT_RETRIES;
+          productRetry++
+        ) {
           if (productRetry > 0) {
-            console.log(`[adpia] 상품 재시작 시도 ${productRetry}/${MAX_PRODUCT_RETRIES - 1}...`);
+            console.log(
+              `[adpia] 상품 재시작 시도 ${productRetry}/${MAX_PRODUCT_RETRIES - 1}...`,
+            );
           }
 
           orderPageResult = await processOrderPage(
             page,
             product,
-            downloadedFile
+            downloadedFile,
           );
 
-          if (orderPageResult.needsRestart && productRetry < MAX_PRODUCT_RETRIES - 1) {
+          if (
+            orderPageResult.needsRestart &&
+            productRetry < MAX_PRODUCT_RETRIES - 1
+          ) {
             console.log("[adpia] 🔄 옵션 페이지에서 상품 다시 찾기...");
-            const retryFindResult = await findProductByCode(page, product.productSku);
+            const retryFindResult = await findProductByCode(
+              page,
+              product.productSku,
+            );
             if (!retryFindResult.success) {
-              console.log("[adpia] 재시작 후 상품 찾기 실패:", retryFindResult.message);
-              orderPageResult = { success: false, message: "재시작 후 상품 찾기 실패" };
+              console.log(
+                "[adpia] 재시작 후 상품 찾기 실패:",
+                retryFindResult.message,
+              );
+              orderPageResult = {
+                success: false,
+                message: "재시작 후 상품 찾기 실패",
+              };
               break;
             }
             continue;
@@ -1830,7 +1993,7 @@ async function processAdpiaOrder(
             message: orderPageResult.message,
             priceInfo,
           });
-          if (orderPageResult.message?.includes('옵션')) {
+          if (orderPageResult.message?.includes("옵션")) {
             optionFailedProducts.push({
               productVariantVendorId: product.productVariantVendorId,
               reason: orderPageResult.message,
@@ -1840,17 +2003,27 @@ async function processAdpiaOrder(
           await saveOrderResults(authToken, {
             purchaseOrderId,
             products: [],
-            priceMismatches: priceInfo.priceMismatch ? [{
-              productVariantVendorId: product.productVariantVendorId,
-              vendorPriceExcludeVat: priceInfo.unitPriceExcludeVat,
-              openMallPrice: priceInfo.unitPrice,
-            }] : [],
-            optionFailedProducts: orderPageResult.message?.includes('옵션') ? [{
-              productVariantVendorId: product.productVariantVendorId,
-              reason: orderPageResult.message,
-            }] : [],
+            priceMismatches: priceInfo.priceMismatch
+              ? [
+                  {
+                    productVariantVendorId: product.productVariantVendorId,
+                    vendorPriceExcludeVat: priceInfo.unitPriceExcludeVat,
+                    openMallPrice: priceInfo.unitPrice,
+                  },
+                ]
+              : [],
+            optionFailedProducts: orderPageResult.message?.includes("옵션")
+              ? [
+                  {
+                    productVariantVendorId: product.productVariantVendorId,
+                    reason: orderPageResult.message,
+                  },
+                ]
+              : [],
             automationErrors: [],
-            poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
+            poLineIds: poLineIds?.[productIndex]
+              ? [poLineIds[productIndex]]
+              : [],
             success: false,
             vendor: "adpia",
           });
@@ -1875,14 +2048,20 @@ async function processAdpiaOrder(
           await saveOrderResults(authToken, {
             purchaseOrderId,
             products: [],
-            priceMismatches: priceInfo.priceMismatch ? [{
-              productVariantVendorId: product.productVariantVendorId,
-              vendorPriceExcludeVat: priceInfo.unitPriceExcludeVat,
-              openMallPrice: priceInfo.unitPrice,
-            }] : [],
+            priceMismatches: priceInfo.priceMismatch
+              ? [
+                  {
+                    productVariantVendorId: product.productVariantVendorId,
+                    vendorPriceExcludeVat: priceInfo.unitPriceExcludeVat,
+                    openMallPrice: priceInfo.unitPrice,
+                  },
+                ]
+              : [],
             optionFailedProducts: [],
             automationErrors: [],
-            poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
+            poLineIds: poLineIds?.[productIndex]
+              ? [poLineIds[productIndex]]
+              : [],
             success: false,
             vendor: "adpia",
           });
@@ -1897,13 +2076,18 @@ async function processAdpiaOrder(
 
           while (ispRetryCount <= MAX_ISP_RETRY) {
             if (ispRetryCount > 0) {
-              console.log(`\n[adpia] ========== ISP 결제 재시도 ${ispRetryCount}/${MAX_ISP_RETRY} ==========`);
+              console.log(
+                `\n[adpia] ========== ISP 결제 재시도 ${ispRetryCount}/${MAX_ISP_RETRY} ==========`,
+              );
               console.log("[adpia] 장바구니로 이동하여 재주문...");
               // 장바구니 → 주문서 이동
               const retryOrderForm = await goToOrderForm(page);
               if (!retryOrderForm.success) {
                 console.log("[adpia] 주문서 재이동 실패 - 재시도 중단");
-                shippingResult = { success: false, message: "주문서 재이동 실패" };
+                shippingResult = {
+                  success: false,
+                  message: "주문서 재이동 실패",
+                };
                 break;
               }
             }
@@ -1911,13 +2095,15 @@ async function processAdpiaOrder(
             shippingResult = await fillShippingInfo(
               page,
               shippingInfo,
-              ispPassword
+              ispPassword,
             );
 
             if (shippingResult?.ispWindowNotFound) {
               ispRetryCount++;
               if (ispRetryCount <= MAX_ISP_RETRY) {
-                console.log("[adpia] ISP 결제창 미출현 - 장바구니로 돌아가서 재시도...");
+                console.log(
+                  "[adpia] ISP 결제창 미출현 - 장바구니로 돌아가서 재시도...",
+                );
                 await delay(2000);
                 continue;
               }
@@ -1926,7 +2112,10 @@ async function processAdpiaOrder(
           }
 
           if (!shippingResult?.success) {
-            console.log("[adpia] 배송지 입력/결제 실패:", shippingResult?.message);
+            console.log(
+              "[adpia] 배송지 입력/결제 실패:",
+              shippingResult?.message,
+            );
             results.push({
               lineId: poLineIds?.[productIndex],
               productVariantVendorId: product.productVariantVendorId,
@@ -1941,14 +2130,20 @@ async function processAdpiaOrder(
             await saveOrderResults(authToken, {
               purchaseOrderId,
               products: [],
-              priceMismatches: priceInfo.priceMismatch ? [{
-                productVariantVendorId: product.productVariantVendorId,
-                vendorPriceExcludeVat: priceInfo.unitPriceExcludeVat,
-                openMallPrice: priceInfo.unitPrice,
-              }] : [],
+              priceMismatches: priceInfo.priceMismatch
+                ? [
+                    {
+                      productVariantVendorId: product.productVariantVendorId,
+                      vendorPriceExcludeVat: priceInfo.unitPriceExcludeVat,
+                      openMallPrice: priceInfo.unitPrice,
+                    },
+                  ]
+                : [],
               optionFailedProducts: [],
               automationErrors: [],
-              poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
+              poLineIds: poLineIds?.[productIndex]
+                ? [poLineIds[productIndex]]
+                : [],
               success: false,
               vendor: "adpia",
             });
@@ -1967,7 +2162,7 @@ async function processAdpiaOrder(
             if (orderNumberEl) {
               vendorOrderNumber = await page.$eval(
                 SELECTORS.order.orderNumber,
-                (el) => el.textContent?.trim()
+                (el) => el.textContent?.trim(),
               );
               console.log("[adpia] 주문번호 재시도 성공:", vendorOrderNumber);
             }
@@ -2001,7 +2196,9 @@ async function processAdpiaOrder(
             quantity: product.quantity,
             openMallOrderNumber: vendorOrderNumber,
           });
-          console.log(`[adpia] ✅ 상품 ${productIndex + 1} 주문 완료: ${vendorOrderNumber}`);
+          console.log(
+            `[adpia] ✅ 상품 ${productIndex + 1} 주문 완료: ${vendorOrderNumber}`,
+          );
         }
 
         if (priceInfo.priceMismatch) {
@@ -2015,15 +2212,23 @@ async function processAdpiaOrder(
         // 상품별 saveOrderResults 호출
         await saveOrderResults(authToken, {
           purchaseOrderId,
-          products: orderSuccess ? [{
-            orderLineIds: product.orderLineIds,
-            openMallOrderNumber: vendorOrderNumber,
-          }] : [],
-          priceMismatches: priceInfo.priceMismatch ? [{
-            productVariantVendorId: product.productVariantVendorId,
-            vendorPriceExcludeVat: priceInfo.unitPriceExcludeVat,
-            openMallPrice: priceInfo.unitPrice,
-          }] : [],
+          products: orderSuccess
+            ? [
+                {
+                  orderLineIds: product.orderLineIds,
+                  openMallOrderNumber: vendorOrderNumber,
+                },
+              ]
+            : [],
+          priceMismatches: priceInfo.priceMismatch
+            ? [
+                {
+                  productVariantVendorId: product.productVariantVendorId,
+                  vendorPriceExcludeVat: priceInfo.unitPriceExcludeVat,
+                  openMallPrice: priceInfo.unitPrice,
+                },
+              ]
+            : [],
           optionFailedProducts: [],
           automationErrors: [],
           poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
@@ -2034,15 +2239,16 @@ async function processAdpiaOrder(
         // 결제 성공 시 결제 로그 저장
         if (orderSuccess && priceInfo.unitPrice > 0) {
           const paymentAmount = priceInfo.unitPrice * (product.quantity || 1);
-          await createPaymentLogs(authToken, [{
-            vendor: vendor.name,
-            paymentAmount: paymentAmount,
-            purchaseOrderId: purchaseOrderId,
-            orderLineId: product.orderLineIds?.[0] || null,
-          }]);
+          await createPaymentLogs(authToken, [
+            {
+              vendor: vendor.name,
+              paymentAmount: paymentAmount,
+              purchaseOrderId: purchaseOrderId,
+              orderLineId: product.orderLineIds?.[0] || null,
+            },
+          ]);
           console.log(`[adpia] 결제 로그 저장: ${paymentAmount}원`);
         }
-
       } catch (error) {
         console.error(`[adpia] 상품 처리 에러:`, error.message);
         errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, error.message, {
@@ -2066,7 +2272,7 @@ async function processAdpiaOrder(
           automationErrors: errorCollector.getErrors(),
           poLineIds: poLineIds?.[productIndex] ? [poLineIds[productIndex]] : [],
           success: false,
-        vendor: "adpia",
+          vendor: "adpia",
         });
       }
     }
@@ -2077,7 +2283,9 @@ async function processAdpiaOrder(
       .map((p) => p.openMallOrderNumber)
       .filter(Boolean);
 
-    console.log(`\n[adpia] ========== 주문 완료: ${successProducts.length}/${products.length}개 ==========`);
+    console.log(
+      `\n[adpia] ========== 주문 완료: ${successProducts.length}/${products.length}개 ==========`,
+    );
 
     // 가격 불일치 목록 (res.json용)
     const priceMismatchList = results.filter((r) => r.priceInfo?.priceMismatch);
@@ -2110,7 +2318,8 @@ async function processAdpiaOrder(
       purchaseOrderId: purchaseOrderId || null,
       purchaseOrderLineIds: poLineIds || [],
       products: results.map((r) => ({
-        orderLineIds: products.find((p) => p.productSku === r.productSku)?.orderLineIds,
+        orderLineIds: products.find((p) => p.productSku === r.productSku)
+          ?.orderLineIds,
         openMallOrderNumber: r.vendorOrderNumber || null,
         productName: r.productName,
         productSku: r.productSku,
@@ -2130,7 +2339,9 @@ async function processAdpiaOrder(
     });
   } catch (error) {
     console.error("[adpia] 주문 처리 에러:", error);
-    errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, error.message, { purchaseOrderId });
+    errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, error.message, {
+      purchaseOrderId,
+    });
     // 이미 처리된 상품들의 주문번호는 각 상품별 saveOrderResults에서 저장됨
     // 여기선 전체 에러 로그만 저장
     await saveOrderResults(authToken, {
@@ -2140,10 +2351,11 @@ async function processAdpiaOrder(
         openMallOrderNumber: p.openMallOrderNumber || null,
       })),
       priceMismatches: [],
-      optionFailedProducts: optionFailedProducts?.map((p) => ({
-        productVariantVendorId: p.productVariantVendorId,
-        reason: p.reason,
-      })) || [],
+      optionFailedProducts:
+        optionFailedProducts?.map((p) => ({
+          productVariantVendorId: p.productVariantVendorId,
+          reason: p.reason,
+        })) || [],
       automationErrors: errorCollector.getErrors(),
       poLineIds,
       success: false,
@@ -2153,7 +2365,9 @@ async function processAdpiaOrder(
       success: false,
       vendor: vendor.name,
       message: `주문 처리 에러: ${error.message}`,
-      automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
+      automationErrors: errorCollector.hasErrors()
+        ? errorCollector.getErrors()
+        : undefined,
     });
   } finally {
     // 임시 파일 정리
