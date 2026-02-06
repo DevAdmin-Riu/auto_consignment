@@ -23,7 +23,11 @@
     "docker:restart": "docker compose -f ./docker-compose.yml restart",
     "docker:recreate": "docker compose -f ./docker-compose.yml down && docker compose -f ./docker-compose.yml up -d",
     "docker:logs": "docker logs -f n8n",
-    "docker:open": "open -a Docker"
+    "docker:open": "open -a Docker",
+    "interception:install": "powershell -Command \"Start-Process -FilePath 'temp/interception/Interception/command line installer/install-interception.exe' -ArgumentList '/install' -Verb RunAs -Wait\"",
+    "interception:uninstall": "powershell -Command \"Start-Process -FilePath 'temp/interception/Interception/command line installer/install-interception.exe' -ArgumentList '/uninstall' -Verb RunAs -Wait\"",
+    "bluetooth:fix": "powershell -ExecutionPolicy Bypass -File temp/fix_bluetooth.ps1",
+    "keyboard:fix": "powershell -ExecutionPolicy Bypass -File temp/fix_keyboard.ps1"
   },
   "keywords": [],
   "author": "",
