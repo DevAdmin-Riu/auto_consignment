@@ -181,12 +181,18 @@ app.post("/api/vendor/tracking", async (req, res) => {
 
     console.log(`[tracking] 송장번호 찾음: ${trackingResults.length}건`);
 
+    // 조회 완료 후 브라우저 종료
+    console.log("[tracking] 조회 완료, 브라우저 종료");
+    await resetBrowser();
+
     return res.json({
       success: true,
       trackingResults,
     });
   } catch (error) {
     console.error(`[tracking] 에러:`, error);
+    // 에러 시에도 브라우저 종료
+    await resetBrowser();
     return res.status(500).json({
       success: false,
       error: error.message,

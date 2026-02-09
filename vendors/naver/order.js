@@ -333,6 +333,12 @@ async function selectOptions(page, openMallOptions, quantity = 1) {
     }
   }
 
+  // 파싱 후 빈 배열이면 옵션 없음 처리
+  if (!options || (Array.isArray(options) && options.length === 0)) {
+    console.log("[naver] 옵션 없음 (빈 배열), 스킵");
+    return { success: true, skipped: true, quantityHandled: false };
+  }
+
   // 2D 구조 검증: [{options: [{title, value}, ...]}, ...]
   const is2DStructure = options[0] && Array.isArray(options[0].options);
 

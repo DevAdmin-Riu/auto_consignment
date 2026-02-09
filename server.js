@@ -88,14 +88,17 @@ async function processQueue() {
     isProcessing = false;
     resolve();
 
-    // WAF 우회: 다음 주문 처리 전 딜레이 (5-10초 랜덤)
     if (requestQueue.length > 0) {
+      // WAF 우회: 다음 주문 처리 전 딜레이 (5-10초 랜덤)
       const delayMs = 5000 + Math.random() * 5000;
       console.log(`[큐] 다음 주문까지 ${(delayMs / 1000).toFixed(1)}초 대기...`);
       await delay(delayMs);
+      processQueue();
+    } else {
+      // 큐가 비었으면 브라우저 종료
+      console.log("[큐] 모든 주문 처리 완료, 브라우저 종료");
+      await resetBrowser();
     }
-
-    processQueue();
   }
 }
 

@@ -2,7 +2,7 @@
  * PM2 Ecosystem 설정
  *
  * 두 개의 독립 프로세스:
- * - order: 발주 서버 (포트 3000)
+ * - order: 발주 서버 (포트 3002)
  * - tracking: 송장조회 서버 (포트 3001)
  */
 
@@ -12,7 +12,7 @@ module.exports = {
       name: "order",
       script: "server.js",
       env: {
-        PORT: 3000,
+        PORT: 3002,
         NODE_ENV: "production",
       },
       instances: 1,

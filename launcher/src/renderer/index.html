@@ -10,11 +10,15 @@
   <div class="app">
     <!-- 헤더 -->
     <header class="header">
-      <h1>포장보스 자동화 관리자</h1>
+      <h1>포장보스 자동화</h1>
       <div class="header-controls">
-        <label for="env-select">환경:</label>
+        <label for="env-select">ENV</label>
         <select id="env-select"></select>
-        <button id="btn-settings" class="btn btn-icon" title="설정">&#9881;</button>
+        <button id="btn-settings" class="btn btn-icon" title="설정">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+          </svg>
+        </button>
       </div>
     </header>
 
@@ -43,7 +47,7 @@
         <div class="service-header">
           <span class="status-dot" id="status-order"></span>
           <span class="service-name">주문 서버</span>
-          <span class="service-port">:3000</span>
+          <span class="service-port">:3002</span>
         </div>
         <div class="service-actions">
           <button class="btn btn-sm btn-start" data-action="start" data-service="order">시작</button>
@@ -69,7 +73,7 @@
     <!-- 워크플로우 섹션 -->
     <div class="section">
       <div class="section-header">
-        <h2>워크플로우</h2>
+        <h2>Workflows</h2>
         <button id="btn-refresh-workflows" class="btn btn-sm">새로고침</button>
         <button id="btn-open-n8n" class="btn btn-sm btn-link">n8n 열기</button>
       </div>
@@ -81,7 +85,7 @@
     <!-- 로그 섹션 -->
     <div class="section log-section">
       <div class="section-header">
-        <h2>로그</h2>
+        <h2>Logs</h2>
         <div class="log-tabs">
           <button class="log-tab active" data-tab="all">전체</button>
           <button class="log-tab" data-tab="n8n">n8n</button>
@@ -104,8 +108,24 @@
       <div class="modal-body">
         <div class="form-group">
           <label for="input-api-key">n8n API 키</label>
-          <input type="text" id="input-api-key" placeholder="n8n 설정 > API에서 생성">
-          <p class="form-hint">n8n 관리 화면 > Settings > API > Create API Key</p>
+          <input type="text" id="input-api-key" placeholder="n8n Settings > API > Create API Key">
+          <p class="form-hint">워크플로우 목록 조회에 필요 (Settings > API에서 생성)</p>
+        </div>
+        <div class="form-group">
+          <label for="input-n8n-email">n8n 이메일</label>
+          <input type="email" id="input-n8n-email" placeholder="n8n 로그인 이메일">
+        </div>
+        <div class="form-group">
+          <label for="input-n8n-password">n8n 비밀번호</label>
+          <input type="text" id="input-n8n-password" placeholder="n8n 로그인 비밀번호">
+          <p class="form-hint">워크플로우 실행에 필요 (n8n 내부 API 세션 인증)</p>
+        </div>
+
+        <div class="form-group">
+          <label>워크플로우 표시 설정</label>
+          <p class="form-hint">표시할 워크플로우를 선택하고 순서를 지정하세요</p>
+          <button id="btn-load-workflows" class="btn btn-sm" style="margin-top:6px">n8n에서 불러오기</button>
+          <div id="wf-config-list" class="wf-config-list"></div>
         </div>
       </div>
       <div class="modal-footer">

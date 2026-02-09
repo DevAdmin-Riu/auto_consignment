@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld("api", {
   // 워크플로우
   getWorkflows: () => ipcRenderer.invoke("get-workflows"),
   executeWorkflow: (id) => ipcRenderer.invoke("execute-workflow", id),
+  openWorkflow: (id) => ipcRenderer.invoke("open-workflow", id),
 
   // 설정
   getConfig: () => ipcRenderer.invoke("get-config"),

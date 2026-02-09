@@ -80,7 +80,8 @@ function generateComposeFile(envKey) {
 
 function runCommand(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const proc = spawn(command, args, {
+    const fullCmd = [command, ...args].join(" ");
+    const proc = spawn(fullCmd, {
       cwd: options.cwd || PROJECT_ROOT,
       shell: true,
       windowsHide: true,
@@ -146,7 +147,7 @@ async function getN8nStatus() {
 }
 
 async function getOrderStatus() {
-  const ok = await checkHttpHealth(3000, "/health");
+  const ok = await checkHttpHealth(3002, "/health");
   return ok ? "running" : "stopped";
 }
 
@@ -206,16 +207,23 @@ async function stopPm2() {
   sendLog("system", "[시스템] PM2 서버 중지됨");
 }
 
-async function restartOrder() {
-  sendLog("system", "[시스템] 주문 서버 재시작 중...");
-  await runCommand("npx", ["pm2", "restart", "order"]);
-  sendLog("system", "[시스템] 주문 서버 재시작됨");
+async function startService(name) {
+  sendLog("system", `[시스템] ${name} 서버 시작 중...`);
+  await runCommand("npx", ["pm2", "start", "ecosystem.config.cjs", "--only", name]);
+  sendLog("system", `[시스템] ${name} 서버 시작됨`);
+  startLogStream("pm2");
 }
 
-async function restartTracking() {
-  sendLog("system", "[시스템] 송장 서버 재시작 중...");
-  await runCommand("npx", ["pm2", "restart", "tracking"]);
-  sendLog("system", "[시스템] 송장 서버 재시작됨");
+async function stopService(name) {
+  sendLog("system", `[시스템] ${name} 서버 중지 중...`);
+  await runCommand("npx", ["pm2", "stop", name]);
+  sendLog("system", `[시스템] ${name} 서버 중지됨`);
+}
+
+async function restartService(name) {
+  sendLog("system", `[시스템] ${name} 서버 재시작 중...`);
+  await runCommand("npx", ["pm2", "restart", name]);
+  sendLog("system", `[시스템] ${name} 서버 재시작됨`);
 }
 
 // ==================== 로그 스트리밍 ====================
@@ -230,7 +238,7 @@ function startLogStream(type) {
   stopLogStream(type);
 
   if (type === "n8n") {
-    const proc = spawn("docker", ["logs", "-f", "--tail", "100", "n8n"], {
+    const proc = spawn("docker logs -f --tail 100 n8n", {
       cwd: PROJECT_ROOT,
       shell: true,
       windowsHide: true,
@@ -256,7 +264,7 @@ function startLogStream(type) {
   }
 
   if (type === "pm2") {
-    const proc = spawn("npx", ["pm2", "logs", "--raw", "--lines", "100"], {
+    const proc = spawn("npx pm2 logs --raw --lines 100", {
       cwd: PROJECT_ROOT,
       shell: true,
       windowsHide: true,
@@ -305,7 +313,7 @@ function stopLogStream(type) {
   }
 }
 
-// ==================== n8n 워크플로우 API ====================
+// ==================== n8n API ====================
 
 function n8nApiRequest(method, apiPath, body = null) {
   const config = loadConfig();
@@ -316,30 +324,46 @@ function n8nApiRequest(method, apiPath, body = null) {
   return new Promise((resolve, reject) => {
     const url = `http://localhost:5678/api/v1${apiPath}`;
     const urlObj = new URL(url);
+    const bodyStr = body ? JSON.stringify(body) : null;
 
-    const options = {
-      hostname: urlObj.hostname,
-      port: urlObj.port,
-      path: urlObj.pathname + urlObj.search,
-      method,
-      headers: {
-        "X-N8N-API-KEY": config.n8nApiKey,
-        "Content-Type": "application/json",
-      },
-      timeout: 10000,
+    const headers = {
+      "X-N8N-API-KEY": config.n8nApiKey,
+      "Content-Type": "application/json",
     };
+    if (bodyStr) headers["Content-Length"] = Buffer.byteLength(bodyStr);
 
-    const req = http.request(options, (res) => {
-      let data = "";
-      res.on("data", (chunk) => (data += chunk));
-      res.on("end", () => {
-        try {
-          resolve(JSON.parse(data));
-        } catch {
-          resolve(data);
-        }
-      });
-    });
+    const req = http.request(
+      {
+        hostname: urlObj.hostname,
+        port: urlObj.port,
+        path: urlObj.pathname + urlObj.search,
+        method,
+        headers,
+        timeout: 30000,
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          let parsed;
+          try {
+            parsed = JSON.parse(data);
+          } catch {
+            parsed = data;
+          }
+
+          if (res.statusCode >= 200 && res.statusCode < 400) {
+            resolve(parsed);
+          } else {
+            const msg =
+              typeof parsed === "object"
+                ? JSON.stringify(parsed)
+                : String(parsed);
+            reject(new Error(`HTTP ${res.statusCode}: ${msg.substring(0, 500)}`));
+          }
+        });
+      }
+    );
 
     req.on("error", reject);
     req.on("timeout", () => {
@@ -347,13 +371,94 @@ function n8nApiRequest(method, apiPath, body = null) {
       reject(new Error("요청 시간 초과"));
     });
 
-    if (body) {
-      req.write(JSON.stringify(body));
-    }
-
+    if (bodyStr) req.write(bodyStr);
     req.end();
   });
 }
+
+// n8n 내부 REST API (/rest/) - 세션 쿠키 인증
+function n8nInternalRequest(method, restPath, body = null, cookie = null) {
+  return new Promise((resolve, reject) => {
+    const bodyStr = body ? JSON.stringify(body) : null;
+    const headers = { "Content-Type": "application/json" };
+    if (cookie) headers["Cookie"] = cookie;
+    if (bodyStr) headers["Content-Length"] = Buffer.byteLength(bodyStr);
+
+    const req = http.request(
+      {
+        hostname: "localhost",
+        port: 5678,
+        path: `/rest${restPath}`,
+        method,
+        headers,
+        timeout: 60000,
+      },
+      (res) => {
+        let data = "";
+        res.on("data", (chunk) => (data += chunk));
+        res.on("end", () => {
+          let parsed;
+          try {
+            parsed = JSON.parse(data);
+          } catch {
+            parsed = data;
+          }
+
+          if (res.statusCode >= 200 && res.statusCode < 400) {
+            resolve({ statusCode: res.statusCode, headers: res.headers, body: parsed });
+          } else {
+            const msg =
+              typeof parsed === "object" ? JSON.stringify(parsed) : String(parsed);
+            reject(new Error(`HTTP ${res.statusCode}: ${msg.substring(0, 500)}`));
+          }
+        });
+      }
+    );
+
+    req.on("error", reject);
+    req.on("timeout", () => {
+      req.destroy();
+      reject(new Error("n8n 내부 API 요청 시간 초과"));
+    });
+
+    if (bodyStr) req.write(bodyStr);
+    req.end();
+  });
+}
+
+// n8n 세션 관리
+let n8nSessionCookie = null;
+
+async function n8nLogin() {
+  const config = loadConfig();
+  if (!config.n8nEmail || !config.n8nPassword) {
+    throw new Error("n8n 로그인 정보를 설정에서 입력해주세요 (이메일/비밀번호)");
+  }
+
+  sendLog("system", `[시스템] n8n 로그인 시도: ${config.n8nEmail}`);
+  const result = await n8nInternalRequest("POST", "/login", {
+    emailOrLdapLoginId: config.n8nEmail,
+    password: config.n8nPassword,
+  });
+
+  const setCookies = result.headers["set-cookie"];
+  if (setCookies) {
+    n8nSessionCookie = setCookies.map((c) => c.split(";")[0]).join("; ");
+  }
+
+  if (!n8nSessionCookie) {
+    throw new Error("n8n 로그인 성공했지만 세션 쿠키를 받지 못했습니다");
+  }
+
+  return n8nSessionCookie;
+}
+
+async function getN8nSession() {
+  if (n8nSessionCookie) return n8nSessionCookie;
+  return await n8nLogin();
+}
+
+// ==================== 워크플로우 ====================
 
 async function getWorkflows() {
   try {
@@ -373,15 +478,73 @@ async function getWorkflows() {
 }
 
 async function executeWorkflow(id) {
+  sendLog("system", `[시스템] 워크플로우 #${id} 실행 시작...`);
+
   try {
-    sendLog("system", `[시스템] 워크플로우 #${id} 실행 중...`);
-    const result = await n8nApiRequest("POST", `/workflows/${id}/run`);
-    sendLog("system", `[시스템] 워크플로우 #${id} 실행 완료`);
-    return { success: true, result };
+    // 방법 1: Public API 실행 엔드포인트 (n8n 최신 버전)
+    try {
+      const result = await n8nApiRequest("POST", `/workflows/${id}/execute`);
+      const executionId = result?.data?.executionId || result?.executionId;
+      sendLog(
+        "system",
+        `[시스템] 워크플로우 #${id} 실행됨 (Public API)${executionId ? ` [execution: ${executionId}]` : ""}`
+      );
+      return { success: true, executionId };
+    } catch (pubErr) {
+      // 404/405 = 엔드포인트 미지원 → Internal API로 fallback
+      if (!pubErr.message.includes("404") && !pubErr.message.includes("405")) throw pubErr;
+      sendLog("system", `[시스템] Public API 실행 미지원 → Internal API로 시도...`);
+    }
+
+    // 방법 2: Internal REST API (/rest/workflows/:id/run) - 세션 인증 필요
+    const workflow = await n8nApiRequest("GET", `/workflows/${id}`);
+    if (!workflow || !workflow.nodes) {
+      throw new Error("워크플로우 데이터를 가져올 수 없습니다");
+    }
+
+    const triggerNodes = workflow.nodes
+      .filter((n) => n.type.toLowerCase().includes("trigger"));
+
+    if (triggerNodes.length === 0) {
+      throw new Error("트리거 노드가 없는 워크플로우입니다. n8n에서 직접 실행해주세요.");
+    }
+
+    let cookie = await getN8nSession();
+    const runPath = `/workflows/${id}/run`;
+
+    // isFullExecutionFromKnownTrigger: workflowData + triggerToStartFrom (runData 없이!)
+    const runBody = {
+      workflowData: workflow,
+      triggerToStartFrom: { name: triggerNodes[0].name },
+    };
+
+    let result;
+    try {
+      result = await n8nInternalRequest("POST", runPath, runBody, cookie);
+    } catch (err) {
+      if (err.message.includes("401")) {
+        n8nSessionCookie = null;
+        cookie = await n8nLogin();
+        result = await n8nInternalRequest("POST", runPath, runBody, cookie);
+      } else {
+        throw err;
+      }
+    }
+
+    const executionId = result.body?.data?.executionId;
+    sendLog(
+      "system",
+      `[시스템] 워크플로우 #${id} 실행됨 (Internal API)${executionId ? ` [execution: ${executionId}]` : ""}`
+    );
+    return { success: true, executionId };
   } catch (error) {
-    sendLog("system", `[시스템] 워크플로우 실행 실패: ${error.message}`);
+    sendLog("system", `[에러] 워크플로우 실행 실패: ${error.message}`);
     return { success: false, error: error.message };
   }
+}
+
+function openWorkflowInEditor(id) {
+  shell.openExternal(`http://localhost:5678/workflow/${id}`);
 }
 
 // ==================== IPC 핸들러 ====================
@@ -415,8 +578,7 @@ function setupIpcHandlers() {
   ipcMain.handle("start-service", async (_, name) => {
     try {
       if (name === "n8n") await startN8n();
-      else if (name === "order") await startPm2();
-      else if (name === "tracking") await startPm2();
+      else await startService(name);
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -426,7 +588,7 @@ function setupIpcHandlers() {
   ipcMain.handle("stop-service", async (_, name) => {
     try {
       if (name === "n8n") await stopN8n();
-      else if (name === "order" || name === "tracking") await stopPm2();
+      else await stopService(name);
       return { success: true };
     } catch (error) {
       return { success: false, error: error.message };
@@ -438,10 +600,8 @@ function setupIpcHandlers() {
       if (name === "n8n") {
         await stopN8n();
         await startN8n();
-      } else if (name === "order") {
-        await restartOrder();
-      } else if (name === "tracking") {
-        await restartTracking();
+      } else {
+        await restartService(name);
       }
       return { success: true };
     } catch (error) {
@@ -507,6 +667,7 @@ function setupIpcHandlers() {
   // 워크플로우
   ipcMain.handle("get-workflows", getWorkflows);
   ipcMain.handle("execute-workflow", (_, id) => executeWorkflow(id));
+  ipcMain.handle("open-workflow", (_, id) => openWorkflowInEditor(id));
 
   // 설정
   ipcMain.handle("get-config", () => loadConfig());
@@ -527,6 +688,7 @@ function createWindow() {
     minWidth: 800,
     minHeight: 600,
     title: "포장보스 자동화 관리자",
+    icon: path.join(LAUNCHER_ROOT, "assets", "icon.ico"),
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
