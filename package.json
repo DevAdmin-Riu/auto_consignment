@@ -24,10 +24,10 @@
     "docker:recreate": "docker compose -f ./docker-compose.yml down && docker compose -f ./docker-compose.yml up -d",
     "docker:logs": "docker logs -f n8n",
     "docker:open": "open -a Docker",
-    "interception:install": "powershell -Command \"Start-Process -FilePath 'temp/interception/Interception/command line installer/install-interception.exe' -ArgumentList '/install' -Verb RunAs -Wait\"",
-    "interception:uninstall": "powershell -Command \"Start-Process -FilePath 'temp/interception/Interception/command line installer/install-interception.exe' -ArgumentList '/uninstall' -Verb RunAs -Wait\"",
-    "bluetooth:fix": "powershell -ExecutionPolicy Bypass -File temp/fix_bluetooth.ps1",
-    "keyboard:fix": "powershell -ExecutionPolicy Bypass -File temp/fix_keyboard.ps1"
+    "interception:keyboard-on": "powershell -Command \"Start-Process powershell -ArgumentList '-Command', 'Set-ItemProperty -Path ''HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E96B-E325-11CE-BFC1-08002BE10318}'' -Name UpperFilters -Value @(''keyboard'',''kbdclass''); Write-Host ''키보드 필터 설치 완료. 다시 시작 필요.''' -Verb RunAs -Wait\"",
+    "interception:keyboard-off": "powershell -Command \"Start-Process powershell -ArgumentList '-Command', 'Set-ItemProperty -Path ''HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E96B-E325-11CE-BFC1-08002BE10318}'' -Name UpperFilters -Value @(''kbdclass''); Write-Host ''키보드 필터 제거 완료. 다시 시작 필요.''' -Verb RunAs -Wait\"",
+    "interception:mouse-off": "powershell -Command \"Start-Process powershell -ArgumentList '-Command', 'Set-ItemProperty -Path ''HKLM:\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E96F-E325-11CE-BFC1-08002BE10318}'' -Name UpperFilters -Value @(''mouclass''); Write-Host ''마우스 필터 제거 완료. 다시 시작 필요.''' -Verb RunAs -Wait\"",
+    "interception:status": "powershell -Command \"Write-Host '키보드:'; reg query 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E96B-E325-11CE-BFC1-08002BE10318}' /v UpperFilters; Write-Host '마우스:'; reg query 'HKLM\\SYSTEM\\CurrentControlSet\\Control\\Class\\{4D36E96F-E325-11CE-BFC1-08002BE10318}' /v UpperFilters\""
   },
   "keywords": [],
   "author": "",
