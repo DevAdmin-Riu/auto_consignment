@@ -167,8 +167,53 @@ async function getAllStatus() {
 
 // ==================== 서비스 제어 ====================
 
+/**
+ * Docker Desktop 실행 여부 확인 및 자동 시작
+ */
+async function ensureDockerRunning() {
+  try {
+    await runCommand("docker", ["info"]);
+    return; // Docker가 이미 실행 중
+  } catch (e) {
+    // Docker가 실행되지 않음
+  }
+
+  sendLog("system", "[시스템] Docker Desktop이 꺼져있어 자동 시작합니다...");
+
+  // Docker Desktop 실행
+  try {
+    spawn("cmd /c start \"\" \"C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe\"", {
+      shell: true,
+      windowsHide: true,
+      detached: true,
+      stdio: "ignore",
+    }).unref();
+  } catch (e) {
+    sendLog("system", "[시스템] Docker Desktop 실행 실패: " + e.message);
+    throw new Error("Docker Desktop을 시작할 수 없습니다. 수동으로 실행해주세요.");
+  }
+
+  // Docker 준비될 때까지 대기 (최대 120초)
+  sendLog("system", "[시스템] Docker Desktop 시작 대기 중...");
+  for (let i = 0; i < 40; i++) {
+    await new Promise((r) => setTimeout(r, 3000));
+    try {
+      await runCommand("docker", ["info"]);
+      sendLog("system", "[시스템] Docker Desktop 준비 완료");
+      return;
+    } catch (e) {
+      if (i % 5 === 4) {
+        sendLog("system", `[시스템] Docker Desktop 대기 중... (${(i + 1) * 3}초)`);
+      }
+    }
+  }
+
+  throw new Error("Docker Desktop 시작 시간 초과 (120초). 수동으로 실행해주세요.");
+}
+
 async function startN8n() {
   sendLog("system", "[시스템] n8n 컨테이너 시작 중...");
+  await ensureDockerRunning();
   await runCommand("docker", [
     "compose",
     "-f",
