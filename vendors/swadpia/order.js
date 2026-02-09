@@ -13,7 +13,7 @@
  *    - 수량 설정 (openMallQtyPerUnit 적용)
  *    - 파일 업로드
  *    - 장바구니 담기
- * 5. 모든 상품 담은 후 → 주문/결제 (ISP/페이북)
+ * 5. 모든 상품 담은 후 → 주문/결제 (신한카드)
  * 6. saveOrderResults 호출
  *
  * 데이터 흐름:
@@ -29,7 +29,7 @@
  *
  * 특이사항:
  * - 디자인 파일 업로드 필수
- * - ISP 결제: automateISPPayment() 사용
+ * - 신한카드 결제 (ISP 미사용)
  */
 
 const { getPage, closeBrowser } = require("../../lib/browser");
@@ -43,7 +43,7 @@ const {
   ERROR_CODES,
 } = require("../../lib/automation-error");
 const { saveOrderResults } = require("../../lib/graphql-client");
-const { automateISPPayment } = require("../../lib/isp-payment");
+// const { automateISPPayment } = require("../../lib/isp-payment"); // ISP 미사용 (신한카드)
 const { getEnv } = require("../config");
 
 // 임시 파일 저장 경로
@@ -1543,12 +1543,12 @@ async function placeOrder(page, shippingAddress) {
     });
     await new Promise((r) => setTimeout(r, 500));
 
-    // 11. 카드 종류 선택 (비씨카드 - 31)
-    console.log("[swadpia] 카드 종류 선택 (비씨)...");
+    // 11. 카드 종류 선택 (신한카드 - 14)
+    console.log("[swadpia] 카드 종류 선택 (신한)...");
     await page.waitForSelector(SELECTORS.paymentPage.cardTypeSelect, {
       timeout: 60000,
     });
-    await page.select(SELECTORS.paymentPage.cardTypeSelect, "31");
+    await page.select(SELECTORS.paymentPage.cardTypeSelect, "14");
     await new Promise((r) => setTimeout(r, 500));
 
     // 12. 전체 동의 버튼 클릭
@@ -1604,7 +1604,7 @@ async function placeOrder(page, shippingAddress) {
       };
     }
 
-    // 결제창 dialog 핸들러 등록 (설치 안내, ISP 안내 등 alert 자동 처리)
+    // 결제창 dialog 핸들러 등록
     const paymentDialogHandler = async (dialog) => {
       console.log(
         "[swadpia] 결제창 Dialog:",
@@ -1618,55 +1618,25 @@ async function placeOrder(page, shippingAddress) {
     // 결제창 로드 대기
     await new Promise((r) => setTimeout(r, 2000));
 
-    // 15. 기타결제 버튼 클릭
-    console.log("[swadpia] 기타결제 버튼 클릭...");
-    const otherPaymentBtn = "#inapppay-dap1 > div.block2 > div.left > a";
+    console.log("[swadpia] 신한카드 결제창 진입 - 수동 결제 대기...");
 
-    try {
-      await paymentPopup.waitForSelector(otherPaymentBtn, { timeout: 60000 });
-      await paymentPopup.click(otherPaymentBtn);
-      console.log("[swadpia] 기타결제 버튼 클릭 완료");
-      await new Promise((r) => setTimeout(r, 3000));
-
-      // 16. 인증서 등록/결제 버튼 클릭
-      console.log("[swadpia] 인증서 등록/결제 버튼 클릭...");
-      const certPaymentBtn =
-        "#inapppay-dap2 > div.block1 > div.left > a.pay-item-s.pay-ctf";
-
-      try {
-        await paymentPopup.waitForSelector(certPaymentBtn, {
-          timeout: 60000,
-        });
-        await paymentPopup.click(certPaymentBtn);
-        console.log("[swadpia] 인증서 등록/결제 버튼 클릭 완료");
-        await new Promise((r) => setTimeout(r, 3000));
-
-        // 17. ISP/페이북 네이티브 윈도우 자동화
-        console.log("[swadpia] ISP 네이티브 결제창 자동화 시작...");
-        const ispResult = await automateISPPayment();
-        if (ispResult.success) {
-          console.log("[swadpia] ISP 결제 자동화 완료");
-        } else {
-          console.log("[swadpia] ISP 결제 자동화 실패:", ispResult.error);
-          if (ispResult.error === "페이북 창을 찾을 수 없음") {
-            page.off("dialog", globalDialogHandler);
-            return {
-              success: false,
-              ispWindowNotFound: true,
-              error: "ISP 결제창을 찾을 수 없음",
-            };
-          }
-          console.log("[swadpia] 수동 결제가 필요합니다.");
-        }
-      } catch (certError) {
-        console.log(
-          "[swadpia] 인증서 등록/결제 버튼 클릭 실패:",
-          certError.message
-        );
-      }
-    } catch (e) {
-      console.log("[swadpia] 기타결제 버튼 클릭 실패:", e.message);
-    }
+    // [ISP 주석처리] 기타결제 → 인증서 → ISP 자동화 (신한카드는 ISP 미사용)
+    // const otherPaymentBtn = "#inapppay-dap1 > div.block2 > div.left > a";
+    // try {
+    //   await paymentPopup.waitForSelector(otherPaymentBtn, { timeout: 60000 });
+    //   await paymentPopup.click(otherPaymentBtn);
+    //   const certPaymentBtn = "#inapppay-dap2 > div.block1 > div.left > a.pay-item-s.pay-ctf";
+    //   await paymentPopup.waitForSelector(certPaymentBtn, { timeout: 60000 });
+    //   await paymentPopup.click(certPaymentBtn);
+    //   const ispResult = await automateISPPayment();
+    //   if (ispResult.success) {
+    //     console.log("[swadpia] ISP 결제 자동화 완료");
+    //   } else {
+    //     console.log("[swadpia] ISP 결제 자동화 실패:", ispResult.error);
+    //   }
+    // } catch (e) {
+    //   console.log("[swadpia] ISP 결제 실패:", e.message);
+    // }
 
     // 결제 완료 대기 (ISP 결제 완료까지 충분히 대기)
     await new Promise((r) => setTimeout(r, 10000));
@@ -1894,9 +1864,9 @@ async function processSwadpiaOrder(
         console.log("[swadpia] 전체 주문하기 진행...");
         orderResult = await placeOrder(page, shippingAddress);
 
-        // 결제창 미출현 또는 ISP 결제창 미출현 시 재시도
-        if (orderResult?.paymentPopupNotFound || orderResult?.ispWindowNotFound) {
-          const reason = orderResult?.paymentPopupNotFound ? "결제창 미출현" : "ISP 결제창 미출현";
+        // 결제창 미출현 시 재시도
+        if (orderResult?.paymentPopupNotFound) {
+          const reason = "결제창 미출현";
           console.log(`[swadpia] ${reason} - 재시도 준비...`);
           paymentRetryCount++;
           if (paymentRetryCount <= MAX_PAYMENT_RETRY) {
