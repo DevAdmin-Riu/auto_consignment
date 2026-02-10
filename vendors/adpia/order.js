@@ -1519,6 +1519,7 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
       console.log("[adpia] ✅ 신한카드 결제 자동화 완료");
     } else {
       console.log("[adpia] ⚠️ 신한카드 결제 자동화 실패:", shinhanResult.error);
+      return { success: false, message: `신한카드 결제 실패: ${shinhanResult.error}` };
     }
 
     // 결제 완료 대기
