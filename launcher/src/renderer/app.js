@@ -5,6 +5,16 @@ let logs = []; // { source, message }
 const MAX_LOGS = 500;
 let wfConfigItems = []; // 설정 모달에서 사용하는 워크플로우 목록 (임시)
 
+// 협력사 목록 (n8n 미들웨어 노드의 completeVendorList와 동일)
+const VENDOR_LIST = [
+  { key: "쿠팡", label: "쿠팡" },
+  { key: "성원애드피아", label: "성원애드피아" },
+  { key: "위탁전용_임시협력사", label: "네이버" },
+  { key: "배민상회", label: "배민상회" },
+  { key: "냅킨코리아", label: "냅킨코리아" },
+  { key: "애드피아몰", label: "애드피아몰" },
+];
+
 // ==================== 초기화 ====================
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -157,12 +167,16 @@ async function loadWorkflows() {
       return;
     }
 
+    // vendor-bar 항상 표시
+    renderVendorBar(true, config);
+
     list.innerHTML = "";
     for (const wf of displayList) {
       const card = document.createElement("div");
       card.className = "workflow-card";
       const orderHtml = wf.order > 0 ? `<span class="wf-order">${wf.order}.</span>` : "";
       const descHtml = wf.description ? `<div class="wf-desc">${wf.description}</div>` : "";
+
       card.innerHTML = `
         <div class="workflow-card-header">
           <span class="wf-status ${wf.active ? "active" : ""}"></span>
@@ -172,11 +186,40 @@ async function loadWorkflows() {
         ${descHtml}
         <button class="btn btn-sm btn-start" data-wf-id="${wf.id}">실행</button>
       `;
+
       list.appendChild(card);
     }
   } catch (e) {
     list.innerHTML = `<div class="placeholder">워크플로우 로드 실패: ${e.message}</div>`;
   }
+}
+
+function renderVendorBar(show, config) {
+  const bar = document.getElementById("vendor-bar");
+  if (!show) {
+    bar.style.display = "none";
+    return;
+  }
+
+  bar.style.display = "flex";
+  const chipsContainer = document.getElementById("vendor-chips");
+
+  // 이전 저장된 선택 복원 (워크플로우 ID 무관, 글로벌)
+  const savedVendors = config.vendorSelections?.global || VENDOR_LIST.map((v) => v.key);
+  const allChecked = savedVendors.length >= VENDOR_LIST.length;
+
+  let html = `<label class="vendor-chip-all ${allChecked ? "checked" : ""}">
+    <input type="checkbox" id="vendor-all-check" ${allChecked ? "checked" : ""}><span>전체</span>
+  </label>`;
+
+  for (const vendor of VENDOR_LIST) {
+    const checked = savedVendors.includes(vendor.key);
+    html += `<label class="vendor-chip ${checked ? "checked" : ""}">
+      <input type="checkbox" data-vendor-key="${vendor.key}" ${checked ? "checked" : ""}><span>${vendor.label}</span>
+    </label>`;
+  }
+
+  chipsContainer.innerHTML = html;
 }
 
 // ==================== 워크플로우 설정 (모달) ====================
@@ -346,22 +389,64 @@ function setupEventListeners() {
     }
   });
 
+  // 협력사 체크박스 변경 (vendor-bar)
+  document.getElementById("vendor-chips").addEventListener("change", (e) => {
+    // 전체 선택
+    if (e.target.id === "vendor-all-check") {
+      const checked = e.target.checked;
+      document.querySelectorAll("#vendor-chips input[data-vendor-key]").forEach((cb) => {
+        cb.checked = checked;
+        cb.closest(".vendor-chip").classList.toggle("checked", checked);
+      });
+      e.target.closest(".vendor-chip-all").classList.toggle("checked", checked);
+      return;
+    }
+    // 개별 체크박스
+    const vendorChk = e.target.closest("[data-vendor-key]");
+    if (vendorChk) {
+      vendorChk.closest(".vendor-chip").classList.toggle("checked", vendorChk.checked);
+      // 전체 선택 동기화
+      const allCbs = document.querySelectorAll("#vendor-chips input[data-vendor-key]");
+      const allChecked = Array.from(allCbs).every((cb) => cb.checked);
+      const selectAllCb = document.getElementById("vendor-all-check");
+      selectAllCb.checked = allChecked;
+      selectAllCb.closest(".vendor-chip-all").classList.toggle("checked", allChecked);
+    }
+  });
+
   // 워크플로우 실행 (이벤트 위임)
   document.getElementById("workflow-list").addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-wf-id]");
     if (!btn || btn.disabled) return;
 
     const id = btn.dataset.wfId;
+
+    // 선택된 협력사 읽기
+    const checkedCbs = document.querySelectorAll("#vendor-chips input[data-vendor-key]:checked");
+    const vendors = Array.from(checkedCbs).map((cb) => cb.dataset.vendorKey);
+
+    if (vendors.length === 0) {
+      alert("최소 1개 협력사를 선택하세요");
+      return;
+    }
+
     btn.disabled = true;
     btn.textContent = "실행 중...";
 
     try {
-      const result = await window.api.executeWorkflow(id);
+      // 선택 저장
+      const config = await window.api.getConfig();
+      if (!config.vendorSelections) config.vendorSelections = {};
+      config.vendorSelections.global = vendors;
+      await window.api.saveConfig({ vendorSelections: config.vendorSelections });
+
+      // 워크플로우 실행 (선택된 협력사 전달 → completeVendorList 없으면 자동 스킵)
+      const result = await window.api.executeWorkflow(id, vendors);
       if (!result.success) {
         alert(`실행 실패: ${result.error}`);
       }
-    } catch (e) {
-      alert(`실행 실패: ${e.message}`);
+    } catch (err) {
+      alert(`실행 실패: ${err.message}`);
     } finally {
       btn.disabled = false;
       btn.textContent = "실행";
@@ -475,3 +560,4 @@ function setupEventListeners() {
     }
   });
 }
+

@@ -256,7 +256,10 @@ async function startService(name) {
   sendLog("system", `[시스템] ${name} 서버 시작 중...`);
   await runCommand("npx", ["pm2", "start", "ecosystem.config.cjs", "--only", name]);
   sendLog("system", `[시스템] ${name} 서버 시작됨`);
-  startLogStream("pm2");
+  // 이미 pm2 로그 스트림이 있으면 재시작하지 않음 (중복 방지)
+  if (!logProcesses.pm2) {
+    startLogStream("pm2");
+  }
 }
 
 async function stopService(name) {
@@ -350,7 +353,11 @@ function startLogStream(type) {
 function stopLogStream(type) {
   if (logProcesses[type]) {
     try {
-      logProcesses[type].kill();
+      // Windows에서 shell 자식 프로세스까지 전부 종료 (프로세스 트리 kill)
+      spawn("taskkill", ["/F", "/T", "/PID", String(logProcesses[type].pid)], {
+        shell: true,
+        windowsHide: true,
+      });
     } catch (e) {
       // ignore
     }
@@ -522,10 +529,102 @@ async function getWorkflows() {
   }
 }
 
-async function executeWorkflow(id) {
+async function pollExecutionStatus(workflowId, executionId) {
+  const MAX_POLL = 120; // 최대 10분 (5초 간격 × 120회)
+  const POLL_INTERVAL = 5000;
+
+  for (let i = 0; i < MAX_POLL; i++) {
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL));
+    try {
+      const exec = await n8nApiRequest("GET", `/executions/${executionId}`);
+      const status = exec?.status || exec?.data?.status;
+      const finished = exec?.finished ?? exec?.data?.finished;
+
+      if (status === "success" || finished === true) {
+        sendLog(
+          "system",
+          `[시스템] 워크플로우 #${workflowId} 실행 완료 ✔ [execution: ${executionId}]`
+        );
+        return;
+      }
+      if (status === "error" || status === "crashed") {
+        const errMsg = exec?.data?.resultData?.error?.message || "알 수 없는 에러";
+        sendLog(
+          "system",
+          `[에러] 워크플로우 #${workflowId} 실행 실패: ${errMsg} [execution: ${executionId}]`
+        );
+        return;
+      }
+      // status = "running" / "waiting" / "new" → 계속 폴링
+    } catch (err) {
+      // 조회 실패해도 폴링 계속 (일시적 네트워크 오류 등)
+      console.error(`Execution ${executionId} poll error:`, err.message);
+    }
+  }
+
+  sendLog(
+    "system",
+    `[시스템] 워크플로우 #${workflowId} 실행 상태 추적 시간 초과 (10분) [execution: ${executionId}]`
+  );
+}
+
+async function updateWorkflowVendors(id, vendors) {
+  if (!vendors || vendors.length === 0) return;
+
+  sendLog("system", `[시스템] 워크플로우 #${id} 협력사 필터 업데이트: ${vendors.join(", ")}`);
+
+  const workflow = await n8nApiRequest("GET", `/workflows/${id}`);
+  if (!workflow || !workflow.nodes) {
+    throw new Error("워크플로우 데이터를 가져올 수 없습니다");
+  }
+
+  // completeVendorList가 포함된 Code 노드 찾기
+  const codeNode = workflow.nodes.find(
+    (n) =>
+      (n.type === "n8n-nodes-base.code" || n.type === "n8n-nodes-base.function") &&
+      n.parameters?.jsCode?.includes("completeVendorList")
+  );
+
+  if (!codeNode) {
+    sendLog("system", `[시스템] completeVendorList Code 노드를 찾을 수 없어 필터 미적용`);
+    return;
+  }
+
+  // completeVendorList 배열을 선택된 협력사로 교체
+  const vendorArrayStr = JSON.stringify(vendors);
+  const originalCode = codeNode.parameters.jsCode;
+  const updatedCode = originalCode.replace(
+    /const\s+completeVendorList\s*=\s*\[[\s\S]*?\];/,
+    `const completeVendorList = ${vendorArrayStr};`
+  );
+
+  if (updatedCode === originalCode) {
+    sendLog("system", `[시스템] completeVendorList 패턴 매칭 실패, 필터 미적용`);
+    return;
+  }
+
+  codeNode.parameters.jsCode = updatedCode;
+
+  // 워크플로우 저장 (PUT) - n8n API가 허용하는 필드만 전송
+  const updateBody = {
+    name: workflow.name,
+    nodes: workflow.nodes,
+    connections: workflow.connections,
+    settings: workflow.settings || {},
+  };
+  await n8nApiRequest("PUT", `/workflows/${id}`, updateBody);
+  sendLog("system", `[시스템] 워크플로우 #${id} 협력사 필터 적용 완료`);
+}
+
+async function executeWorkflow(id, vendors) {
   sendLog("system", `[시스템] 워크플로우 #${id} 실행 시작...`);
 
   try {
+    // 협력사 필터가 있으면 워크플로우 Code 노드 업데이트
+    if (vendors && vendors.length > 0) {
+      await updateWorkflowVendors(id, vendors);
+    }
+
     // 방법 1: Public API 실행 엔드포인트 (n8n 최신 버전)
     try {
       const result = await n8nApiRequest("POST", `/workflows/${id}/execute`);
@@ -534,6 +633,9 @@ async function executeWorkflow(id) {
         "system",
         `[시스템] 워크플로우 #${id} 실행됨 (Public API)${executionId ? ` [execution: ${executionId}]` : ""}`
       );
+      if (executionId) {
+        pollExecutionStatus(id, executionId).catch(() => {});
+      }
       return { success: true, executionId };
     } catch (pubErr) {
       // 404/405 = 엔드포인트 미지원 → Internal API로 fallback
@@ -581,6 +683,9 @@ async function executeWorkflow(id) {
       "system",
       `[시스템] 워크플로우 #${id} 실행됨 (Internal API)${executionId ? ` [execution: ${executionId}]` : ""}`
     );
+    if (executionId) {
+      pollExecutionStatus(id, executionId).catch(() => {});
+    }
     return { success: true, executionId };
   } catch (error) {
     sendLog("system", `[에러] 워크플로우 실행 실패: ${error.message}`);
@@ -711,7 +816,7 @@ function setupIpcHandlers() {
 
   // 워크플로우
   ipcMain.handle("get-workflows", getWorkflows);
-  ipcMain.handle("execute-workflow", (_, id) => executeWorkflow(id));
+  ipcMain.handle("execute-workflow", (_, id, vendors) => executeWorkflow(id, vendors));
   ipcMain.handle("open-workflow", (_, id) => openWorkflowInEditor(id));
 
   // 설정
