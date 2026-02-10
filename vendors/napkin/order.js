@@ -885,6 +885,18 @@ async function processNapkinOrder(
       await delay(2000);
     }
 
+    // 결제 재시도 루프 (빈 창 등 결제 실패 시 장바구니에서 재시도)
+    let paymentCompleted = false;
+    const MAX_PAYMENT_RETRIES = 5;
+
+    for (let paymentAttempt = 0; paymentAttempt < MAX_PAYMENT_RETRIES; paymentAttempt++) {
+      if (paymentAttempt > 0) {
+        console.log(`\n[napkin] === 결제 재시도 (${paymentAttempt}/${MAX_PAYMENT_RETRIES - 1}) ===`);
+        console.log("[napkin] 장바구니로 이동...");
+        await page.goto(SELECTORS.cart.url, { waitUntil: "networkidle2", timeout: 30000 });
+        await delay(2000);
+      }
+
     // 5. 전체상품 주문하기 버튼 클릭
     console.log("[napkin] 전체상품 주문하기 버튼 클릭...");
     await delay(1500); // 페이지 로딩 대기
@@ -1420,6 +1432,7 @@ async function processNapkinOrder(
                                 });
                                 if (paymentBtnClicked) {
                                   console.log("[napkin] ✅ 결제요청 버튼 클릭 완료");
+                                  paymentCompleted = true;
                                 }
                               }
                             }
@@ -1454,6 +1467,46 @@ async function processNapkinOrder(
       }
     } else {
       console.log("[napkin] ⚠️ 결제하기 버튼을 찾을 수 없음");
+    }
+
+      // 결제 완료 확인
+      if (paymentCompleted) {
+        console.log("[napkin] ✅ 결제 프로세스 완료");
+        break;
+      }
+
+      if (paymentAttempt < MAX_PAYMENT_RETRIES - 1) {
+        console.log("[napkin] ⚠️ 결제 미완료 (빈 창 등) - 20초 대기 후 장바구니에서 재시도...");
+        await delay(20000);
+      }
+    } // end of payment retry loop
+
+    if (!paymentCompleted) {
+      console.log("[napkin] ❌ 결제 최대 재시도 초과 - 실패 처리");
+
+      if (page._napkinDialogHandler) {
+        page.off("dialog", page._napkinDialogHandler);
+        delete page._napkinDialogHandler;
+        console.log("[napkin] dialog 핸들러 제거 완료");
+      }
+
+      errorCollector.addError("PAYMENT", "PAYMENT_FAILED", "신한카드 결제 실패 (빈 창 등) - 최대 재시도 초과", { purchaseOrderId });
+      await saveOrderResults(authToken, {
+        purchaseOrderId,
+        products: [],
+        priceMismatches: [],
+        optionFailedProducts: [],
+        automationErrors: errorCollector.getErrors(),
+        poLineIds,
+        success: false,
+        vendor: "napkin",
+      });
+      return res.json({
+        success: false,
+        vendor: vendor.name,
+        message: "신한카드 결제 실패 (빈 창 등) - 최대 재시도 초과",
+        automationErrors: errorCollector.getErrors(),
+      });
     }
 
     // 결제 완료 대기
