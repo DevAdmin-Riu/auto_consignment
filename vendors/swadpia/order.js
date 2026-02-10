@@ -859,21 +859,20 @@ async function addProductsToCart(page, products, downloadedFiles) {
                   );
                 }
 
-                // 진행률 동일 여부 체크 (100% 미만일 때만)
-                if (uploadStatus < 100) {
-                  if (uploadStatus === lastProgress) {
-                    sameProgressCount++;
-                    // 30초 동안 진행률 동일하면 재시도 필요
-                    if (sameProgressCount >= 30) {
-                      console.log(
-                        `[swadpia] 업로드 멈춤 감지 (${uploadStatus}%에서 30초간 정지)`
-                      );
-                      needRetry = true;
-                      break;
-                    }
-                  } else {
-                    sameProgressCount = 0;
+                // 진행률 동일 여부 체크
+                if (uploadStatus === lastProgress) {
+                  sameProgressCount++;
+                  // 100% 미만: 30초 정지 시 재시도, 100%: 20초간 장바구니 이동 안되면 재시도
+                  const stuckThreshold = uploadStatus >= 100 ? 20 : 30;
+                  if (sameProgressCount >= stuckThreshold) {
+                    console.log(
+                      `[swadpia] 업로드 멈춤 감지 (${uploadStatus}%에서 ${stuckThreshold}초간 정지)`
+                    );
+                    needRetry = true;
+                    break;
                   }
+                } else {
+                  sameProgressCount = 0;
                 }
 
                 lastProgress = uploadStatus;
@@ -1521,6 +1520,7 @@ async function placeOrder(page, shippingAddress) {
 
     // 9. 주문확인 버튼 클릭 (최종 주문)
     console.log("[swadpia] 주문확인 버튼 클릭...");
+    await new Promise((r) => setTimeout(r, 1000));
 
     await waitAndClick(page, SELECTORS.orderForm.submitOrderBtn, {
       timeout: 60000,
@@ -1635,6 +1635,14 @@ async function placeOrder(page, shippingAddress) {
       console.log("[swadpia] ✅ 신한카드 결제 자동화 완료");
     } else {
       console.log("[swadpia] ⚠️ 신한카드 결제 자동화 실패:", shinhanResult.error);
+      page.off("dialog", globalDialogHandler);
+      return {
+        success: false,
+        paymentPopupNotFound: true,
+        error: `신한카드 결제 실패: ${shinhanResult.error}`,
+        orderPageUrl,
+        paymentPageUrl,
+      };
     }
 
     // 결제 완료 대기
