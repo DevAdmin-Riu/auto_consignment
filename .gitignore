@@ -49,3 +49,10 @@ temp/
 *.ps1
 
 n8n-data.zip
+
+# 자동 생성 파일 (launcher에서 generateComposeFile()로 생성)
+docker-compose-window.yml
+
+# 런처 로컬 설정 (민감정보 포함)
+launcher/launcher-config.json
+launcher/environments.json

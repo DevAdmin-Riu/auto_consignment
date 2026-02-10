@@ -1,0 +1,8 @@
+{
+  "environment": "production",
+  "n8nApiKey": "",
+  "n8nEmail": "",
+  "n8nPassword": "",
+  "visibleWorkflows": [],
+  "vendorSelections": {}
+}
