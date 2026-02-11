@@ -416,7 +416,7 @@ async function processCoupangOrder(
       automationErrors: errorCollector.getErrors(),
       poLineIds,
       success: false,
-        vendor: "coupang",
+      vendor: "coupang",
     });
     return res.json({
       success: false,
@@ -526,7 +526,7 @@ async function processCoupangOrder(
               automationErrors: errorCollector.getErrors(),
               poLineIds,
               success: false,
-        vendor: "coupang",
+              vendor: "coupang",
             });
             return res.json({
               success: false,
@@ -1018,7 +1018,7 @@ async function processCoupangOrder(
       automationErrors: errorCollector.getErrors(),
       poLineIds,
       success: false,
-        vendor: "coupang",
+      vendor: "coupang",
     });
   }
 

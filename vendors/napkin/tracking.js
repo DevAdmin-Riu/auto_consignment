@@ -131,7 +131,7 @@ async function findTrackingNumber(page, openMallOrderNumber) {
     return { trackingNumber: null, carrier: null, status: "tracking_not_found" };
   } catch (error) {
     console.error(`[napkin 송장조회] ${openMallOrderNumber} 조회 실패:`, error.message);
-    return null;
+    return { trackingNumber: null, carrier: null, status: "error", error: error.message };
   }
 }
 

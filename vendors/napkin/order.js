@@ -1633,7 +1633,7 @@ async function processNapkinOrder(
       automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : [],
       poLineIds,
       success: false,
-        vendor: "napkin",
+      vendor: "napkin",
     });
     return res.json({
       success: false,

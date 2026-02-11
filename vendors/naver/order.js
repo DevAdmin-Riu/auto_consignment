@@ -7,9 +7,10 @@
  * 1. 상품 페이지 이동
  * 2. 옵션 선택 (openMallOptions - 2D 구조 지원)
  * 3. 수량 설정 (openMallQtyPerUnit 적용)
- * 4. 장바구니 담기
- * 5. 모든 상품 담은 후 → 주문/결제 (네이버페이)
- * 6. saveOrderResults 호출
+ * 4. 추가상품 옵션 선택 (openMallAdditionalOptions)
+ * 5. 장바구니 담기
+ * 6. 모든 상품 담은 후 → 주문/결제 (네이버페이)
+ * 7. saveOrderResults 호출
  *
  * 데이터 흐름:
  * - 입력: { products, shippingAddress, poLineIds, purchaseOrderId }
@@ -1640,13 +1641,23 @@ async function processNaverOrder(
       });
 
       if (!addressResult.success) {
-        console.log("[naver] 배송지 선택 실패 - 테스트 중지점");
+        console.log("[naver] 배송지 선택 실패");
         errorCollector.addError(
           ORDER_STEPS.ORDER_PLACEMENT,
           ERROR_CODES.ELEMENT_NOT_FOUND,
           `배송지 선택 실패: ${addressResult.reason}`,
           { purchaseOrderId }
         );
+        await saveOrderResults(authToken, {
+          purchaseOrderId,
+          products: addedProducts,
+          priceMismatches: [],
+          optionFailedProducts: [],
+          automationErrors: errorCollector.getErrors(),
+          poLineIds,
+          success: false,
+          vendor: "naver",
+        });
         return res.json({
           success: false,
           message: `배송지 선택 실패: ${addressResult.reason}`,
@@ -1677,6 +1688,16 @@ async function processNaverOrder(
           `통관 처리 실패: ${customsResult.reason}`,
           { purchaseOrderId }
         );
+        await saveOrderResults(authToken, {
+          purchaseOrderId,
+          products: addedProducts,
+          priceMismatches: [],
+          optionFailedProducts: [],
+          automationErrors: errorCollector.getErrors(),
+          poLineIds,
+          success: false,
+          vendor: "naver",
+        });
         return res.json({
           success: false,
           message: `통관 처리 실패: ${customsResult.reason}`,
@@ -1688,7 +1709,7 @@ async function processNaverOrder(
       }
     }
 
-    // 7. 결제하기 버튼 클릭
+    // 7. 결제하기 버튼 클릭 + 네이버페이 결제
     await delay(2000);
     const paymentBtnSelector = "#root > div > div.DoubleTemplate_container__5LG6a > div.SubmitButton_article__\\+7E3M.SubmitButton_type-pc__wc4Vy.SubmitButton_type-floating__VRJYZ.SubmitButton_floating__Plj-\\+ > div > div > div.SubmitButton_area-button__1RiID > button";
 
@@ -1712,7 +1733,7 @@ async function processNaverOrder(
         setTimeout(() => resolve(null), 10000);
       });
 
-      // 8. 네이버페이 결제 팝업 대기
+      // 7-1. 네이버페이 결제 팝업 대기
       console.log("[naver] 네이버페이 결제 팝업 대기...");
       const paymentPopup = await paymentPopupPromise;
 
@@ -1724,6 +1745,16 @@ async function processNaverOrder(
           "결제 팝업이 열리지 않음",
           { purchaseOrderId }
         );
+        await saveOrderResults(authToken, {
+          purchaseOrderId,
+          products: addedProducts,
+          priceMismatches: [],
+          optionFailedProducts: [],
+          automationErrors: errorCollector.getErrors(),
+          poLineIds,
+          success: false,
+          vendor: "naver",
+        });
         return res.json({
           success: false,
           message: "결제 팝업이 열리지 않음",
@@ -1737,7 +1768,7 @@ async function processNaverOrder(
       console.log("[naver] 결제 팝업 열림, 키패드 로딩 대기...");
       await delay(3000);
 
-      // 7. PIN 입력 (OCR 사용) - 팝업에서 실행
+      // 7-2. PIN 입력 (OCR 사용) - 팝업에서 실행
       const pin = vendor.naverPayPin;
       if (!pin) {
         console.log("[naver] 네이버페이 PIN이 설정되지 않음");
@@ -1747,6 +1778,16 @@ async function processNaverOrder(
           "네이버페이 PIN이 설정되지 않음 (NAVER_PAY_PIN)",
           { purchaseOrderId }
         );
+        await saveOrderResults(authToken, {
+          purchaseOrderId,
+          products: addedProducts,
+          priceMismatches: [],
+          optionFailedProducts: [],
+          automationErrors: errorCollector.getErrors(),
+          poLineIds,
+          success: false,
+          vendor: "naver",
+        });
         return res.json({
           success: false,
           message: "네이버페이 PIN이 설정되지 않음 (NAVER_PAY_PIN)",
@@ -1771,7 +1812,7 @@ async function processNaverOrder(
         console.log("[naver] 네이버페이 비밀번호 입력 완료");
         await delay(5000); // 결제 처리 및 완료 페이지 로딩 대기
 
-        // 8. 주문번호 추출
+        // 7-3. 주문번호 추출
         let orderNumber = null;
         const orderNumberSelectors = [
           "button.OrderNumber_button-number__kM0LA",
@@ -1911,7 +1952,7 @@ async function processNaverOrder(
           automationErrors: errorCollector.getErrors(),
           poLineIds,
           success: false,
-        vendor: "naver",
+          vendor: "naver",
         });
         return res.json({
           success: false,
@@ -1929,33 +1970,25 @@ async function processNaverOrder(
         { purchaseOrderId }
       );
       steps.push({ step: "payment_button", success: false, reason: "button_not_found" });
+      await saveOrderResults(authToken, {
+        purchaseOrderId,
+        products: addedProducts,
+        priceMismatches: [],
+        optionFailedProducts: [],
+        automationErrors: errorCollector.getErrors(),
+        poLineIds,
+        success: false,
+        vendor: "naver",
+      });
+      return res.json({
+        success: false,
+        message: "결제하기 버튼을 찾을 수 없음",
+        steps,
+        addedProducts,
+        purchaseOrderId,
+        automationErrors: errorCollector.getErrors(),
+      });
     }
-
-    // 9. 결제하기 버튼을 못 찾은 경우
-    console.log("[naver] 결제 프로세스 완료 실패");
-
-    await saveOrderResults(authToken, {
-      purchaseOrderId,
-      products: addedProducts,
-      priceMismatches: [],
-      optionFailedProducts: [],
-      automationErrors: errorCollector.getErrors(),
-      poLineIds,
-      success: false, // 결제 실패이므로 대행접수/출고 안함
-      vendor: "naver",
-    });
-    return res.json({
-      success: true,
-      orderNumber: null,
-      message: "장바구니 담기 완료 - 결제는 수동 처리 필요",
-      steps,
-      addedProducts,
-      purchaseOrderId,
-      cartUrl: "https://order.pay.naver.com/basket",
-      shippingAddress,
-      paymentMethod: "naver_pay",
-      automationErrors: errorCollector.getErrors(),
-    });
   } catch (error) {
     console.error("[naver] 주문 처리 실패:", error);
 
@@ -1980,7 +2013,7 @@ async function processNaverOrder(
       automationErrors: errorCollector.getErrors(),
       poLineIds,
       success: false,
-        vendor: "naver",
+      vendor: "naver",
     });
     return res.json({
       success: false,

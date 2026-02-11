@@ -167,7 +167,7 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
           return {
             trackingNumber,
             carrier,
-            pageText: allText.substring(0, 1000), // 디버깅용
+            pageText: allText.substring(0, 1000),
           };
         });
 
@@ -195,7 +195,6 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
             `[baemin 송장조회] ${openMallOrderNumber}: 송장번호를 찾을 수 없음`,
           );
 
-          // 디버깅: 페이지 텍스트 일부 출력
           if (trackingInfo.pageText) {
             console.log(
               `[baemin 송장조회] 페이지 텍스트: ${trackingInfo.pageText.substring(0, 300)}...`,

@@ -53,7 +53,7 @@ async function getSwadpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
       console.log("[swadpia 송장조회] 로그인 완료");
     } catch (loginError) {
       errorCollector.addError(TRACKING_STEPS.LOGIN, ERROR_CODES.LOGIN_FAILED, loginError.message);
-      throw loginError;
+      return { results, automationErrors: errorCollector.getErrors() };
     }
 
     // 2. 주문완료/배송조회 페이지로 이동
@@ -128,7 +128,8 @@ async function getSwadpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
     return { results, automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined };
   } catch (error) {
     console.error("[swadpia 송장조회] 전체 에러:", error);
-    return { results, automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined };
+    errorCollector.addError(TRACKING_STEPS.EXTRACTION, ERROR_CODES.UNEXPECTED_ERROR, error.message);
+    return { results, automationErrors: errorCollector.getErrors() };
   }
 }
 

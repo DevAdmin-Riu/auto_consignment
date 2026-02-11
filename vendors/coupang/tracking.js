@@ -23,7 +23,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * @returns {Array} 조회 결과 배열 [{ openMallOrderNumber, trackingNumber, carrier }, ...]
  */
 async function getCoupangTrackingNumbers(page, vendor, openMallOrderNumbers) {
-  console.log(`[송장조회] 시작: ${openMallOrderNumbers.length}건`);
+  console.log(`[coupang 송장조회] 시작: ${openMallOrderNumbers.length}건`);
 
   const results = [];
   const errorCollector = createTrackingErrorCollector("coupang");
@@ -31,12 +31,12 @@ async function getCoupangTrackingNumbers(page, vendor, openMallOrderNumbers) {
   try {
     // 1. 로그인 확인/처리
     await coupangLogin(page, vendor);
-    console.log("[송장조회] 로그인 완료");
+    console.log("[coupang 송장조회] 로그인 완료");
 
     // 2. 각 주문번호에 대해 송장번호 조회
     for (const openMallOrderNumber of openMallOrderNumbers) {
       try {
-        console.log(`[송장조회] 주문번호 ${openMallOrderNumber} 검색 중...`);
+        console.log(`[coupang 송장조회] 주문번호 ${openMallOrderNumber} 검색 중...`);
 
         const trackingInfo = await findTrackingNumber(page, openMallOrderNumber);
 
@@ -47,12 +47,12 @@ async function getCoupangTrackingNumbers(page, vendor, openMallOrderNumbers) {
             trackingNumber: trackingInfo.trackingNumber,
             carrier,
           });
-          console.log(`[송장조회] ${openMallOrderNumber} → ${trackingInfo.trackingNumber} (${carrier})`);
+          console.log(`[coupang 송장조회] ${openMallOrderNumber} → ${trackingInfo.trackingNumber} (${carrier})`);
         } else {
-          console.log(`[송장조회] ${openMallOrderNumber} → 송장번호 없음`);
+          console.log(`[coupang 송장조회] ${openMallOrderNumber} → 송장번호 없음`);
         }
       } catch (error) {
-        console.error(`[송장조회] ${openMallOrderNumber} 에러:`, error.message);
+        console.error(`[coupang 송장조회] ${openMallOrderNumber} 에러:`, error.message);
         errorCollector.addError(TRACKING_STEPS.EXTRACTION, ERROR_CODES.EXTRACTION_FAILED, error.message, { openMallOrderNumber });
       }
     }
@@ -62,7 +62,7 @@ async function getCoupangTrackingNumbers(page, vendor, openMallOrderNumbers) {
       automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
     };
   } catch (error) {
-    console.error("[송장조회] 전체 에러:", error);
+    console.error("[coupang 송장조회] 전체 에러:", error);
     errorCollector.addError(TRACKING_STEPS.LOGIN, ERROR_CODES.LOGIN_FAILED, error.message);
     return {
       results,
@@ -89,7 +89,7 @@ async function findTrackingNumber(page, openMallOrderNumber) {
   try {
     // 1. 주문 상세 페이지로 이동
     const orderUrl = `https://mc.coupang.com/ssr/desktop/order/${openMallOrderNumber}`;
-    console.log(`[송장조회] 주문 페이지 이동: ${orderUrl}`);
+    console.log(`[coupang 송장조회] 주문 페이지 이동: ${orderUrl}`);
 
     await page.goto(orderUrl, {
       waitUntil: "networkidle2",
@@ -100,12 +100,12 @@ async function findTrackingNumber(page, openMallOrderNumber) {
     // 2. 배송 조회 버튼 클릭
     const deliveryBtn = await page.$(SELECTORS.deliveryTrackingBtn);
     if (!deliveryBtn) {
-      console.log(`[송장조회] ${openMallOrderNumber}: 배송 조회 버튼 없음`);
+      console.log(`[coupang 송장조회] ${openMallOrderNumber}: 배송 조회 버튼 없음`);
       return { trackingNumber: null, carrier: null, status: "no_delivery_button" };
     }
 
     await deliveryBtn.click();
-    console.log(`[송장조회] 배송 조회 버튼 클릭`);
+    console.log(`[coupang 송장조회] 배송 조회 버튼 클릭`);
     await delay(2000);
 
     // 3. 배송 정보 추출 (라벨 기반으로 찾기)
@@ -169,7 +169,7 @@ async function findTrackingNumber(page, openMallOrderNumber) {
 
     if (trackingInfo?.trackingNumber) {
       const deliveryType = trackingInfo.isRocketDelivery ? '[로켓]' : '[일반]';
-      console.log(`[송장조회] ${deliveryType} 찾음: ${trackingInfo.carrier} / ${trackingInfo.trackingNumber}`);
+      console.log(`[coupang 송장조회] ${deliveryType} 찾음: ${trackingInfo.carrier} / ${trackingInfo.trackingNumber}`);
       return {
         trackingNumber: trackingInfo.trackingNumber,
         carrier: trackingInfo.carrier || "알 수 없음",
@@ -177,11 +177,11 @@ async function findTrackingNumber(page, openMallOrderNumber) {
       };
     }
 
-    console.log(`[송장조회] ${openMallOrderNumber}: 송장번호 없음`);
+    console.log(`[coupang 송장조회] ${openMallOrderNumber}: 송장번호 없음`);
     return { trackingNumber: null, carrier: null, status: "tracking_not_found" };
   } catch (error) {
-    console.error(`[송장조회] ${openMallOrderNumber} 조회 실패:`, error.message);
-    return null;
+    console.error(`[coupang 송장조회] ${openMallOrderNumber} 조회 실패:`, error.message);
+    return { trackingNumber: null, carrier: null, status: "error", error: error.message };
   }
 }
 

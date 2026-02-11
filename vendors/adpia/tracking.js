@@ -155,6 +155,7 @@ async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
 
   } catch (error) {
     console.error("[adpia 송장조회] 에러:", error.message);
+    errorCollector.addError(TRACKING_STEPS.EXTRACTION, ERROR_CODES.UNEXPECTED_ERROR, error.message);
   }
 
   console.log(`[adpia 송장조회] 완료: ${results.length}건 조회됨`);

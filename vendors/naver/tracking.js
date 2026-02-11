@@ -191,7 +191,7 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
         );
         errorCollector.addError(
           TRACKING_STEPS.EXTRACTION,
-          null, // 에러 메시지에서 추론
+          ERROR_CODES.EXTRACTION_FAILED,
           error.message,
           { openMallOrderNumber }
         );
