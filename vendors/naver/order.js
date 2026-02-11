@@ -256,9 +256,9 @@ async function getProductPrice(page) {
  * @returns {Object} { success: boolean, reason?: string }
  */
 async function selectSingleOption(page, option) {
-  // 네이버 스마트스토어 옵션 버튼 찾기 (data-shp-contents-type 속성으로 매칭)
+  // 네이버 스마트스토어 옵션 버튼 찾기 (data-shp-contents-type 속성으로 매칭, 클래스명은 빌드마다 변경됨)
   const optionBtn = await page.$(
-    `a._yGBCMWCWu[data-shp-contents-type="${option.title}"]`
+    `a[data-shp-contents-type="${option.title}"]`
   );
 
   if (optionBtn) {
@@ -380,6 +380,59 @@ async function selectOptions(page, openMallOptions, quantity = 1) {
 
   // 2D 구조가 아닌 경우 에러
   return { success: false, reason: "잘못된 옵션 구조: 2D 구조 [{options: [...]}] 형식이어야 합니다" };
+}
+
+/**
+ * 추가상품 옵션 선택
+ * @param {Page} page
+ * @param {Array|string} openMallAdditionalOptions - [{type: "SELECT", title: "...", value: "..."}]
+ * @param {number} quantity - 수량 (메인 상품과 동일)
+ * @returns {Object} { success: boolean, reason?: string }
+ */
+async function selectAdditionalOptions(page, openMallAdditionalOptions, quantity = 1) {
+  if (!openMallAdditionalOptions || openMallAdditionalOptions.length === 0) {
+    return { success: true, skipped: true };
+  }
+
+  let options = openMallAdditionalOptions;
+  if (typeof openMallAdditionalOptions === "string") {
+    try {
+      options = JSON.parse(openMallAdditionalOptions);
+    } catch (e) {
+      return { success: false, reason: `추가옵션 JSON 파싱 실패: ${e.message}` };
+    }
+  }
+
+  if (!options || (Array.isArray(options) && options.length === 0)) {
+    return { success: true, skipped: true };
+  }
+
+  console.log(`[naver] 추가상품 옵션 처리: ${options.length}개`);
+
+  for (let i = 0; i < options.length; i++) {
+    const option = options[i];
+    if (!option || !option.title || !option.value) {
+      return { success: false, reason: `추가옵션 ${i + 1} 데이터 오류: ${JSON.stringify(option)}` };
+    }
+
+    console.log(`[naver] 추가옵션 ${i + 1}: ${option.title} = ${option.value}`);
+    await delay(500);
+
+    const result = await selectSingleOption(page, option);
+    if (!result.success) {
+      return { success: false, reason: `추가옵션 실패: ${result.reason}` };
+    }
+
+    // 추가상품은 prepend로 first-child에 생김 → 수량 설정
+    if (quantity > 1) {
+      console.log(`[naver] 추가상품 수량 설정: ${quantity}개`);
+      await setQuantity(page, quantity);
+      await delay(500);
+    }
+  }
+
+  console.log("[naver] 추가상품 옵션 선택 완료");
+  return { success: true };
 }
 
 /**
@@ -1075,13 +1128,16 @@ async function addToCart(page) {
  * 상품 페이지에서 상품 담기
  */
 async function processProduct(page, product) {
-  const { productUrl, productName, quantity, openMallOptions } = product;
+  const { productUrl, productName, quantity, openMallOptions, openMallAdditionalOptions } = product;
 
   console.log(`\n[naver] 상품 처리: ${productName || productUrl}`);
   console.log(`[naver] URL: ${productUrl}`);
   console.log(`[naver] 수량: ${quantity}`);
   if (openMallOptions) {
     console.log(`[naver] 옵션:`, JSON.stringify(openMallOptions));
+  }
+  if (openMallAdditionalOptions) {
+    console.log(`[naver] 추가옵션:`, JSON.stringify(openMallAdditionalOptions));
   }
 
   // 1. 상품 페이지로 이동
@@ -1128,6 +1184,23 @@ async function processProduct(page, product) {
     await delay(500);
   } else {
     console.log(`[naver] 수량 설정 스킵 (그룹화 옵션에서 이미 처리됨)`);
+  }
+
+  // 4.5. 추가상품 옵션 선택 (메인 옵션/수량 설정 후, 장바구니 담기 전)
+  if (openMallAdditionalOptions) {
+    const additionalResult = await selectAdditionalOptions(page, openMallAdditionalOptions, actualQuantity);
+    if (!additionalResult.success) {
+      console.log(`[naver] ❌ 상품 스킵 (추가옵션 선택 실패): ${additionalResult.reason}`);
+      return {
+        success: false,
+        productName,
+        quantity,
+        openMallPrice: null,
+        priceMismatch: false,
+        optionFailed: true,
+        optionFailReason: additionalResult.reason,
+      };
+    }
   }
 
   // 5. 장바구니에 담기
