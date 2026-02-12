@@ -38,7 +38,7 @@ const {
   ORDER_STEPS,
   ERROR_CODES,
 } = require("../../lib/automation-error");
-const { saveOrderResults } = require("../../lib/graphql-client");
+const { saveOrderResults, createPaymentLogs, calculateExpectedPaymentAmount } = require("../../lib/graphql-client");
 const Tesseract = require("tesseract.js");
 const sharp = require("sharp");
 const path = require("path");
@@ -630,9 +630,22 @@ async function processCoupangOrder(
     }
   }
 
-  // 7. 결제하기 버튼 클릭
-  console.log("Step 7: 결제하기 버튼 클릭...");
+  // 7. 결제금액 파싱 + 결제하기 버튼 클릭
+  console.log("Step 7: 결제금액 파싱 및 결제하기 버튼 클릭...");
+  let actualPaymentAmount = 0;
   try {
+    // 결제금액 파싱 (결제 버튼 클릭 전)
+    try {
+      const amountText = await page.$eval(
+        "#payInfo > div > div.twc-my-4 > div > span:nth-child(2) > span:nth-child(1)",
+        (el) => el.textContent?.trim() || ""
+      );
+      actualPaymentAmount = parseInt(amountText.replace(/[^0-9]/g, ""), 10) || 0;
+      console.log(`[coupang] 결제금액 파싱: ${amountText} → ${actualPaymentAmount}원`);
+    } catch (e) {
+      console.log("[coupang] 결제금액 파싱 실패 (결제 진행에 영향 없음):", e.message);
+    }
+
     await delay(2000);
 
     // 결제하기 버튼 클릭
@@ -1009,6 +1022,21 @@ async function processCoupangOrder(
       success: true,
       vendor: "coupang",
     });
+
+    // 결제 로그 저장
+    if (actualPaymentAmount > 0) {
+      const expectedAmount = calculateExpectedPaymentAmount(products);
+      try {
+        await createPaymentLogs(authToken, [{
+          vendor: "coupang",
+          paymentAmount: actualPaymentAmount,
+          expectedAmount,
+          purchaseOrderId,
+        }]);
+      } catch (e) {
+        console.log("[coupang] 결제 로그 저장 실패 (무시):", e.message);
+      }
+    }
   } else {
     await saveOrderResults(authToken, {
       purchaseOrderId,

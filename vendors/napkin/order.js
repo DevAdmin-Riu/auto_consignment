@@ -35,7 +35,7 @@ const {
   ORDER_STEPS,
   ERROR_CODES,
 } = require("../../lib/automation-error");
-const { saveOrderResults } = require("../../lib/graphql-client");
+const { saveOrderResults, createPaymentLogs, calculateExpectedPaymentAmount } = require("../../lib/graphql-client");
 // const { automateISPPayment } = require("../../lib/isp-payment"); // ISP 미사용 (신한카드)
 const { automateShinhanCardPayment, typeWithInterception } = require("../../lib/shinhan-payment");
 const { getEnv } = require("../config");
@@ -1092,6 +1092,19 @@ async function processNapkinOrder(
       console.log("[napkin] ⚠️ 일반배송 라디오 버튼을 찾을 수 없음 (무시하고 진행)");
     }
 
+    // 결제금액 파싱 (결제 버튼 클릭 전)
+    let actualPaymentAmount = 0;
+    try {
+      const amountText = await page.$eval(
+        "#payment_total_order_sale_price_view",
+        (el) => el.textContent?.trim() || ""
+      );
+      actualPaymentAmount = parseInt(amountText.replace(/[^0-9]/g, ""), 10) || 0;
+      console.log(`[napkin] 결제금액 파싱: ${amountText} → ${actualPaymentAmount}원`);
+    } catch (e) {
+      console.log("[napkin] 결제금액 파싱 실패 (결제 진행에 영향 없음):", e.message);
+    }
+
     // 결제하기 (신한카드)
     console.log("[napkin] 결제하기 버튼 클릭...");
     await delay(1000);
@@ -1576,6 +1589,21 @@ async function processNapkinOrder(
       success: true,
       vendor: "napkin",
     });
+
+    // 결제 로그 저장
+    if (actualPaymentAmount > 0) {
+      const expectedAmount = calculateExpectedPaymentAmount(products);
+      try {
+        await createPaymentLogs(authToken, [{
+          vendor: "napkin",
+          paymentAmount: actualPaymentAmount,
+          expectedAmount,
+          purchaseOrderId,
+        }]);
+      } catch (e) {
+        console.log("[napkin] 결제 로그 저장 실패 (무시):", e.message);
+      }
+    }
 
     // dialog 핸들러 제거 (다른 협력사와 충돌 방지)
     if (page._napkinDialogHandler) {

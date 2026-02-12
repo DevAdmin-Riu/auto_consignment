@@ -47,6 +47,7 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
+  calculateExpectedPaymentAmount,
 } = require("../../lib/graphql-client");
 // const { automateISPPayment } = require("../../lib/isp-payment"); // ISP 미사용 (신한카드)
 const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
@@ -1114,6 +1115,19 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
     console.log("[adpia] 전체 동의 결과:", agreeResult);
     await delay(3000);
 
+    // 13-1. 결제금액 파싱 (결제 버튼 클릭 전)
+    let actualPaymentAmount = 0;
+    try {
+      const amountText = await page.$eval(
+        "#ordersForm > div.cart_menu > div > div.list02 > div.list_menu03 > div > p > span.t3.t6",
+        (el) => el.textContent?.trim() || ""
+      );
+      actualPaymentAmount = parseInt(amountText.replace(/[^0-9]/g, ""), 10) || 0;
+      console.log(`[adpia] 결제금액 파싱: ${amountText} → ${actualPaymentAmount}원`);
+    } catch (e) {
+      console.log("[adpia] 결제금액 파싱 실패 (결제 진행에 영향 없음):", e.message);
+    }
+
     // 14. 결제하기 버튼 클릭
     console.log("[adpia] 14. 결제하기 버튼 클릭...");
     const payBtn = await page.$(SELECTORS.order.payBtn);
@@ -1668,17 +1682,22 @@ async function processAdpiaOrder(
         });
 
         // 결제 성공 시 결제 로그 저장
-        if (orderSuccess && priceInfo.unitPrice > 0) {
-          const paymentAmount = priceInfo.unitPrice * (product.quantity || 1);
-          await createPaymentLogs(authToken, [
-            {
-              vendor: vendor.name,
-              paymentAmount: paymentAmount,
-              purchaseOrderId: purchaseOrderId,
-              orderLineId: product.orderLineIds?.[0] || null,
-            },
-          ]);
-          console.log(`[adpia] 결제 로그 저장: ${paymentAmount}원`);
+        if (orderSuccess && actualPaymentAmount > 0) {
+          const expectedAmount = calculateExpectedPaymentAmount([product]);
+          try {
+            await createPaymentLogs(authToken, [
+              {
+                vendor: vendor.name,
+                paymentAmount: actualPaymentAmount,
+                expectedAmount,
+                purchaseOrderId: purchaseOrderId,
+                orderLineId: product.orderLineIds?.[0] || null,
+              },
+            ]);
+            console.log(`[adpia] 결제 로그 저장: 실제=${actualPaymentAmount}원, 예상=${expectedAmount}원`);
+          } catch (e) {
+            console.log("[adpia] 결제 로그 저장 실패 (무시):", e.message);
+          }
         }
       } catch (error) {
         console.error(`[adpia] 상품 처리 에러:`, error.message);

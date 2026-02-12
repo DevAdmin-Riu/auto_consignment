@@ -35,7 +35,7 @@ const {
   ORDER_STEPS,
   ERROR_CODES,
 } = require("../../lib/automation-error");
-const { saveOrderResults, createPaymentLogs } = require("../../lib/graphql-client");
+const { saveOrderResults, createPaymentLogs, calculateExpectedPaymentAmount } = require("../../lib/graphql-client");
 
 // ==================== 셀렉터 정의 ====================
 
@@ -1591,6 +1591,29 @@ async function processPayment(page) {
     }
     await delay(1100);
 
+    // 3-1. 결제금액 파싱 (결제 버튼 텍스트에서 추출)
+    let actualPaymentAmount = 0;
+    try {
+      const btnText = await page.evaluate(() => {
+        const btn = document.querySelector("#root > div > div.sc-jephDI.fmkuTR > section > section > div.sc-fWpDKo.hauHbL > div.sc-eXGUsz.knNOLb > div.sc-jdudiz.eHkFji > button");
+        if (btn) return btn.textContent?.trim() || "";
+        // 폴백: 텍스트로 버튼 검색
+        const buttons = document.querySelectorAll("button");
+        for (const b of buttons) {
+          const text = (b.innerText || b.textContent || "").trim();
+          if (text.includes("결제하기") && /[\d,]+원/.test(text)) return text;
+        }
+        return "";
+      });
+      const match = btnText.match(/([\d,]+)원/);
+      if (match) {
+        actualPaymentAmount = parseInt(match[1].replace(/,/g, ""), 10) || 0;
+      }
+      console.log(`[baemin] 결제금액 파싱: "${btnText}" → ${actualPaymentAmount}원`);
+    } catch (e) {
+      console.log("[baemin] 결제금액 파싱 실패 (결제 진행에 영향 없음):", e.message);
+    }
+
     // 4. 결제하기 버튼 클릭
     console.log("[baemin] 4. 결제하기 버튼 클릭...");
 
@@ -1885,13 +1908,14 @@ async function processPayment(page) {
         success: true,
         message: "결제 완료",
         orderNumber,
+        actualPaymentAmount,
         url: finalUrl,
       };
     }
 
     // 주문번호는 못 찾았지만 결제는 완료된 것으로 간주
     console.log("[baemin] 결제 완료 (주문번호 추출 실패 - 나중에 확인 필요)");
-    return { success: true, message: "결제 완료 (주문번호 확인 필요)", url: finalUrl };
+    return { success: true, message: "결제 완료 (주문번호 확인 필요)", actualPaymentAmount, url: finalUrl };
   } catch (error) {
     console.error("[baemin] 결제 처리 실패:", error.message);
     return { success: false, message: error.message };
@@ -2222,15 +2246,21 @@ async function processBaeminOrder(
         });
 
         // 결제 성공 시 결제 로그 저장
-        if (orderSuccess && openMallPrice > 0) {
-          const paymentAmount = openMallPrice * (product.quantity || 1);
-          await createPaymentLogs(authToken, [{
-            vendor: vendor.name,
-            paymentAmount: paymentAmount,
-            purchaseOrderId: purchaseOrderId,
-            orderLineId: product.orderLineIds?.[0] || null,
-          }]);
-          console.log(`[baemin] 결제 로그 저장: ${paymentAmount}원`);
+        const paidAmount = paymentResult?.actualPaymentAmount || 0;
+        if (orderSuccess && paidAmount > 0) {
+          const expectedAmount = calculateExpectedPaymentAmount([product]);
+          try {
+            await createPaymentLogs(authToken, [{
+              vendor: vendor.name,
+              paymentAmount: paidAmount,
+              expectedAmount,
+              purchaseOrderId: purchaseOrderId,
+              orderLineId: product.orderLineIds?.[0] || null,
+            }]);
+            console.log(`[baemin] 결제 로그 저장: 실제=${paidAmount}원, 예상=${expectedAmount}원`);
+          } catch (e) {
+            console.log("[baemin] 결제 로그 저장 실패 (무시):", e.message);
+          }
         }
 
       } catch (error) {

@@ -34,7 +34,7 @@ const {
   ORDER_STEPS,
   ERROR_CODES,
 } = require("../../lib/automation-error");
-const { saveOrderResults } = require("../../lib/graphql-client");
+const { saveOrderResults, createPaymentLogs, calculateExpectedPaymentAmount } = require("../../lib/graphql-client");
 const { getEnv } = require("../config");
 
 // 딜레이 함수
@@ -1709,6 +1709,21 @@ async function processNaverOrder(
       }
     }
 
+    // 6-1. 결제금액 파싱 (결제 버튼 클릭 전)
+    let actualPaymentAmount = 0;
+    try {
+      const amountText = await page.evaluate(() => {
+        const wrap = document.querySelector("#PAYMENT_WRAP");
+        if (!wrap) return "";
+        const em = wrap.querySelector("em");
+        return em ? em.textContent?.trim() || "" : "";
+      });
+      actualPaymentAmount = parseInt(amountText.replace(/[^0-9]/g, ""), 10) || 0;
+      console.log(`[naver] 결제금액 파싱: "${amountText}" → ${actualPaymentAmount}원`);
+    } catch (e) {
+      console.log("[naver] 결제금액 파싱 실패 (결제 진행에 영향 없음):", e.message);
+    }
+
     // 7. 결제하기 버튼 클릭 + 네이버페이 결제
     await delay(2000);
     const paymentBtnSelector = "#root > div > div.DoubleTemplate_container__5LG6a > div.SubmitButton_article__\\+7E3M.SubmitButton_type-pc__wc4Vy.SubmitButton_type-floating__VRJYZ.SubmitButton_floating__Plj-\\+ > div > div > div.SubmitButton_area-button__1RiID > button";
@@ -1896,6 +1911,21 @@ async function processNaverOrder(
           success: true,
           vendor: "naver",
         });
+
+        // 결제 금액 로깅
+        if (actualPaymentAmount > 0) {
+          const expectedAmount = calculateExpectedPaymentAmount(addedProducts);
+          try {
+            await createPaymentLogs(authToken, [{
+              vendor: "naver",
+              paymentAmount: actualPaymentAmount,
+              expectedAmount,
+              purchaseOrderId,
+            }]);
+          } catch (e) {
+            console.log("[naver] 결제 로그 저장 실패 (무시):", e.message);
+          }
+        }
 
         // dialog 핸들러 제거 (다른 협력사와 충돌 방지)
         if (page._naverDialogHandler) {

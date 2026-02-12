@@ -42,7 +42,7 @@ const {
   ORDER_STEPS,
   ERROR_CODES,
 } = require("../../lib/automation-error");
-const { saveOrderResults } = require("../../lib/graphql-client");
+const { saveOrderResults, createPaymentLogs, calculateExpectedPaymentAmount } = require("../../lib/graphql-client");
 // const { automateISPPayment } = require("../../lib/isp-payment"); // ISP 미사용 (신한카드)
 const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
 const { getEnv } = require("../config");
@@ -1561,6 +1561,19 @@ async function placeOrder(page, shippingAddress) {
     });
     await new Promise((r) => setTimeout(r, 500));
 
+    // 12-1. 결제금액 파싱 (결제 버튼 클릭 전)
+    let actualPaymentAmount = 0;
+    try {
+      const amountText = await page.$eval(
+        "#div_order_price_label11 > span.re_e_text.red.size18.nls",
+        (el) => el.textContent?.trim() || ""
+      );
+      actualPaymentAmount = parseInt(amountText.replace(/[^0-9]/g, ""), 10) || 0;
+      console.log(`[swadpia] 결제금액 파싱: ${amountText} → ${actualPaymentAmount}원`);
+    } catch (e) {
+      console.log("[swadpia] 결제금액 파싱 실패 (결제 진행에 영향 없음):", e.message);
+    }
+
     // 13. 결제하기 버튼 클릭
     console.log("[swadpia] 결제하기 버튼 클릭...");
     await waitAndClick(page, SELECTORS.paymentPage.paySubmitBtn, {
@@ -1680,6 +1693,7 @@ async function placeOrder(page, shippingAddress) {
       paymentPageUrl,
       orderCompleteUrl,
       vendorOrderNumber,
+      actualPaymentAmount,
     };
   } catch (error) {
     console.error("[swadpia] 전체 주문하기 실패:", error.message);
@@ -1920,6 +1934,22 @@ async function processSwadpiaOrder(
         success: true,
         vendor: "swadpia",
       });
+
+      // 결제 금액 로깅
+      const actualAmount = orderResult?.actualPaymentAmount || 0;
+      if (actualAmount > 0) {
+        const expectedAmount = calculateExpectedPaymentAmount(products);
+        try {
+          await createPaymentLogs(authToken, [{
+            vendor: "swadpia",
+            paymentAmount: actualAmount,
+            expectedAmount,
+            purchaseOrderId,
+          }]);
+        } catch (e) {
+          console.log("[swadpia] 결제 로그 저장 실패 (무시):", e.message);
+        }
+      }
     } else {
       // 실패: 장바구니 검증 실패 또는 결제 실패
       await saveOrderResults(authToken, {
