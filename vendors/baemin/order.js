@@ -1229,7 +1229,8 @@ async function enterShippingAddress(page, shippingAddress) {
 
     // 9. 상세주소 입력 (placeholder 기반 셀렉터)
     console.log("[baemin] 9. 상세주소 입력...");
-    const detailAddress = shippingAddress.streetAddress2 || "";
+    const rawDetail = (shippingAddress.streetAddress2 || "").trim();
+    const detailAddress = rawDetail || shippingAddress.firstName || "";
 
     // iframe 닫히고 모달 대기
     await delay(1500);
