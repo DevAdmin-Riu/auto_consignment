@@ -920,6 +920,209 @@ async function clearCart(page) {
 }
 
 /**
+ * OOPIF CDP 방식으로 Daum 주소 검색 iframe 찾기
+ * - browser.targets()로 Daum iframe을 별도 브라우저 타겟으로 찾음
+ * - OOPIF(Out-of-Process iframe)는 메인 페이지와 다른 프로세스에서 실행됨
+ * - page.frames()의 f.$()가 acquireContextId로 실패할 때 폴백으로 사용
+ */
+async function findDaumFrameViaCDP(page) {
+  const browser = page.browser();
+  const targets = browser.targets();
+
+  console.log(`[baemin] OOPIF CDP: 전체 타겟 ${targets.length}개 탐색`);
+
+  // Daum postcode iframe 타겟 찾기
+  for (const target of targets) {
+    const targetUrl = target.url();
+    if (targetUrl.includes('postcode') || targetUrl.includes('daum.net/search')) {
+      console.log(`[baemin] OOPIF CDP: Daum 타겟 발견 - ${targetUrl.substring(0, 100)}`);
+
+      try {
+        const cdpClient = await target.createCDPSession();
+        await cdpClient.send('Runtime.enable');
+
+        // #region_name input 존재 확인
+        const checkResult = await cdpClient.send('Runtime.evaluate', {
+          expression: `!!document.querySelector('#region_name')`,
+          returnByValue: true,
+        });
+
+        if (checkResult.result?.value) {
+          console.log("[baemin] OOPIF CDP: #region_name 발견! CDP 프록시 프레임 반환");
+
+          // CDP 기반 프록시 객체 반환 (frame과 동일한 인터페이스)
+          return createCDPFrameProxy(cdpClient);
+        } else {
+          console.log("[baemin] OOPIF CDP: Daum 타겟에 #region_name 없음");
+          await cdpClient.detach();
+        }
+      } catch (e) {
+        console.log(`[baemin] OOPIF CDP: 타겟 접근 실패 - ${e.message}`);
+      }
+    }
+  }
+
+  // page.frames()에서 URL로 찾은 뒤 CDP 세션 시도
+  const allFrames = page.frames();
+  for (const f of allFrames) {
+    const url = f.url();
+    if (url.includes('postcode') || url.includes('daum')) {
+      console.log(`[baemin] OOPIF CDP: page.frames() Daum 프레임 발견 - ${url.substring(0, 100)}`);
+      try {
+        // 프레임의 executionContextId를 CDP로 직접 획득
+        const cdpClient = await page.target().createCDPSession();
+        await cdpClient.send('Runtime.enable');
+
+        const { result: contexts } = await cdpClient.send('Runtime.evaluate', {
+          expression: 'true',
+          returnByValue: true,
+        });
+
+        // 프레임에 직접 접근 시도
+        const hasInput = await f.$(SELECTORS.daumAddressInput);
+        if (hasInput) {
+          console.log("[baemin] OOPIF CDP: f.$() 재시도 성공!");
+          await cdpClient.detach();
+          return f;
+        }
+        await cdpClient.detach();
+      } catch (e) {
+        console.log(`[baemin] OOPIF CDP: 프레임 재시도 실패 - ${e.message}`);
+      }
+    }
+  }
+
+  console.log("[baemin] OOPIF CDP: Daum 프레임 찾기 실패");
+  return null;
+}
+
+/**
+ * CDP 세션을 puppeteer Frame처럼 사용할 수 있는 프록시 객체 생성
+ * - $(), evaluate(), waitForSelector(), keyboard.press() 등 지원
+ */
+function createCDPFrameProxy(cdpClient) {
+  return {
+    // $(selector) - 엘리먼트 핸들 대신 CDP 기반 프록시 반환
+    async $(selector) {
+      const result = await cdpClient.send('Runtime.evaluate', {
+        expression: `document.querySelector('${selector.replace(/'/g, "\\'")}')`,
+        returnByValue: false,
+      });
+      if (!result.result || result.result.type === 'undefined' || result.result.subtype === 'null') {
+        return null;
+      }
+      const objectId = result.result.objectId;
+      return createCDPElementProxy(cdpClient, objectId, selector);
+    },
+
+    // evaluate(fn, ...args)
+    async evaluate(fn, ...args) {
+      const fnStr = fn.toString();
+      const argsStr = args.map(a => JSON.stringify(a)).join(', ');
+      const expression = `(${fnStr})(${argsStr})`;
+      const result = await cdpClient.send('Runtime.evaluate', {
+        expression,
+        returnByValue: true,
+        awaitPromise: true,
+      });
+      if (result.exceptionDetails) {
+        throw new Error(result.exceptionDetails.text || 'evaluate failed');
+      }
+      return result.result?.value;
+    },
+
+    // waitForSelector
+    async waitForSelector(selector, options = {}) {
+      const timeout = options.timeout || 5000;
+      const start = Date.now();
+      while (Date.now() - start < timeout) {
+        const el = await this.$(selector);
+        if (el) return el;
+        await delay(300);
+      }
+      throw new Error(`waitForSelector timeout: ${selector}`);
+    },
+
+    // keyboard 프록시
+    keyboard: {
+      async press(key) {
+        const keyMap = { Enter: 13, Tab: 9, Escape: 27 };
+        const keyCode = keyMap[key] || 0;
+        await cdpClient.send('Input.dispatchKeyEvent', {
+          type: 'keyDown',
+          key,
+          code: `Key${key}`,
+          windowsVirtualKeyCode: keyCode,
+          nativeVirtualKeyCode: keyCode,
+        });
+        await delay(50);
+        await cdpClient.send('Input.dispatchKeyEvent', {
+          type: 'keyUp',
+          key,
+          code: `Key${key}`,
+          windowsVirtualKeyCode: keyCode,
+          nativeVirtualKeyCode: keyCode,
+        });
+      },
+    },
+
+    _cdpClient: cdpClient,
+    _isCDPProxy: true,
+  };
+}
+
+/**
+ * CDP 엘리먼트 프록시 - puppeteer ElementHandle처럼 사용
+ */
+function createCDPElementProxy(cdpClient, objectId, selector) {
+  return {
+    async click() {
+      // 클릭 좌표 계산 후 Input.dispatchMouseEvent
+      const boxResult = await cdpClient.send('Runtime.callFunctionOn', {
+        objectId,
+        functionDeclaration: `function() {
+          const rect = this.getBoundingClientRect();
+          return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
+        }`,
+        returnByValue: true,
+      });
+      const { x, y } = boxResult.result.value;
+      await cdpClient.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
+      await delay(50);
+      await cdpClient.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+    },
+
+    async type(text, options = {}) {
+      // 먼저 focus
+      await cdpClient.send('Runtime.callFunctionOn', {
+        objectId,
+        functionDeclaration: 'function() { this.focus(); }',
+      });
+      await delay(100);
+
+      // 한 글자씩 입력
+      const charDelay = options.delay || 0;
+      for (const char of text) {
+        await cdpClient.send('Input.dispatchKeyEvent', {
+          type: 'keyDown',
+          text: char,
+          unmodifiedText: char,
+          key: char,
+        });
+        await cdpClient.send('Input.dispatchKeyEvent', {
+          type: 'keyUp',
+          key: char,
+        });
+        if (charDelay > 0) await delay(charDelay);
+      }
+    },
+
+    _objectId: objectId,
+    _selector: selector,
+  };
+}
+
+/**
  * 배송지 입력 (결제 페이지에서)
  */
 async function enterShippingAddress(page, shippingAddress) {
@@ -1191,7 +1394,7 @@ async function enterShippingAddress(page, shippingAddress) {
 
     console.log("[baemin] 다음 주소 검색 iframe 대기...");
 
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 15; i++) {
       try {
         const allFrames = page.frames();
 
@@ -1222,12 +1425,22 @@ async function enterShippingAddress(page, shippingAddress) {
 
         if (frame) break;
 
-        console.log(`[baemin] iframe 콘텐츠 대기 중... (${i + 1}/30)`);
+        console.log(`[baemin] iframe 콘텐츠 대기 중... (${i + 1}/15)`);
       } catch (e) {
-        console.log(`[baemin] 프레임 검색 실패 (${i + 1}/30): ${e.message}`);
+        console.log(`[baemin] 프레임 검색 실패 (${i + 1}/15): ${e.message}`);
       }
 
       await delay(500);
+    }
+
+    // 기본 방식 실패 시 OOPIF CDP 폴백
+    if (!frame) {
+      console.log("[baemin] 기본 방식 실패 → OOPIF CDP 폴백 시도...");
+      try {
+        frame = await findDaumFrameViaCDP(page);
+      } catch (e) {
+        console.log("[baemin] OOPIF CDP 폴백도 실패:", e.message);
+      }
     }
 
     if (!frame) {
@@ -1288,6 +1501,18 @@ async function enterShippingAddress(page, shippingAddress) {
       }
     } catch (e) {
       console.log("[baemin] 주소 선택 에러:", e.message);
+    }
+
+    // CDP 프록시 프레임 사용 후 세션 즉시 정리 (메인 페이지 세션 꼬임 방지)
+    if (frame?._isCDPProxy && frame._cdpClient) {
+      try {
+        await frame._cdpClient.detach();
+        console.log("[baemin] CDP 세션 정리 완료");
+      } catch (e) {
+        console.log("[baemin] CDP 세션 정리 실패 (이미 닫힘?):", e.message);
+      }
+      // 정리 후 참조 제거
+      frame._cdpClient = null;
     }
 
     // 9. 상세주소 입력 (placeholder 기반 셀렉터)
@@ -2326,19 +2551,26 @@ async function processBaeminOrder(
     }
 
     // ==================== Phase 1: 판매처 정보 수집 ====================
-    console.log("\n[baemin] ===== Phase 1: 판매처 정보 수집 =====");
-    for (let i = 0; i < products.length; i++) {
-      const product = products[i];
-      try {
-        await navigateToProduct(page, product.productUrl);
-        const seller = await extractSellerInfo(page);
-        product._seller = seller || { sellerId: "unknown", sellerName: "알수없음" };
-        product._originalIndex = i;
-        console.log(`[baemin] ${i + 1}/${products.length} ${product.productName} → 판매처: ${product._seller.sellerName} (ID: ${product._seller.sellerId})`);
-      } catch (e) {
-        console.log(`[baemin] ${i + 1}/${products.length} ${product.productName} → 판매처 수집 실패: ${e.message}`);
-        product._seller = { sellerId: "unknown", sellerName: "알수없음" };
-        product._originalIndex = i;
+    // 상품이 1개면 판매처 확인 불필요 → 바로 단일 그룹으로 진행
+    if (products.length === 1) {
+      console.log("\n[baemin] 상품 1개 → 판매처 확인 생략, 바로 주문 진행");
+      products[0]._seller = { sellerId: "single", sellerName: "단일상품" };
+      products[0]._originalIndex = 0;
+    } else {
+      console.log("\n[baemin] ===== Phase 1: 판매처 정보 수집 =====");
+      for (let i = 0; i < products.length; i++) {
+        const product = products[i];
+        try {
+          await navigateToProduct(page, product.productUrl);
+          const seller = await extractSellerInfo(page);
+          product._seller = seller || { sellerId: "unknown", sellerName: "알수없음" };
+          product._originalIndex = i;
+          console.log(`[baemin] ${i + 1}/${products.length} ${product.productName} → 판매처: ${product._seller.sellerName} (ID: ${product._seller.sellerId})`);
+        } catch (e) {
+          console.log(`[baemin] ${i + 1}/${products.length} ${product.productName} → 판매처 수집 실패: ${e.message}`);
+          product._seller = { sellerId: "unknown", sellerName: "알수없음" };
+          product._originalIndex = i;
+        }
       }
     }
 
@@ -2394,7 +2626,16 @@ async function processBaeminOrder(
             await page.goto("about:blank", { waitUntil: "domcontentloaded", timeout: 5000 });
             await delay(300);
           } catch (e) {
-            console.log("[baemin] 페이지 복구 중:", e.message);
+            console.log("[baemin] 페이지 복구 실패, 새 페이지 생성:", e.message);
+            try {
+              const browser = page.browser();
+              const newPage = await browser.newPage();
+              await page.close().catch(() => {});
+              page = newPage;
+              console.log("[baemin] 새 페이지 생성 완료");
+            } catch (e2) {
+              console.log("[baemin] 새 페이지 생성도 실패:", e2.message);
+            }
           }
         }
 
@@ -2535,11 +2776,91 @@ async function processBaeminOrder(
           continue;
         }
 
-        // 3-3. 주문하기 (결제 페이지 진입)
-        console.log(`\n[baemin] 장바구니 ${groupAddedProducts.length}개 상품 → 주문하기...`);
-        const checkoutResult = await proceedToCheckout(page);
-        if (!checkoutResult.success) {
-          console.log("[baemin] 결제 페이지 진입 실패:", checkoutResult.message);
+        // 3-3 ~ 3-6: 결제 플로우 (실패 시 장바구니에서 재시도)
+        const MAX_PAYMENT_ATTEMPTS = 2;
+        let lastPaymentMessage = "";
+        let paymentResult = null;
+        let couponResult = null;
+
+        for (let attempt = 1; attempt <= MAX_PAYMENT_ATTEMPTS; attempt++) {
+          if (attempt > 1) {
+            console.log(`\n[baemin] === 결제 재시도 (${attempt}/${MAX_PAYMENT_ATTEMPTS}) ===`);
+            // 페이지 복구 - 세션이 깨졌을 수 있으므로 새 페이지 생성 시도
+            try {
+              await page.goto("about:blank", { waitUntil: "domcontentloaded", timeout: 5000 });
+              await delay(300);
+            } catch (e) {
+              console.log("[baemin] 재시도: 페이지 복구 실패, 새 페이지 생성");
+              try {
+                const browser = page.browser();
+                const newPage = await browser.newPage();
+                await page.close().catch(() => {});
+                page = newPage;
+              } catch (e2) {
+                console.log("[baemin] 재시도: 새 페이지 생성 실패:", e2.message);
+                break;
+              }
+            }
+            // 장바구니 페이지로 이동하여 다시 결제 진행
+            try {
+              await page.goto("https://mart.baemin.com/cart", { waitUntil: "networkidle2", timeout: 15000 });
+              await delay(1000);
+              console.log("[baemin] 재시도: 장바구니 페이지 이동 완료");
+            } catch (e) {
+              console.log("[baemin] 재시도: 장바구니 이동 실패:", e.message);
+              break;
+            }
+          }
+
+          // 3-3. 주문하기 (결제 페이지 진입)
+          console.log(`\n[baemin] 장바구니 ${groupAddedProducts.length}개 상품 → 주문하기... (시도 ${attempt}/${MAX_PAYMENT_ATTEMPTS})`);
+          const checkoutResult = await proceedToCheckout(page);
+          if (!checkoutResult.success) {
+            console.log("[baemin] 결제 페이지 진입 실패:", checkoutResult.message);
+            lastPaymentMessage = checkoutResult.message;
+            continue; // 재시도
+          }
+
+          // 3-4. 배송지 입력 (그룹당 1회)
+          if (shippingAddress) {
+            const addressResult = await enterShippingAddress(page, shippingAddress);
+            if (!addressResult.success) {
+              console.log("[baemin] 배송지 입력 실패:", addressResult.message);
+              lastPaymentMessage = addressResult.message;
+              continue; // 재시도
+            }
+          }
+
+          // 3-5. 쿠폰 적용 (그룹당 1회, 결제 전)
+          couponResult = await applyCouponAtCheckout(page, group.estimatedTotal);
+
+          // 3-6. 결제 처리 (네이버페이) - 그룹당 1회
+          paymentResult = await processPayment(page);
+          if (paymentResult.success && paymentResult.orderNumber) {
+            // 결제 성공 + 주문번호 추출 완료
+            vendorOrderNumber = paymentResult.orderNumber;
+            groupOrderSuccess = true;
+            console.log(`[baemin] 판매처 ${group.sellerName} 주문 완료: ${vendorOrderNumber}`);
+            break;
+          } else if (paymentResult.success && !paymentResult.orderNumber) {
+            // 결제는 됐지만 주문번호 못 가져옴 → 실패 처리하되 재시도 안함 (중복 결제 방지)
+            console.log(`[baemin] 결제 완료되었으나 주문번호 추출 실패 - 재시도 안함 (중복 결제 방지)`);
+            lastPaymentMessage = "결제 완료되었으나 주문번호 추출 실패 (수동 확인 필요)";
+            break; // 절대 재시도 안함
+          } else {
+            console.log("[baemin] 결제 실패:", paymentResult.message);
+            lastPaymentMessage = paymentResult.message || "결제 실패";
+            // 세션 관련 에러면 재시도 (결제가 안 된 상태이므로 안전)
+            if (attempt < MAX_PAYMENT_ATTEMPTS && (paymentResult.message || "").includes("acquireContextId")) {
+              console.log("[baemin] 세션 오류 감지 → 장바구니에서 재시도");
+              continue;
+            }
+            break;
+          }
+        }
+
+        // 결제 플로우 최종 실패 시 에러 기록
+        if (!groupOrderSuccess) {
           for (const p of groupAddedProducts) {
             results.push({
               lineId: poLineIds?.[p._originalIndex],
@@ -2547,7 +2868,7 @@ async function processBaeminOrder(
               productSku: p.productSku,
               productName: p.productName,
               success: false,
-              message: checkoutResult.message,
+              message: lastPaymentMessage || "결제 실패",
             });
           }
           const groupPoLineIds = groupAddedProducts
@@ -2565,52 +2886,6 @@ async function processBaeminOrder(
           });
           groupResults.push({ sellerId: group.sellerId, sellerName: group.sellerName, success: false, orderNumber: null, productCount: groupAddedProducts.length });
           continue;
-        }
-
-        // 3-4. 배송지 입력 (그룹당 1회)
-        if (shippingAddress) {
-          const addressResult = await enterShippingAddress(page, shippingAddress);
-          if (!addressResult.success) {
-            console.log("[baemin] 배송지 입력 실패:", addressResult.message);
-            for (const p of groupAddedProducts) {
-              results.push({
-                lineId: poLineIds?.[p._originalIndex],
-                productVariantVendorId: p.productVariantVendorId,
-                productSku: p.productSku,
-                productName: p.productName,
-                success: false,
-                message: addressResult.message,
-              });
-            }
-            const groupPoLineIds = groupAddedProducts
-              .map((p) => poLineIds?.[p._originalIndex])
-              .filter(Boolean);
-            await saveOrderResults(authToken, {
-              purchaseOrderId,
-              products: [],
-              priceMismatches: groupPriceMismatches,
-              optionFailedProducts: groupOptionFailed,
-              automationErrors: [],
-              poLineIds: groupPoLineIds,
-              success: false,
-              vendor: "baemin",
-            });
-            groupResults.push({ sellerId: group.sellerId, sellerName: group.sellerName, success: false, orderNumber: null, productCount: groupAddedProducts.length });
-            continue;
-          }
-        }
-
-        // 3-5. 쿠폰 적용 (그룹당 1회, 결제 전)
-        const couponResult = await applyCouponAtCheckout(page, group.estimatedTotal);
-
-        // 3-6. 결제 처리 (네이버페이) - 그룹당 1회
-        const paymentResult = await processPayment(page);
-        if (paymentResult.success && paymentResult.orderNumber) {
-          vendorOrderNumber = paymentResult.orderNumber;
-          groupOrderSuccess = true;
-          console.log(`[baemin] 판매처 ${group.sellerName} 주문 완료: ${vendorOrderNumber}`);
-        } else {
-          console.log("[baemin] 결제 실패:", paymentResult.message);
         }
 
         // 3-7. 결과 기록
