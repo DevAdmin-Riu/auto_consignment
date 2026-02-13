@@ -2361,6 +2361,8 @@ async function applyCouponAtCheckout(page, groupEstimatedTotal) {
     const eligible = coupons.filter((c) => {
       // 최소 구매 금액 미충족 시 제외
       if (c.minPurchase > groupEstimatedTotal) return false;
+      // 정액 할인(500원, 1000원 등): 항상 사용
+      if (c.type === "fixed") return true;
       // D-4 이하: 항상 사용
       if (c.daysLeft <= 4) return true;
       // D-4 초과: 주문 금액 5만원 이상일 때만
