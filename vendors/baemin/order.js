@@ -785,9 +785,24 @@ async function addToCart(page) {
       await delay(1100);
       console.log("[baemin] 장바구니 페이지로 이동 완료");
     } else {
-      console.log(
-        "[baemin] 장바구니 이동 모달 버튼 없음 - 이미 장바구니에 담김"
-      );
+      // 모달이 안 뜨면 실제로 담겼는지 확인 (에러 팝업일 수 있음)
+      console.log("[baemin] 장바구니 이동 모달 없음 → 페이지 상태 확인...");
+      const pageState = await page.evaluate(() => {
+        // 에러/알림 팝업 텍스트 확인
+        const allText = document.body?.innerText || "";
+        const buttons = Array.from(document.querySelectorAll("button"));
+        const btnTexts = buttons.map(b => b.textContent.trim()).filter(t => t.length > 0 && t.length < 30);
+        return {
+          hasError: allText.includes("품절") || allText.includes("판매중지") || allText.includes("구매불가"),
+          snippet: allText.substring(0, 200),
+          buttons: btnTexts.slice(0, 10),
+        };
+      });
+      if (pageState.hasError) {
+        console.log(`[baemin] 장바구니 담기 실패 감지: ${pageState.snippet}`);
+        return false;
+      }
+      console.log(`[baemin] 모달 미출현 (버튼: ${pageState.buttons.join(", ")})`);
     }
 
     console.log("[baemin] 장바구니 담기 완료");
@@ -1631,8 +1646,20 @@ async function proceedToCheckout(page) {
       });
 
       if (!orderClicked.clicked) {
-        console.log("[baemin] 주문하기 버튼 없음");
-        return { success: false, message: "주문하기 버튼 없음" };
+        // 장바구니 상태 확인 (디버깅용)
+        const cartState = await page.evaluate(() => {
+          const bodyText = document.body?.innerText || "";
+          const isEmpty = bodyText.includes("장바구니가 비어") || bodyText.includes("담긴 상품이 없");
+          const url = window.location.href;
+          return {
+            url,
+            isEmpty,
+            snippet: bodyText.substring(0, 300).replace(/\n+/g, " | "),
+          };
+        });
+        console.log(`[baemin] 주문하기 버튼 없음 (URL: ${cartState.url}, 빈장바구니: ${cartState.isEmpty})`);
+        console.log(`[baemin] 장바구니 페이지 내용: ${cartState.snippet}`);
+        return { success: false, message: cartState.isEmpty ? "장바구니 비어있음" : "주문하기 버튼 없음" };
       }
       console.log(`[baemin] 주문하기 버튼 클릭 (텍스트): "${orderClicked.text}"`);
     }
