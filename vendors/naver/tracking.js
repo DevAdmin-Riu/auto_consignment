@@ -10,7 +10,6 @@
  */
 
 const { login } = require("./login");
-const { safeGoto } = require("../../lib/browser");
 const { normalizeCarrier } = require("../../lib/carrier");
 const {
   createTrackingErrorCollector,
@@ -81,7 +80,8 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
 
         // 주문 상태 페이지로 이동
         const orderStatusUrl = `https://orders.pay.naver.com/order/status/${openMallOrderNumber}`;
-        await safeGoto(page, orderStatusUrl, {
+        await page.goto(orderStatusUrl, {
+          waitUntil: "networkidle2",
           timeout: 30000,
         });
         await delay(2000);

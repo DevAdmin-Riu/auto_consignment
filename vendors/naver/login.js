@@ -2,8 +2,6 @@
  * 네이버 로그인 모듈
  */
 
-const { safeGoto } = require("../../lib/browser");
-
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -14,7 +12,8 @@ async function login(page, vendor) {
   console.log("[naver] naver.com으로 이동...");
 
   // naver.com으로 이동
-  await safeGoto(page, "https://www.naver.com", {
+  await page.goto("https://www.naver.com", {
+    waitUntil: "networkidle2",
     timeout: 30000,
   });
   await delay(2000);

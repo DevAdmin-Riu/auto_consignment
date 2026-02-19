@@ -28,7 +28,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { getLoginStatus, setLoginStatus, delay, safeGoto } = require("../../lib/browser");
+const { getLoginStatus, setLoginStatus, delay } = require("../../lib/browser");
 const { enterNaverPayPin } = require("../naver/order");
 const {
   createOrderErrorCollector,
@@ -254,7 +254,10 @@ async function loginToBaemin(page, vendor) {
   try {
     // 1. 메인 페이지로 이동
     console.log("[baemin] 1. 메인 페이지 이동: https://mart.baemin.com/");
-    await safeGoto(page, "https://mart.baemin.com/", { timeout: 60000 });
+    await page.goto("https://mart.baemin.com/", {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
     await delay(1100);
 
     // 2. 로그인 버튼 클릭 시도
@@ -267,7 +270,10 @@ async function loginToBaemin(page, vendor) {
       await delay(2000); // 페이지 이동 대기
     } else {
       console.log("[baemin] 로그인 버튼 없음, 직접 로그인 페이지로 이동...");
-      await safeGoto(page, "https://biz-member.baemin.com/login", { timeout: 30000 });
+      await page.goto("https://biz-member.baemin.com/login", {
+        waitUntil: "domcontentloaded",
+        timeout: 30000,
+      });
       await delay(1100);
     }
 
@@ -373,7 +379,10 @@ async function navigateToProduct(page, productUrl) {
       await delay(1100);
     }
 
-    await safeGoto(page, productUrl, { timeout: 60000 });
+    await page.goto(productUrl, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
     await delay(1100);
     console.log(`[baemin] 페이지 로드 완료, URL: ${page.url()}`);
 
@@ -827,7 +836,10 @@ async function clearCart(page) {
 
   try {
     // 1. 장바구니 페이지로 이동
-    await safeGoto(page, "https://mart.baemin.com/cart", { timeout: 60000 });
+    await page.goto("https://mart.baemin.com/cart", {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
     await delay(1100);
 
     // 2. 전체선택 라벨 대기
@@ -1616,7 +1628,10 @@ async function proceedToCheckout(page) {
 
   try {
     // 1. 장바구니 페이지로 이동
-    await safeGoto(page, "https://mart.baemin.com/cart", { timeout: 60000 });
+    await page.goto("https://mart.baemin.com/cart", {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
     await delay(1100);
 
     // 2. 주문하기 버튼 클릭 (셀렉터 우선, 텍스트 폴백)
@@ -2842,7 +2857,7 @@ async function processBaeminOrder(
             }
             // 장바구니 페이지로 이동하여 다시 결제 진행
             try {
-              await safeGoto(page, "https://mart.baemin.com/cart", { timeout: 15000 });
+              await page.goto("https://mart.baemin.com/cart", { waitUntil: "networkidle2", timeout: 15000 });
               await delay(1000);
               console.log("[baemin] 재시도: 장바구니 페이지 이동 완료");
             } catch (e) {

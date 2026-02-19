@@ -32,7 +32,7 @@
  * - 신한카드 결제 (ISP 미사용)
  */
 
-const { getPage, closeBrowser, safeGoto } = require("../../lib/browser");
+const { getPage, closeBrowser } = require("../../lib/browser");
 const fs = require("fs");
 const path = require("path");
 const https = require("https");
@@ -272,7 +272,10 @@ async function clearCart(page) {
     // 이미 장바구니 페이지에 있으면 이동 스킵
     const currentUrl = page.url();
     if (!currentUrl.includes("/order/order_cart")) {
-      await safeGoto(page, SELECTORS.cartPage.url, { timeout: 60000 });
+      await page.goto(SELECTORS.cartPage.url, {
+        waitUntil: "networkidle2",
+        timeout: 60000,
+      });
     }
 
     // 장바구니에 상품이 있는지 확인
@@ -325,7 +328,8 @@ async function login(page, credentials) {
   const { email, password } = credentials;
 
   console.log("[swadpia] 로그인 페이지 이동...");
-  await safeGoto(page, "https://www.swadpia.co.kr/member/re_login", {
+  await page.goto("https://www.swadpia.co.kr/member/re_login", {
+    waitUntil: "networkidle2",
     timeout: 60000,
   });
 
@@ -377,7 +381,10 @@ async function verifySwadpiaCartItems(page, expectedProducts) {
   );
 
   // 장바구니 페이지로 이동
-  await safeGoto(page, SELECTORS.cartPage.url, { timeout: 60000 });
+  await page.goto(SELECTORS.cartPage.url, {
+    waitUntil: "networkidle2",
+    timeout: 60000,
+  });
 
   // 장바구니 페이지에서 상품 정보 추출
   // 구조: tr[align="center"][height="50"] = 상품 행
@@ -584,7 +591,8 @@ async function addProductsToCart(page, products, downloadedFiles) {
       // 옵션 목록 페이지로 이동 (두번째 상품부터)
       if (i > 0) {
         console.log("[swadpia] 옵션 목록 페이지로 이동...");
-        await safeGoto(page, "https://www.swadpia.co.kr/mypage/option_list", {
+        await page.goto("https://www.swadpia.co.kr/mypage/option_list", {
+          waitUntil: "networkidle2",
           timeout: 60000,
         });
       }
@@ -1049,7 +1057,10 @@ async function placeOrder(page, shippingAddress) {
     // 이미 장바구니 페이지에 있는지 확인
     const currentUrl = page.url();
     if (!currentUrl.includes("/order/order_cart")) {
-      await safeGoto(page, SELECTORS.cartPage.url, { timeout: 60000 });
+      await page.goto(SELECTORS.cartPage.url, {
+        waitUntil: "networkidle2",
+        timeout: 60000,
+      });
     }
 
     // 전역 dialog 핸들러 등록
@@ -1761,7 +1772,8 @@ async function processSwadpiaOrder(
 
     // 3. 옵션 목록 페이지로 이동
     console.log("[swadpia] 옵션 목록 페이지로 이동...");
-    await safeGoto(page, "https://www.swadpia.co.kr/mypage/option_list", {
+    await page.goto("https://www.swadpia.co.kr/mypage/option_list", {
+      waitUntil: "networkidle2",
       timeout: 60000,
     });
     console.log("[swadpia] 옵션 목록 페이지 도착");
@@ -1778,7 +1790,8 @@ async function processSwadpiaOrder(
         // 재시도 시 장바구니 비우기 후 옵션 목록 페이지로 이동
         await clearCart(page);
         console.log("[swadpia] 옵션 목록 페이지로 이동...");
-        await safeGoto(page, "https://www.swadpia.co.kr/mypage/option_list", {
+        await page.goto("https://www.swadpia.co.kr/mypage/option_list", {
+          waitUntil: "networkidle2",
           timeout: 60000,
         });
       }
@@ -1862,7 +1875,10 @@ async function processSwadpiaOrder(
           );
           // 장바구니로 이동하여 다시 주문 진행
           console.log("[swadpia] 장바구니 페이지로 이동...");
-          await safeGoto(page, SELECTORS.cartPage.url, { timeout: 60000 });
+          await page.goto(SELECTORS.cartPage.url, {
+            waitUntil: "networkidle2",
+            timeout: 60000,
+          });
           await new Promise((r) => setTimeout(r, 2000));
         }
 

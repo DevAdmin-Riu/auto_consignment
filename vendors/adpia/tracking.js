@@ -6,7 +6,6 @@
  */
 
 const { loginToAdpia } = require("./order");
-const { safeGoto } = require("../../lib/browser");
 const {
   createTrackingErrorCollector,
   TRACKING_STEPS,
@@ -64,7 +63,8 @@ async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
 
     // 2. 주문 내역 페이지로 이동
     console.log("[adpia 송장조회] 주문 내역 페이지로 이동...");
-    await safeGoto(page, SELECTORS.orderHistory.url, {
+    await page.goto(SELECTORS.orderHistory.url, {
+      waitUntil: "networkidle2",
       timeout: 30000,
     });
     await delay(2000);

@@ -2,7 +2,7 @@
  * 쿠팡 로그인 모듈
  */
 
-const { delay, setLoginStatus, safeGoto } = require("../../lib/browser");
+const { delay, setLoginStatus } = require("../../lib/browser");
 const { getVendorByKey } = require("../config");
 
 /**
@@ -18,7 +18,8 @@ async function coupangLogin(page) {
 
   // WAF 우회: 메인 페이지 먼저 방문 후 로그인 버튼 클릭 (referrer 생성)
   console.log("[로그인] 메인 페이지 먼저 방문...");
-  await safeGoto(page, vendor.siteUrl, {
+  await page.goto(vendor.siteUrl, {
+    waitUntil: "networkidle2",
     timeout: 30000,
   });
   await delay(2000 + Math.random() * 1000);

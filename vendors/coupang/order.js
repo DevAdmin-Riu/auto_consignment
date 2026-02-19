@@ -31,7 +31,7 @@
  * - OCR로 주문번호 추출
  */
 
-const { delay, getLoginStatus, setLoginStatus, safeGoto } = require("../../lib/browser");
+const { delay, getLoginStatus, setLoginStatus } = require("../../lib/browser");
 const { coupangLogin } = require("./login");
 const {
   createOrderErrorCollector,
@@ -136,7 +136,8 @@ async function processCoupangOrder(
       // 2-1. 상품 페이지 이동
       console.log(`상품 ${productIndex + 1}: 페이지 이동...`, productUrl);
       try {
-        await safeGoto(page, productUrl, {
+        await page.goto(productUrl, {
+          waitUntil: "networkidle2",
           timeout: 30000,
         });
         await delay(2000);
@@ -282,7 +283,8 @@ async function processCoupangOrder(
 
     // 3. 장바구니 페이지로 이동
     console.log("Step 3: 장바구니 페이지로 이동...");
-    await safeGoto(page, "https://cart.coupang.com/cartView.pang", {
+    await page.goto("https://cart.coupang.com/cartView.pang", {
+      waitUntil: "networkidle2",
       timeout: 30000,
     });
     await delay(1000);
@@ -2649,7 +2651,8 @@ async function clearCart(page) {
   let dialogHandled = false;
 
   // 장바구니 페이지로 이동
-  await safeGoto(page, "https://cart.coupang.com/cartView.pang", {
+  await page.goto("https://cart.coupang.com/cartView.pang", {
+    waitUntil: "networkidle2",
     timeout: 30000,
   });
   await delay(2000);
