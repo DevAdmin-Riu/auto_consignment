@@ -142,24 +142,25 @@ const SELECTORS = {
  */
 async function downloadCoupons(page) {
   try {
-    // 1. "쿠폰 보기" 버튼 찾기 (텍스트 기반)
+    // 1. "쿠폰 받기" 버튼 찾기 (텍스트 기반, includes로 유연 매칭)
     const couponBtnFound = await page.evaluate(() => {
       const buttons = document.querySelectorAll("button");
       for (const btn of buttons) {
-        if ((btn.textContent || "").trim() === "쿠폰 보기") {
+        const text = (btn.textContent || "").trim();
+        if (text.includes("쿠폰") && (text.includes("받기") || text.includes("보기"))) {
           btn.click();
-          return true;
+          return text;
         }
       }
-      return false;
+      return null;
     });
 
     if (!couponBtnFound) {
-      console.log("[baemin] 쿠폰 보기 버튼 없음 - 스킵");
+      console.log("[baemin] 쿠폰 버튼 없음 - 스킵");
       return;
     }
 
-    console.log("[baemin] 쿠폰 보기 클릭, 모달 대기...");
+    console.log(`[baemin] "${couponBtnFound}" 클릭, 모달 대기...`);
     await delay(1500);
 
     // 2. "모든 쿠폰 받기" 버튼 클릭 (disabled가 아닌 경우만)
