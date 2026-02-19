@@ -681,11 +681,13 @@ async function getProductPrice(page) {
         priceEl
       );
       const price = parseInt(priceText.replace(/[^0-9]/g, ""), 10);
-      console.log(`[baemin] 상품 가격: ${price}원`);
+      console.log(`[baemin] 상품 가격: ${price}원 (원본 텍스트: "${priceText}")`);
       return price;
     }
+    console.log(`[baemin] 가격 요소 못 찾음 (셀렉터: ${SELECTORS.productPrice})`);
     return null;
   } catch (error) {
+    console.log(`[baemin] 가격 추출 에러: ${error.message}`);
     return null;
   }
 }
@@ -710,31 +712,44 @@ async function setQuantity(page, quantity) {
     const clickCount = quantity - 1;
     console.log(`[baemin] + 버튼으로 수량 조절 (${clickCount}회 클릭)...`);
 
-    const result = await page.evaluate((selector, clicks) => {
-      const plusButtons = document.querySelectorAll(selector);
-      if (plusButtons.length === 0) {
-        return { success: false, reason: "수량 + 버튼을 찾을 수 없음", count: 0 };
-      }
-
-      // 마지막 + 버튼 (가장 최근 선택된 옵션)
-      const lastPlusBtn = plusButtons[plusButtons.length - 1];
-      console.log(`[baemin] + 버튼 ${plusButtons.length}개 발견, 마지막 버튼 클릭`);
-
-      for (let i = 0; i < clicks; i++) {
-        lastPlusBtn.click();
-      }
-
-      return { success: true, buttonCount: plusButtons.length, clicks };
-    }, SELECTORS.quantityPlusButton, clickCount);
-
-    if (result.success) {
-      console.log(`[baemin] 수량 조절 완료: ${quantity}개 (버튼 ${result.buttonCount}개 중 마지막, ${result.clicks}회 클릭)`);
-      await delay(300);
-      return true;
+    // + 버튼 존재 확인
+    const plusButtons = await page.$$(SELECTORS.quantityPlusButton);
+    if (plusButtons.length === 0) {
+      console.log("[baemin] 수량 + 버튼을 찾을 수 없음");
+      return false;
     }
 
-    console.log(`[baemin] ${result.reason}`);
-    return false;
+    // 마지막 + 버튼 (가장 최근 선택된 옵션)
+    const lastPlusBtn = plusButtons[plusButtons.length - 1];
+    console.log(`[baemin] + 버튼 ${plusButtons.length}개 발견, 마지막 버튼 클릭`);
+
+    // 클릭 사이 딜레이를 두어 React state update 반영
+    for (let i = 0; i < clickCount; i++) {
+      await lastPlusBtn.click();
+      await delay(200);
+    }
+
+    await delay(300);
+
+    // 수량 검증: input 값 확인
+    const inputEls = await page.$$(SELECTORS.quantityInput);
+    if (inputEls.length > 0) {
+      const lastInput = inputEls[inputEls.length - 1];
+      const actualValue = await page.evaluate((el) => el.value, lastInput);
+      console.log(`[baemin] 수량 검증: 입력값=${actualValue}, 목표=${quantity}`);
+      if (parseInt(actualValue, 10) !== quantity) {
+        console.log(`[baemin] 수량 불일치! input에 직접 설정 시도...`);
+        await lastInput.click({ clickCount: 3 });
+        await lastInput.type(String(quantity), { delay: 50 });
+        await delay(300);
+        const retryValue = await page.evaluate((el) => el.value, lastInput);
+        console.log(`[baemin] 수량 재검증: 입력값=${retryValue}`);
+      }
+    }
+
+    console.log(`[baemin] 수량 조절 완료: ${quantity}개`);
+    return true;
+
   } catch (error) {
     console.error("[baemin] 수량 설정 실패:", error.message);
     return false;
@@ -2753,14 +2768,20 @@ async function processBaeminOrder(
             const expectedPrice = Math.round(vendorPriceExcludeVat * 1.1);
             let priceMismatch = false;
 
+            console.log(`[baemin] 가격 비교: 오픈몰=${openMallPrice}원, 예상가=${expectedPrice}원 (vendorPriceExcludeVat=${vendorPriceExcludeVat}, totalOptionPrice=${totalOptionPrice}, product.vendorPriceExcludeVat=${product.vendorPriceExcludeVat})`);
+
             if (openMallPrice && expectedPrice > 0 && openMallPrice !== expectedPrice) {
-              console.log(`[baemin] 가격 불일치: 오픈몰 ${openMallPrice}원 vs 예상가 ${expectedPrice}원`);
+              console.log(`[baemin] ⚠️ 가격 불일치 감지: 오픈몰 ${openMallPrice}원 vs 예상가 ${expectedPrice}원 (차이: ${openMallPrice - expectedPrice}원)`);
               priceMismatch = true;
               groupPriceMismatches.push({
                 productVariantVendorId: product.productVariantVendorId,
                 vendorPriceExcludeVat,
                 openMallPrice,
               });
+            } else if (!openMallPrice) {
+              console.log(`[baemin] 가격 비교 스킵: 오픈몰 가격 추출 실패 (null)`);
+            } else if (expectedPrice <= 0) {
+              console.log(`[baemin] 가격 비교 스킵: 예상가 0원 이하`);
             }
 
             // 장바구니 담기 성공한 상품 기록
@@ -2787,6 +2808,10 @@ async function processBaeminOrder(
         // 장바구니에 담긴 상품이 없으면 이 그룹은 스킵
         if (groupAddedProducts.length === 0) {
           console.log(`[baemin] 판매처 ${group.sellerName}: 장바구니에 담긴 상품 없음 - 스킵`);
+          console.log(`[baemin] 실패 saveOrderResults: priceMismatches=${groupPriceMismatches.length}건, optionFailed=${groupOptionFailed.length}건`);
+          if (groupOptionFailed.length > 0) {
+            console.log(`[baemin] optionFailed 데이터:`, JSON.stringify(groupOptionFailed));
+          }
           // 실패한 상품들에 대해 saveOrderResults 호출
           const failedPoLineIds = group.products
             .map((p) => poLineIds?.[p._originalIndex])
@@ -2900,6 +2925,7 @@ async function processBaeminOrder(
               message: lastPaymentMessage || "결제 실패",
             });
           }
+          console.log(`[baemin] 결제실패 saveOrderResults: priceMismatches=${groupPriceMismatches.length}건, optionFailed=${groupOptionFailed.length}건`);
           const groupPoLineIds = groupAddedProducts
             .map((p) => poLineIds?.[p._originalIndex])
             .filter(Boolean);
@@ -2952,6 +2978,14 @@ async function processBaeminOrder(
         allOptionFailedProducts.push(...groupOptionFailed);
 
         // 3-8. saveOrderResults - 그룹당 1회
+        console.log(`[baemin] saveOrderResults 호출 준비: success=${groupOrderSuccess}, priceMismatches=${groupPriceMismatches.length}건, optionFailed=${groupOptionFailed.length}건`);
+        if (groupPriceMismatches.length > 0) {
+          console.log(`[baemin] priceMismatches 데이터:`, JSON.stringify(groupPriceMismatches));
+        }
+        if (groupOptionFailed.length > 0) {
+          console.log(`[baemin] optionFailed 데이터:`, JSON.stringify(groupOptionFailed));
+        }
+
         const groupPoLineIds = groupAddedProducts
           .map((p) => poLineIds?.[p._originalIndex])
           .filter(Boolean);

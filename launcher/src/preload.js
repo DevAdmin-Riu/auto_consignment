@@ -34,4 +34,9 @@ contextBridge.exposeInMainWorld("api", {
   onLog: (callback) => {
     ipcRenderer.on("log", (_, data) => callback(data));
   },
+
+  // 워크플로우 실행 완료 수신
+  onWorkflowDone: (callback) => {
+    ipcRenderer.on("workflow-done", (_, data) => callback(data));
+  },
 });

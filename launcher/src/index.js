@@ -634,7 +634,11 @@ async function executeWorkflow(id, vendors) {
         `[시스템] 워크플로우 #${id} 실행됨 (Public API)${executionId ? ` [execution: ${executionId}]` : ""}`
       );
       if (executionId) {
-        pollExecutionStatus(id, executionId).catch(() => {});
+        pollExecutionStatus(id, executionId).then(() => {
+          sendWorkflowDone(id);
+        }).catch(() => {
+          sendWorkflowDone(id);
+        });
       }
       return { success: true, executionId };
     } catch (pubErr) {
@@ -684,12 +688,22 @@ async function executeWorkflow(id, vendors) {
       `[시스템] 워크플로우 #${id} 실행됨 (Internal API)${executionId ? ` [execution: ${executionId}]` : ""}`
     );
     if (executionId) {
-      pollExecutionStatus(id, executionId).catch(() => {});
+      pollExecutionStatus(id, executionId).then(() => {
+        sendWorkflowDone(id);
+      }).catch(() => {
+        sendWorkflowDone(id);
+      });
     }
     return { success: true, executionId };
   } catch (error) {
     sendLog("system", `[에러] 워크플로우 실행 실패: ${error.message}`);
     return { success: false, error: error.message };
+  }
+}
+
+function sendWorkflowDone(workflowId) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("workflow-done", { workflowId });
   }
 }
 

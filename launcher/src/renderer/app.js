@@ -444,10 +444,21 @@ function setupEventListeners() {
       const result = await window.api.executeWorkflow(id, vendors);
       if (!result.success) {
         alert(`실행 실패: ${result.error}`);
+        btn.disabled = false;
+        btn.textContent = "실행";
       }
+      // 성공 시: workflow-done 이벤트 올 때까지 버튼 잠금 유지
     } catch (err) {
       alert(`실행 실패: ${err.message}`);
-    } finally {
+      btn.disabled = false;
+      btn.textContent = "실행";
+    }
+  });
+
+  // 워크플로우 실행 완료 → 버튼 잠금 해제
+  window.api.onWorkflowDone((data) => {
+    const btn = document.querySelector(`[data-wf-id="${data.workflowId}"]`);
+    if (btn) {
       btn.disabled = false;
       btn.textContent = "실행";
     }
