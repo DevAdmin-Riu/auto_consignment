@@ -2957,7 +2957,7 @@ async function processBaeminOrder(
             selectedOptions: p.selectedOptions || [],
             priceMismatch: p.priceMismatch || false,
             success: groupOrderSuccess,
-            message: groupOrderSuccess ? "주문 완료" : (paymentResult.message || "결제 실패"),
+            message: groupOrderSuccess ? "주문 완료" : (paymentResult?.message || lastPaymentMessage || "결제 실패"),
             vendorOrderNumber: vendorOrderNumber || null,
             sellerName: group.sellerName,
           };
