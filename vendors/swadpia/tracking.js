@@ -5,6 +5,7 @@
  */
 
 const { login } = require("./order");
+const { safeGoto } = require("../../lib/browser");
 const {
   createTrackingErrorCollector,
   TRACKING_STEPS,
@@ -58,10 +59,7 @@ async function getSwadpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
 
     // 2. 주문완료/배송조회 페이지로 이동
     console.log("[swadpia 송장조회] 주문완료/배송조회 페이지로 이동...");
-    await page.goto(SELECTORS.orderIng.url, {
-      waitUntil: "networkidle2",
-      timeout: 30000,
-    });
+    await safeGoto(page, SELECTORS.orderIng.url, { timeout: 30000 });
     await delay(2000);
 
     // 3. 기간 3개월 버튼 클릭

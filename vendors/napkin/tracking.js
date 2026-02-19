@@ -6,6 +6,7 @@
 
 const { loginToNapkin } = require("./order");
 const { normalizeCarrier } = require("../../lib/carrier");
+const { safeGoto } = require("../../lib/browser");
 const {
   createTrackingErrorCollector,
   TRACKING_STEPS,
@@ -90,8 +91,7 @@ async function findTrackingNumber(page, openMallOrderNumber) {
     const orderUrl = `https://www.napkinkorea.co.kr/myshop/order/detail.html?order_id=${openMallOrderNumber}&page=1`;
     console.log(`[napkin 송장조회] 주문 페이지 이동: ${orderUrl}`);
 
-    await page.goto(orderUrl, {
-      waitUntil: "networkidle2",
+    await safeGoto(page, orderUrl, {
       timeout: 30000,
     });
     await delay(2000);

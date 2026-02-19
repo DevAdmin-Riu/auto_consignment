@@ -25,6 +25,7 @@
  */
 
 const { login } = require("./login");
+const { safeGoto } = require("../../lib/browser");
 const Tesseract = require("tesseract.js");
 const sharp = require("sharp");
 const path = require("path");
@@ -479,8 +480,7 @@ async function clearCart(page) {
   console.log("[naver] 장바구니 비우기...");
 
   // 장바구니 페이지로 이동
-  await page.goto("https://shopping.naver.com/cart", {
-    waitUntil: "networkidle2",
+  await safeGoto(page, "https://shopping.naver.com/cart", {
     timeout: 30000,
   });
   await delay(2000);
@@ -1142,8 +1142,7 @@ async function processProduct(page, product) {
   }
 
   // 1. 상품 페이지로 이동
-  await page.goto(productUrl, {
-    waitUntil: "networkidle2",
+  await safeGoto(page, productUrl, {
     timeout: 30000,
   });
   await delay(2000);

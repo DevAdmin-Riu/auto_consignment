@@ -14,6 +14,7 @@ const {
   TRACKING_STEPS,
   ERROR_CODES,
 } = require("../../lib/automation-error");
+const { safeGoto } = require("../../lib/browser");
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -65,10 +66,7 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers) {
         // 주문 상세 페이지로 이동
         // 배민상회 주문 상세 URL 패턴: https://mart.baemin.com/mymart/order/detail/{주문번호}
         const orderDetailUrl = `https://mart.baemin.com/mymart/order/detail/${openMallOrderNumber}`;
-        await page.goto(orderDetailUrl, {
-          waitUntil: "networkidle2",
-          timeout: 30000,
-        });
+        await safeGoto(page, orderDetailUrl, { timeout: 30000 });
         await delay(2000);
 
         // 현재 URL 확인 (로그인 리다이렉트 등)

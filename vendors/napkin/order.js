@@ -35,6 +35,7 @@ const {
   ORDER_STEPS,
   ERROR_CODES,
 } = require("../../lib/automation-error");
+const { safeGoto } = require("../../lib/browser");
 const { saveOrderResults, createPaymentLogs, calculateExpectedPaymentAmount } = require("../../lib/graphql-client");
 // const { automateISPPayment } = require("../../lib/isp-payment"); // ISP 미사용 (신한카드)
 const { automateShinhanCardPayment, typeWithInterception } = require("../../lib/shinhan-payment");
@@ -121,8 +122,7 @@ async function loginToNapkin(page, vendor) {
 
   // 1. 로그인 페이지 이동
   console.log("[napkin] 1. 로그인 페이지 이동...");
-  await page.goto(vendor.loginUrl, {
-    waitUntil: "networkidle2",
+  await safeGoto(page, vendor.loginUrl, {
     timeout: 30000,
   });
   await delay(1500); // 로그인 상태 확인을 위해 대기
@@ -199,8 +199,7 @@ async function clearCart(page) {
   console.log("[napkin] 장바구니 비우기 시작...");
 
   // 장바구니 페이지 이동
-  await page.goto(SELECTORS.cart.url, {
-    waitUntil: "networkidle2",
+  await safeGoto(page, SELECTORS.cart.url, {
     timeout: 30000,
   });
   await delay(1500);
@@ -715,8 +714,7 @@ async function processNapkinOrder(
 
       try {
         // 3-1. 상품 페이지 이동
-        await page.goto(product.productUrl, {
-          waitUntil: "domcontentloaded",
+        await safeGoto(page, product.productUrl, {
           timeout: 30000,
         }).catch(() => {
           console.log("[napkin] 페이지 이동 중 리다이렉트 발생, 계속 진행...");
@@ -866,8 +864,7 @@ async function processNapkinOrder(
     } else {
       // 팝업이 없으면 직접 이동
       console.log("[napkin] 팝업 없음, 직접 장바구니 이동...");
-      await page.goto(SELECTORS.cart.url, {
-        waitUntil: "networkidle2",
+      await safeGoto(page, SELECTORS.cart.url, {
         timeout: 30000,
       });
       await delay(2000);
@@ -878,8 +875,7 @@ async function processNapkinOrder(
     console.log(`[napkin] 현재 URL: ${cartPageUrl}`);
     if (!cartPageUrl.includes('basket')) {
       console.log("[napkin] 장바구니 페이지가 아님, 직접 이동...");
-      await page.goto(SELECTORS.cart.url, {
-        waitUntil: "networkidle2",
+      await safeGoto(page, SELECTORS.cart.url, {
         timeout: 30000,
       });
       await delay(2000);
@@ -893,7 +889,7 @@ async function processNapkinOrder(
       if (paymentAttempt > 0) {
         console.log(`\n[napkin] === 결제 재시도 (${paymentAttempt}/${MAX_PAYMENT_RETRIES - 1}) ===`);
         console.log("[napkin] 장바구니로 이동...");
-        await page.goto(SELECTORS.cart.url, { waitUntil: "networkidle2", timeout: 30000 });
+        await safeGoto(page, SELECTORS.cart.url, { timeout: 30000 });
         await delay(2000);
       }
 

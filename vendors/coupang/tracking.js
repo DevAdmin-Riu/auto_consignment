@@ -5,6 +5,7 @@
  */
 
 const { coupangLogin } = require("./login");
+const { safeGoto } = require("../../lib/browser");
 const { normalizeCarrier } = require("../../lib/carrier");
 const {
   createTrackingErrorCollector,
@@ -91,8 +92,7 @@ async function findTrackingNumber(page, openMallOrderNumber) {
     const orderUrl = `https://mc.coupang.com/ssr/desktop/order/${openMallOrderNumber}`;
     console.log(`[coupang 송장조회] 주문 페이지 이동: ${orderUrl}`);
 
-    await page.goto(orderUrl, {
-      waitUntil: "networkidle2",
+    await safeGoto(page, orderUrl, {
       timeout: 30000,
     });
     await delay(2000);

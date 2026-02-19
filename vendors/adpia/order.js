@@ -39,6 +39,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { safeGoto } = require("../../lib/browser");
 const {
   createOrderErrorCollector,
   ORDER_STEPS,
@@ -561,8 +562,7 @@ async function loginToAdpia(page, vendor) {
 
   // 1. 로그인 페이지 이동
   console.log("[adpia] 1. 로그인 페이지 이동...");
-  await page.goto(vendor.loginUrl, {
-    waitUntil: "networkidle2",
+  await safeGoto(page, vendor.loginUrl, {
     timeout: 30000,
   });
   await delay(1500);
@@ -623,8 +623,7 @@ async function clearCart(page) {
     // 1. 장바구니 페이지 이동
     const currentUrl = page.url();
     if (!currentUrl.includes("/cart")) {
-      await page.goto(SELECTORS.cart.url, {
-        waitUntil: "networkidle2",
+      await safeGoto(page, SELECTORS.cart.url, {
         timeout: 30000,
       });
       await delay(2000);
@@ -702,8 +701,7 @@ async function findProductByCode(page, productCode) {
   console.log(`[adpia] 제품코드 검색: ${productCode}`);
 
   // 1. 옵션 저장 페이지 이동
-  await page.goto(SELECTORS.favor.url, {
-    waitUntil: "networkidle2",
+  await safeGoto(page, SELECTORS.favor.url, {
     timeout: 30000,
   });
   await delay(2000);
@@ -824,8 +822,7 @@ async function goToOrderForm(page) {
     // 1. 장바구니 페이지 이동
     const currentUrl = page.url();
     if (!currentUrl.includes("/cart")) {
-      await page.goto(SELECTORS.cart.url, {
-        waitUntil: "networkidle2",
+      await safeGoto(page, SELECTORS.cart.url, {
         timeout: 30000,
       });
       await delay(2000);
