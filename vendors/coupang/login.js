@@ -33,7 +33,9 @@ async function coupangLogin(page) {
   // 이미 로그인 되어있는지 확인 (마이쿠팡 버튼 존재 여부)
   const isAlreadyLoggedIn = await page.evaluate(() => {
     // 로그인 상태면 "마이쿠팡" 또는 사용자 이름이 표시됨
-    const myPageLink = document.querySelector('a[title="마이쿠팡"], a[href*="mypage"]');
+    const myPageLink = document.querySelector(
+      'a[title="마이쿠팡"], a[href*="mypage"]',
+    );
     const loginLink = document.querySelector('a[title="로그인"]');
     return myPageLink !== null && loginLink === null;
   });
@@ -92,7 +94,9 @@ async function coupangLogin(page) {
   await delay(300);
 
   // page.type으로 입력 (셀렉터 직접 지정)
-  await page.type("#login-email-input", vendor.email, { delay: 80 + Math.random() * 40 });
+  await page.type("#login-email-input", vendor.email, {
+    delay: 80 + Math.random() * 40,
+  });
   console.log("이메일 입력 완료:", vendor.email);
 
   // 비밀번호 입력
@@ -111,7 +115,9 @@ async function coupangLogin(page) {
   await delay(300);
 
   // 비밀번호 입력
-  await page.type("#login-password-input", vendor.password, { delay: 80 + Math.random() * 40 });
+  await page.type("#login-password-input", vendor.password, {
+    delay: 80 + Math.random() * 40,
+  });
   console.log("비밀번호 입력 완료");
 
   // 로그인 버튼 클릭

@@ -307,10 +307,13 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       const quantitySelect = await waitFor(
         page,
         SELECTORS.orderPage.quantitySelect,
-        5000
+        5000,
       );
       if (quantitySelect) {
-        await page.select(SELECTORS.orderPage.quantitySelect, String(actualQuantity));
+        await page.select(
+          SELECTORS.orderPage.quantitySelect,
+          String(actualQuantity),
+        );
         console.log(`[adpia] 수량 select 선택: ${actualQuantity}`);
         await delay(1000);
       } else {
@@ -319,7 +322,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
           ORDER_STEPS.OPTION_SELECTION,
           ERROR_CODES.ELEMENT_NOT_FOUND,
           "수량 선택 UI를 찾을 수 없음 (#holder_num, input.input30[isnumber], select#quantity 모두 없음)",
-          { productCode: product.productCode, purchaseOrderId }
+          { productCode: product.productCode, purchaseOrderId },
         );
       }
     }
@@ -1120,12 +1123,18 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
     try {
       const amountText = await page.$eval(
         "#ordersForm > div.cart_menu > div > div.list02 > div.list_menu03 > div > p > span.t3.t6",
-        (el) => el.textContent?.trim() || ""
+        (el) => el.textContent?.trim() || "",
       );
-      actualPaymentAmount = parseInt(amountText.replace(/[^0-9]/g, ""), 10) || 0;
-      console.log(`[adpia] 결제금액 파싱: ${amountText} → ${actualPaymentAmount}원`);
+      actualPaymentAmount =
+        parseInt(amountText.replace(/[^0-9]/g, ""), 10) || 0;
+      console.log(
+        `[adpia] 결제금액 파싱: ${amountText} → ${actualPaymentAmount}원`,
+      );
     } catch (e) {
-      console.log("[adpia] 결제금액 파싱 실패 (결제 진행에 영향 없음):", e.message);
+      console.log(
+        "[adpia] 결제금액 파싱 실패 (결제 진행에 영향 없음):",
+        e.message,
+      );
     }
 
     // 14. 결제하기 버튼 클릭
@@ -1155,17 +1164,19 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
     let paymentFrame = null;
     for (let i = 0; i < 20; i++) {
       const allFrames = page.frames();
-      console.log(`[adpia] 프레임 탐색 (${i + 1}/20): 총 ${allFrames.length}개 프레임`);
+      console.log(
+        `[adpia] 프레임 탐색 (${i + 1}/20): 총 ${allFrames.length}개 프레임`,
+      );
 
       for (const f of allFrames) {
         try {
           const hasPaymentUI = await f.evaluate(() => {
             const tabs = document.querySelectorAll('a[role="tab"]');
             for (const tab of tabs) {
-              if (tab.textContent?.includes('다른결제')) return true;
+              if (tab.textContent?.includes("다른결제")) return true;
             }
             // 카드번호 입력 필드가 있으면 이미 결제 화면
-            return !!document.querySelector('#cardNum1');
+            return !!document.querySelector("#cardNum1");
           });
           if (hasPaymentUI) {
             paymentFrame = f;
@@ -1184,7 +1195,7 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
           try {
             const name = f.name();
             const url = f.url().substring(0, 80);
-            if (name || (url && url !== 'about:blank')) {
+            if (name || (url && url !== "about:blank")) {
               console.log(`[adpia]   frame: name="${name}" url="${url}"`);
             }
           } catch (e) {}
@@ -1196,7 +1207,10 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
 
     if (!paymentFrame) {
       console.log("[adpia] 결제 프레임을 찾을 수 없음");
-      return { success: false, message: "결제 프레임을 찾을 수 없음 (20회 시도)" };
+      return {
+        success: false,
+        message: "결제 프레임을 찾을 수 없음 (20회 시도)",
+      };
     }
 
     await delay(1000);
@@ -1209,7 +1223,10 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
       console.log("[adpia] ✅ 신한카드 결제 자동화 완료");
     } else {
       console.log("[adpia] ⚠️ 신한카드 결제 자동화 실패:", shinhanResult.error);
-      return { success: false, message: `신한카드 결제 실패: ${shinhanResult.error}` };
+      return {
+        success: false,
+        message: `신한카드 결제 실패: ${shinhanResult.error}`,
+      };
     }
 
     // 결제 완료 대기
@@ -1694,7 +1711,9 @@ async function processAdpiaOrder(
                 orderLineId: product.orderLineIds?.[0] || null,
               },
             ]);
-            console.log(`[adpia] 결제 로그 저장: 실제=${actualPaymentAmount}원, 예상=${expectedAmount}원`);
+            console.log(
+              `[adpia] 결제 로그 저장: 실제=${actualPaymentAmount}원, 예상=${expectedAmount}원`,
+            );
           } catch (e) {
             console.log("[adpia] 결제 로그 저장 실패 (무시):", e.message);
           }

@@ -38,7 +38,11 @@ const {
   ORDER_STEPS,
   ERROR_CODES,
 } = require("../../lib/automation-error");
-const { saveOrderResults, createPaymentLogs, calculateExpectedPaymentAmount } = require("../../lib/graphql-client");
+const {
+  saveOrderResults,
+  createPaymentLogs,
+  calculateExpectedPaymentAmount,
+} = require("../../lib/graphql-client");
 const Tesseract = require("tesseract.js");
 const sharp = require("sharp");
 const path = require("path");
@@ -52,7 +56,7 @@ async function processCoupangOrder(
   page,
   vendor,
   { products, shippingAddress, poLineIds, purchaseOrderId },
-  authToken
+  authToken,
 ) {
   const steps = [];
   const addedProducts = []; // 장바구니에 담긴 상품들 추적
@@ -97,7 +101,7 @@ async function processCoupangOrder(
 
     // 2. 각 상품을 장바구니에 담기 (여러 상품 지원)
     console.log(
-      `\n========== 총 ${products.length}개 상품을 장바구니에 담기 시작 ==========`
+      `\n========== 총 ${products.length}개 상품을 장바구니에 담기 시작 ==========`,
     );
 
     for (let productIndex = 0; productIndex < products.length; productIndex++) {
@@ -108,14 +112,16 @@ async function processCoupangOrder(
       const qtyPerUnit = product.openMallQtyPerUnit || 1;
       const quantity = baseQuantity * qtyPerUnit;
       if (qtyPerUnit > 1) {
-        console.log(`[coupang] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${quantity}개`);
+        console.log(
+          `[coupang] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${quantity}개`,
+        );
       }
       const productName = product.productName;
 
       console.log(
         `\n----- [${productIndex + 1}/${products.length}] 상품 처리: ${
           productName || productUrl
-        } -----`
+        } -----`,
       );
 
       if (!productUrl) {
@@ -125,11 +131,16 @@ async function processCoupangOrder(
           success: false,
           error: "URL 없음",
         });
-        errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.PRODUCT_NOT_FOUND, "URL 없음", {
-          purchaseOrderId,
-          purchaseOrderLineId: poLineIds?.[productIndex],
-          productVariantVendorId: product.productVariantVendorId,
-        });
+        errorCollector.addError(
+          ORDER_STEPS.ADD_TO_CART,
+          ERROR_CODES.PRODUCT_NOT_FOUND,
+          "URL 없음",
+          {
+            purchaseOrderId,
+            purchaseOrderLineId: poLineIds?.[productIndex],
+            productVariantVendorId: product.productVariantVendorId,
+          },
+        );
         continue;
       }
 
@@ -146,12 +157,12 @@ async function processCoupangOrder(
         let extractedName = "";
         try {
           const titleElem = await page.$(
-            "h1.prod-buy-header__title, h2.prod-buy-header__title, .prod-buy-header__title"
+            "h1.prod-buy-header__title, h2.prod-buy-header__title, .prod-buy-header__title",
           );
           if (titleElem) {
             extractedName = await page.evaluate(
               (el) => el.textContent,
-              titleElem
+              titleElem,
             );
           }
         } catch (e) {}
@@ -172,7 +183,7 @@ async function processCoupangOrder(
             for (let i = 1; i < Math.min(quantity, 50); i++) {
               const clicked = await page.evaluate(() => {
                 const containers = document.querySelectorAll(
-                  ".product-quantity > div"
+                  ".product-quantity > div",
                 );
                 for (const container of containers) {
                   if (container.offsetParent === null) {
@@ -207,7 +218,7 @@ async function processCoupangOrder(
           if (!qtySet) {
             try {
               const input = await page.$(
-                '.product-quantity input[type="text"]'
+                '.product-quantity input[type="text"]',
               );
               if (input) {
                 await input.click({ clickCount: 3 });
@@ -256,11 +267,16 @@ async function processCoupangOrder(
             success: false,
             error: "버튼을 찾을 수 없음",
           });
-          errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.ELEMENT_NOT_FOUND, "장바구니 버튼을 찾을 수 없음", {
-            purchaseOrderId,
-            purchaseOrderLineId: poLineIds?.[productIndex],
-            productVariantVendorId: product.productVariantVendorId,
-          });
+          errorCollector.addError(
+            ORDER_STEPS.ADD_TO_CART,
+            ERROR_CODES.ELEMENT_NOT_FOUND,
+            "장바구니 버튼을 찾을 수 없음",
+            {
+              purchaseOrderId,
+              purchaseOrderLineId: poLineIds?.[productIndex],
+              productVariantVendorId: product.productVariantVendorId,
+            },
+          );
         }
       } catch (e) {
         console.log(`상품 ${productIndex + 1} 처리 실패:`, e.message);
@@ -278,7 +294,7 @@ async function processCoupangOrder(
     }
 
     console.log(
-      `\n========== 장바구니 담기 완료: ${addedProducts.length}/${products.length}개 성공 ==========\n`
+      `\n========== 장바구니 담기 완료: ${addedProducts.length}/${products.length}개 성공 ==========\n`,
     );
 
     // 3. 장바구니 페이지로 이동
@@ -296,7 +312,7 @@ async function processCoupangOrder(
       // 전체 선택 체크박스 해제 (이미 선택되어 있으면)
       const allChecked = await page.evaluate(() => {
         const allCheckbox = document.querySelector(
-          'input[name="allCheckbox"], input.all-checkbox, #allCheckbox'
+          'input[name="allCheckbox"], input.all-checkbox, #allCheckbox',
         );
         if (allCheckbox && allCheckbox.checked) {
           allCheckbox.click();
@@ -360,7 +376,7 @@ async function processCoupangOrder(
       const cartVerification = await verifyCartItems(page, addedProducts);
       console.log(
         "장바구니 검증 결과:",
-        JSON.stringify(cartVerification, null, 2)
+        JSON.stringify(cartVerification, null, 2),
       );
 
       steps.push({
@@ -407,7 +423,9 @@ async function processCoupangOrder(
   // 재시도 횟수 초과 시 에러 반환
   if (!cartVerified) {
     const errorMessage = `장바구니 검증 실패 - ${maxCartRetries}회 재시도 후에도 실패`;
-    errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, errorMessage, { purchaseOrderId });
+    errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, errorMessage, {
+      purchaseOrderId,
+    });
     await saveOrderResults(authToken, {
       purchaseOrderId,
       products: addedProducts || [],
@@ -506,7 +524,7 @@ async function processCoupangOrder(
           const fillResult = await fillAddressForm(page, shippingAddress);
           console.log(
             "배송지 폼 입력 결과:",
-            JSON.stringify(fillResult, null, 2)
+            JSON.stringify(fillResult, null, 2),
           );
 
           steps.push({
@@ -517,7 +535,12 @@ async function processCoupangOrder(
 
           if (!fillResult.success) {
             // 배송지 폼 입력 실패 - 여기서 멈춤
-            errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, ERROR_CODES.INPUT_FAILED, "배송지 폼 입력 실패", { purchaseOrderId });
+            errorCollector.addError(
+              ORDER_STEPS.ORDER_PLACEMENT,
+              ERROR_CODES.INPUT_FAILED,
+              "배송지 폼 입력 실패",
+              { purchaseOrderId },
+            );
             await saveOrderResults(authToken, {
               purchaseOrderId,
               products: addedProducts || [],
@@ -550,10 +573,16 @@ async function processCoupangOrder(
             addressCount: editResult.count,
           });
           // 배송지 처리 실패 - 여기서 멈춤
-          const shippingError = editResult.count === 0
-            ? "배송지 추가 버튼 클릭 실패"
-            : "배송지 수정 버튼 클릭 실패";
-          errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, ERROR_CODES.CLICK_FAILED, shippingError, { purchaseOrderId });
+          const shippingError =
+            editResult.count === 0
+              ? "배송지 추가 버튼 클릭 실패"
+              : "배송지 수정 버튼 클릭 실패";
+          errorCollector.addError(
+            ORDER_STEPS.ORDER_PLACEMENT,
+            ERROR_CODES.CLICK_FAILED,
+            shippingError,
+            { purchaseOrderId },
+          );
           await saveOrderResults(authToken, {
             purchaseOrderId,
             products: addedProducts || [],
@@ -562,7 +591,7 @@ async function processCoupangOrder(
             automationErrors: errorCollector.getErrors(),
             poLineIds,
             success: false,
-        vendor: "coupang",
+            vendor: "coupang",
           });
           return res.json({
             success: false,
@@ -582,7 +611,12 @@ async function processCoupangOrder(
           debug: changeResult.debug,
         });
         // 배송지 처리 실패 - 여기서 멈춤
-        errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, ERROR_CODES.CLICK_FAILED, "배송지 변경 버튼 클릭 실패", { purchaseOrderId });
+        errorCollector.addError(
+          ORDER_STEPS.ORDER_PLACEMENT,
+          ERROR_CODES.CLICK_FAILED,
+          "배송지 변경 버튼 클릭 실패",
+          { purchaseOrderId },
+        );
         await saveOrderResults(authToken, {
           purchaseOrderId,
           products: addedProducts || [],
@@ -591,7 +625,7 @@ async function processCoupangOrder(
           automationErrors: errorCollector.getErrors(),
           poLineIds,
           success: false,
-        vendor: "coupang",
+          vendor: "coupang",
         });
         return res.json({
           success: false,
@@ -609,7 +643,9 @@ async function processCoupangOrder(
         error: e.message,
       });
       // 배송지 처리 실패 - 여기서 멈춤
-      errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, e.message, { purchaseOrderId });
+      errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, e.message, {
+        purchaseOrderId,
+      });
       await saveOrderResults(authToken, {
         purchaseOrderId,
         products: addedProducts || [],
@@ -638,12 +674,18 @@ async function processCoupangOrder(
     try {
       const amountText = await page.$eval(
         "#payInfo > div > div.twc-my-4 > div > span:nth-child(2) > span:nth-child(1)",
-        (el) => el.textContent?.trim() || ""
+        (el) => el.textContent?.trim() || "",
       );
-      actualPaymentAmount = parseInt(amountText.replace(/[^0-9]/g, ""), 10) || 0;
-      console.log(`[coupang] 결제금액 파싱: ${amountText} → ${actualPaymentAmount}원`);
+      actualPaymentAmount =
+        parseInt(amountText.replace(/[^0-9]/g, ""), 10) || 0;
+      console.log(
+        `[coupang] 결제금액 파싱: ${amountText} → ${actualPaymentAmount}원`,
+      );
     } catch (e) {
-      console.log("[coupang] 결제금액 파싱 실패 (결제 진행에 영향 없음):", e.message);
+      console.log(
+        "[coupang] 결제금액 파싱 실패 (결제 진행에 영향 없음):",
+        e.message,
+      );
     }
 
     await delay(2000);
@@ -679,10 +721,19 @@ async function processCoupangOrder(
         let pinSuccess = false;
         let lastPinResult = null;
 
-        for (let pinRetry = 1; pinRetry <= maxPinRetries && !pinSuccess; pinRetry++) {
+        for (
+          let pinRetry = 1;
+          pinRetry <= maxPinRetries && !pinSuccess;
+          pinRetry++
+        ) {
           try {
-            console.log(`[쿠팡페이] 비밀번호 입력 시도 ${pinRetry}/${maxPinRetries}`);
-            const pinEntered = await enterCoupangPayPin(page, vendor.paymentPin);
+            console.log(
+              `[쿠팡페이] 비밀번호 입력 시도 ${pinRetry}/${maxPinRetries}`,
+            );
+            const pinEntered = await enterCoupangPayPin(
+              page,
+              vendor.paymentPin,
+            );
             console.log("비밀번호 입력 결과:", JSON.stringify(pinEntered));
             lastPinResult = pinEntered;
 
@@ -694,7 +745,9 @@ async function processCoupangOrder(
               console.log(`[쿠팡페이] 키패드 존재 여부: ${keypadStillExists}`);
 
               if (keypadStillExists) {
-                console.log(`[쿠팡페이] 비밀번호 입력 실패 - 키패드가 아직 존재함 (재시도 ${pinRetry}/${maxPinRetries})`);
+                console.log(
+                  `[쿠팡페이] 비밀번호 입력 실패 - 키패드가 아직 존재함 (재시도 ${pinRetry}/${maxPinRetries})`,
+                );
                 // 재시도 전 잠시 대기
                 await delay(2000);
               } else {
@@ -747,13 +800,13 @@ async function processCoupangOrder(
           ];
 
           const isComplete = completionIndicators.some(
-            (indicator) => !!indicator
+            (indicator) => !!indicator,
           );
 
           // 주문번호 추출 시도
           let orderNumber = null;
           const orderNumEl = document.querySelector(
-            '[class*="order-number"], [class*="orderNumber"]'
+            '[class*="order-number"], [class*="orderNumber"]',
           );
           if (orderNumEl) {
             orderNumber = orderNumEl.textContent?.trim();
@@ -811,7 +864,7 @@ async function processCoupangOrder(
         });
 
         console.log(
-          `[결제 대기 ${waitCount}초] URL: ${currentUrl.substring(0, 50)}...`
+          `[결제 대기 ${waitCount}초] URL: ${currentUrl.substring(0, 50)}...`,
         );
 
         // 결제 완료 페이지 감지
@@ -832,7 +885,7 @@ async function processCoupangOrder(
           try {
             await delay(1000);
             const confirmBtn = await page.$(
-              "#__next > div.sc-445mix-0.bdbSye > div.sc-wh3cod-0.sNTur > button.sc-1vm0jpx-0.sc-1vm0jpx-2.sc-wh3cod-1.gWgVCb.iqKTcw.hmSagB"
+              "#__next > div.sc-445mix-0.bdbSye > div.sc-wh3cod-0.sNTur > button.sc-1vm0jpx-0.sc-1vm0jpx-2.sc-wh3cod-1.gWgVCb.iqKTcw.hmSagB",
             );
             if (confirmBtn) {
               await confirmBtn.click();
@@ -842,7 +895,7 @@ async function processCoupangOrder(
               // 주문번호 추출
               const orderInfo = await page.evaluate(() => {
                 const orderSpan = document.querySelector(
-                  "#__next > div.sc-vv7pzb-0.kqeqyx.my-area-body > div.sc-vv7pzb-1.dHwqA-d.my-area-contents > div > div.sc-llyby5-0.cpmwZc > div.sc-llyby5-1.hEqipt > span.sc-llyby5-2.jtryGp"
+                  "#__next > div.sc-vv7pzb-0.kqeqyx.my-area-body > div.sc-vv7pzb-1.dHwqA-d.my-area-contents > div > div.sc-llyby5-0.cpmwZc > div.sc-llyby5-1.hEqipt > span.sc-llyby5-2.jtryGp",
                 );
                 if (orderSpan) {
                   const text = orderSpan.textContent || "";
@@ -927,7 +980,7 @@ async function processCoupangOrder(
         // 전체 주문금액을 총 수량으로 나눠서 추정
         const totalQuantity = products.reduce(
           (sum, p) => sum + (p.quantity || 1),
-          0
+          0,
         );
         coupangUnitPrice = Math.round(paymentStep.orderAmount / totalQuantity);
       }
@@ -961,7 +1014,7 @@ async function processCoupangOrder(
           console.log(
             `[가격 일치] 상품 ${
               i + 1
-            }: 쿠팡 ${coupangUnitPrice}원, 협력사 ${expectedUnitPrice}원 (오차: ${priceDifference}원)`
+            }: 쿠팡 ${coupangUnitPrice}원, 협력사 ${expectedUnitPrice}원 (오차: ${priceDifference}원)`,
           );
         }
       }
@@ -972,12 +1025,12 @@ async function processCoupangOrder(
       success: isPaymentComplete,
       productIndex: i + 1,
       productName: product.productName || addedProducts[i]?.productName || null,
-      productSku: product.productSku || null,  // 제품코드 (가격 불일치 mutation용)
+      productSku: product.productSku || null, // 제품코드 (가격 불일치 mutation용)
       productUrl: product.productUrl,
       quantity: quantity,
-      orderLineIds: product.orderLineIds || null,  // OrderLine IDs (mutation용)
-      lineId: poLineIds?.[i] || null,  // PurchaseOrderLine ID
-      productVariantVendorId: product.productVariantVendorId || null,  // ProductVariantVendor ID
+      orderLineIds: product.orderLineIds || null, // OrderLine IDs (mutation용)
+      lineId: poLineIds?.[i] || null, // PurchaseOrderLine ID
+      productVariantVendorId: product.productVariantVendorId || null, // ProductVariantVendor ID
       orderNumber: paymentStep?.orderNumber || null,
       orderAmount: paymentStep?.orderAmount || null,
       priceMismatch: priceMismatch,
@@ -986,19 +1039,20 @@ async function processCoupangOrder(
 
   // 가격 불일치 목록
   const priceMismatchList = productResults.filter(
-    (p) => p.priceMismatch?.detected
+    (p) => p.priceMismatch?.detected,
   );
 
   // 가격 불일치 상세 데이터 (시스템 저장용)
-  const priceMismatches = priceMismatchList.map(p => ({
-    purchaseOrderLineId: p.lineId,  // PurchaseOrderLine ID (mutation용)
-    productVariantVendorId: p.productVariantVendorId || null,  // ProductVariantVendor ID
-    productCode: p.priceMismatch?.productUrl?.match(/vendorItemId=(\d+)/)?.[1] || null,
+  const priceMismatches = priceMismatchList.map((p) => ({
+    purchaseOrderLineId: p.lineId, // PurchaseOrderLine ID (mutation용)
+    productVariantVendorId: p.productVariantVendorId || null, // ProductVariantVendor ID
+    productCode:
+      p.priceMismatch?.productUrl?.match(/vendorItemId=(\d+)/)?.[1] || null,
     productName: p.priceMismatch?.productName || p.productName,
     quantity: p.priceMismatch?.quantity || p.quantity,
-    openMallPrice: p.priceMismatch?.coupangPrice,       // 오픈몰 현재 가격 (VAT 포함)
-    expectedPrice: p.priceMismatch?.expectedPrice,      // 예상 가격 (VAT 포함)
-    vendorPriceExcludeVat: p.priceMismatch?.vendorPriceExcludeVat,  // 협력사 매입가 (VAT 별도)
+    openMallPrice: p.priceMismatch?.coupangPrice, // 오픈몰 현재 가격 (VAT 포함)
+    expectedPrice: p.priceMismatch?.expectedPrice, // 예상 가격 (VAT 포함)
+    vendorPriceExcludeVat: p.priceMismatch?.vendorPriceExcludeVat, // 협력사 매입가 (VAT 별도)
     difference: p.priceMismatch?.difference,
     differencePercent: p.priceMismatch?.differencePercent,
   }));
@@ -1007,11 +1061,11 @@ async function processCoupangOrder(
   if (isPaymentComplete) {
     await saveOrderResults(authToken, {
       purchaseOrderId,
-      products: productResults.map(p => ({
+      products: productResults.map((p) => ({
         orderLineIds: p.orderLineIds,
         openMallOrderNumber: paymentStep?.orderNumber || null,
       })),
-      priceMismatches: priceMismatches.map(p => ({
+      priceMismatches: priceMismatches.map((p) => ({
         productVariantVendorId: p.productVariantVendorId,
         vendorPriceExcludeVat: p.vendorPriceExcludeVat,
         openMallPrice: p.openMallPrice,
@@ -1027,12 +1081,14 @@ async function processCoupangOrder(
     if (actualPaymentAmount > 0) {
       const expectedAmount = calculateExpectedPaymentAmount(products);
       try {
-        await createPaymentLogs(authToken, [{
-          vendor: "coupang",
-          paymentAmount: actualPaymentAmount,
-          expectedAmount,
-          purchaseOrderId,
-        }]);
+        await createPaymentLogs(authToken, [
+          {
+            vendor: "coupang",
+            paymentAmount: actualPaymentAmount,
+            expectedAmount,
+            purchaseOrderId,
+          },
+        ]);
       } catch (e) {
         console.log("[coupang] 결제 로그 저장 실패 (무시):", e.message);
       }
@@ -1055,23 +1111,25 @@ async function processCoupangOrder(
     success: isPaymentComplete,
     orderNumber: paymentStep?.orderNumber || null,
     purchaseOrderId: purchaseOrderId || null,
-    purchaseOrderLineIds: poLineIds || [],  // PurchaseOrderLinesReceive mutation용
+    purchaseOrderLineIds: poLineIds || [], // PurchaseOrderLinesReceive mutation용
     // 상품별 결과 (mutation용 orderLineId 포함)
-    products: productResults.map(p => ({
+    products: productResults.map((p) => ({
       orderLineIds: p.orderLineIds,
       openMallOrderNumber: p.orderNumber,
       productName: p.productName,
       productSku: p.productSku,
       quantity: p.quantity,
-      openMallPrice: p.priceMismatch?.coupangPrice || null,   // 쿠팡 현재 가격
-      vendorPriceExcludeVat: p.priceMismatch?.vendorPriceExcludeVat || null,  // 협력사 매입가 (VAT 별도)
+      openMallPrice: p.priceMismatch?.coupangPrice || null, // 쿠팡 현재 가격
+      vendorPriceExcludeVat: p.priceMismatch?.vendorPriceExcludeVat || null, // 협력사 매입가 (VAT 별도)
       priceMismatch: p.priceMismatch?.detected || false,
       needsManagerVerification: p.needsManagerVerification || false,
     })),
     // 가격 불일치 관련
     priceMismatchCount: priceMismatchList.length,
     priceMismatches: priceMismatches,
-    automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
+    automationErrors: errorCollector.hasErrors()
+      ? errorCollector.getErrors()
+      : undefined,
   });
 }
 
@@ -1102,7 +1160,7 @@ async function clickChangeAddressButton(page) {
         if (btn) {
           const isVisible = await page.evaluate(
             (el) => el.offsetParent !== null,
-            btn
+            btn,
           );
           if (isVisible) {
             console.log(`[배송지] 버튼 발견: ${selector}`);
@@ -1197,7 +1255,7 @@ async function clickEditAddressInList(page) {
   console.log(`[배송지] 배송지 목록: ${addressListInfo.count}개`);
   console.log(
     "[배송지] 목록 상세:",
-    JSON.stringify(addressListInfo.cards, null, 2)
+    JSON.stringify(addressListInfo.cards, null, 2),
   );
 
   // 배송지 목록이 비어있으면 배송지 추가 폼이 바로 열려있음 (버튼 클릭 불필요)
@@ -1212,7 +1270,7 @@ async function clickEditAddressInList(page) {
 
   // 배송지 목록이 있으면 첫 번째 배송지의 수정 버튼 클릭
   const editBtn = await addressFrame.$(
-    ".address-card .address-card__button--edit"
+    ".address-card .address-card__button--edit",
   );
   if (editBtn) {
     console.log("[배송지] 수정 버튼 발견: .address-card__button--edit");
@@ -1241,7 +1299,7 @@ async function fillAddressForm(page, shippingAddress) {
   console.log("[배송지] 폼 데이터 입력 시작...");
   console.log(
     "[배송지] 입력할 데이터:",
-    JSON.stringify(shippingAddress, null, 2)
+    JSON.stringify(shippingAddress, null, 2),
   );
 
   // addressbook iframe 찾기
@@ -1330,7 +1388,7 @@ async function fillAddressForm(page, shippingAddress) {
   if (shippingAddress.phone) {
     try {
       const phoneInput = await addressFrame.$(
-        'input[name="recipientCellphone"]'
+        'input[name="recipientCellphone"]',
       );
       if (phoneInput) {
         // 하이픈 제거, 국가코드 제거 (쿠팡은 국가코드 별도 관리)
@@ -1368,7 +1426,9 @@ async function fillAddressForm(page, shippingAddress) {
       console.log("[배송지] 주소 검색 시작...");
 
       // 우편번호 검색 버튼 클릭
-      const zipcodeTrigger = await addressFrame.$("._addressBookZipcodeTrigger");
+      const zipcodeTrigger = await addressFrame.$(
+        "._addressBookZipcodeTrigger",
+      );
       if (zipcodeTrigger) {
         await zipcodeTrigger.click();
         console.log("[배송지] 우편번호 검색 버튼 클릭");
@@ -1379,7 +1439,9 @@ async function fillAddressForm(page, shippingAddress) {
 
         // 디버깅: 페이지의 모든 iframe 확인
         const allIframes = await page.$$("iframe");
-        console.log(`[배송지 디버그] 페이지 내 iframe 개수: ${allIframes.length}`);
+        console.log(
+          `[배송지 디버그] 페이지 내 iframe 개수: ${allIframes.length}`,
+        );
         for (let i = 0; i < allIframes.length; i++) {
           const src = await allIframes[i].evaluate((el) => el.src);
           console.log(`[배송지 디버그] iframe[${i}] src: ${src}`);
@@ -1387,11 +1449,17 @@ async function fillAddressForm(page, shippingAddress) {
 
         for (let retry = 0; retry < 10; retry++) {
           try {
-            const pickerIframeHandle = await page.$("iframe[src*='addressbook/picker']");
-            console.log(`[배송지 디버그] pickerIframeHandle: ${pickerIframeHandle ? "found" : "null"}`);
+            const pickerIframeHandle = await page.$(
+              "iframe[src*='addressbook/picker']",
+            );
+            console.log(
+              `[배송지 디버그] pickerIframeHandle: ${pickerIframeHandle ? "found" : "null"}`,
+            );
             if (pickerIframeHandle) {
               pickerFrame = await pickerIframeHandle.contentFrame();
-              console.log(`[배송지 디버그] pickerFrame: ${pickerFrame ? "found" : "null"}`);
+              console.log(
+                `[배송지 디버그] pickerFrame: ${pickerFrame ? "found" : "null"}`,
+              );
               if (pickerFrame) {
                 console.log("[배송지] picker iframe 발견");
                 break;
@@ -1400,27 +1468,38 @@ async function fillAddressForm(page, shippingAddress) {
           } catch (e) {
             console.log(`[배송지 디버그] iframe 찾기 에러: ${e.message}`);
           }
-          console.log(`[배송지] picker iframe 찾기 재시도... (${retry + 1}/10)`);
+          console.log(
+            `[배송지] picker iframe 찾기 재시도... (${retry + 1}/10)`,
+          );
           await delay(500);
         }
 
         if (!pickerFrame) {
           console.log("[배송지] picker iframe 찾을 수 없음");
-          errors.push({ field: "roadAddress", error: "picker iframe 찾을 수 없음" });
+          errors.push({
+            field: "roadAddress",
+            error: "picker iframe 찾을 수 없음",
+          });
         } else {
           const searchQuery = streetAddress1 || postalCode;
           console.log(`[배송지 디버그] searchQuery: ${searchQuery}`);
 
           // 검색 입력 필드 찾기 - picker iframe 내부
-          let searchInput = await pickerFrame.$("div.zipcode__keyword-box._zipcodeSearchKeyBox > input");
+          let searchInput = await pickerFrame.$(
+            "div.zipcode__keyword-box._zipcodeSearchKeyBox > input",
+          );
           let zipcodeFrame = null; // iframe 안의 iframe (zipcode 검색 화면)
-          console.log(`[배송지 디버그] searchInput (zipcode): ${searchInput ? "found" : "null"}`);
+          console.log(
+            `[배송지 디버그] searchInput (zipcode): ${searchInput ? "found" : "null"}`,
+          );
 
           // 다른 셀렉터로도 시도
           if (!searchInput) {
             // 모든 input 태그 확인
             const allInputs = await pickerFrame.$$("input");
-            console.log(`[배송지 디버그] pickerFrame 내 input 개수: ${allInputs.length}`);
+            console.log(
+              `[배송지 디버그] pickerFrame 내 input 개수: ${allInputs.length}`,
+            );
             for (let i = 0; i < Math.min(allInputs.length, 5); i++) {
               const inputInfo = await allInputs[i].evaluate((el) => ({
                 name: el.name,
@@ -1429,12 +1508,19 @@ async function fillAddressForm(page, shippingAddress) {
                 placeholder: el.placeholder,
                 className: el.className,
               }));
-              console.log(`[배송지 디버그] input[${i}]:`, JSON.stringify(inputInfo));
+              console.log(
+                `[배송지 디버그] input[${i}]:`,
+                JSON.stringify(inputInfo),
+              );
             }
 
             // 주소 변경 버튼 찾기 (검색 화면으로 이동)
-            const changeAddressBtn = await pickerFrame.$("._addressBookZipcodeTrigger");
-            console.log(`[배송지 디버그] changeAddressBtn (_addressBookZipcodeTrigger): ${changeAddressBtn ? "found" : "null"}`);
+            const changeAddressBtn = await pickerFrame.$(
+              "._addressBookZipcodeTrigger",
+            );
+            console.log(
+              `[배송지 디버그] changeAddressBtn (_addressBookZipcodeTrigger): ${changeAddressBtn ? "found" : "null"}`,
+            );
 
             if (changeAddressBtn) {
               // 버튼 상태 확인
@@ -1444,7 +1530,10 @@ async function fillAddressForm(page, shippingAddress) {
                 innerText: el.innerText.substring(0, 50),
                 href: el.href,
               }));
-              console.log(`[배송지 디버그] 버튼 정보:`, JSON.stringify(btnInfo));
+              console.log(
+                `[배송지 디버그] 버튼 정보:`,
+                JSON.stringify(btnInfo),
+              );
 
               // disabled 클래스 제거 (버튼이 비활성화 상태일 수 있음)
               await changeAddressBtn.evaluate((el) => {
@@ -1454,7 +1543,9 @@ async function fillAddressForm(page, shippingAddress) {
               console.log("[배송지 디버그] disabled 클래스 제거");
 
               // 버튼이 보이도록 스크롤
-              await changeAddressBtn.evaluate((el) => el.scrollIntoView({ behavior: "instant", block: "center" }));
+              await changeAddressBtn.evaluate((el) =>
+                el.scrollIntoView({ behavior: "instant", block: "center" }),
+              );
               await delay(300);
 
               // 클릭 시도
@@ -1464,31 +1555,45 @@ async function fillAddressForm(page, shippingAddress) {
 
               // zipcode__wrapper 확인
               let wrapperFound = await pickerFrame.$("div.zipcode__wrapper");
-              console.log(`[배송지 디버그] 클릭 후 zipcode__wrapper: ${wrapperFound ? "found" : "null"}`);
+              console.log(
+                `[배송지 디버그] 클릭 후 zipcode__wrapper: ${wrapperFound ? "found" : "null"}`,
+              );
 
               // 안되면 href 직접 이동 시도 (A 태그)
               if (!wrapperFound && btnInfo.href) {
-                console.log(`[배송지 디버그] href로 이동 시도: ${btnInfo.href}`);
+                console.log(
+                  `[배송지 디버그] href로 이동 시도: ${btnInfo.href}`,
+                );
                 await pickerFrame.goto(btnInfo.href);
                 await delay(2000);
                 wrapperFound = await pickerFrame.$("div.zipcode__wrapper");
-                console.log(`[배송지 디버그] href 이동 후 zipcode__wrapper: ${wrapperFound ? "found" : "null"}`);
+                console.log(
+                  `[배송지 디버그] href 이동 후 zipcode__wrapper: ${wrapperFound ? "found" : "null"}`,
+                );
               }
 
               // pickerFrame 안의 iframe 확인 (iframe 안에 iframe 구조)
               const innerIframes = await pickerFrame.$$("iframe");
-              console.log(`[배송지 디버그] pickerFrame 내 iframe 개수: ${innerIframes.length}`);
+              console.log(
+                `[배송지 디버그] pickerFrame 내 iframe 개수: ${innerIframes.length}`,
+              );
 
               for (let i = 0; i < innerIframes.length; i++) {
                 const src = await innerIframes[i].evaluate((el) => el.src);
-                console.log(`[배송지 디버그] pickerFrame 내 iframe[${i}] src: ${src}`);
+                console.log(
+                  `[배송지 디버그] pickerFrame 내 iframe[${i}] src: ${src}`,
+                );
                 const innerFrame = await innerIframes[i].contentFrame();
                 if (innerFrame) {
                   const hasWrapper = await innerFrame.$("div.zipcode__wrapper");
-                  console.log(`[배송지 디버그] iframe[${i}] zipcode__wrapper: ${hasWrapper ? "found" : "null"}`);
+                  console.log(
+                    `[배송지 디버그] iframe[${i}] zipcode__wrapper: ${hasWrapper ? "found" : "null"}`,
+                  );
                   if (hasWrapper) {
                     zipcodeFrame = innerFrame;
-                    console.log("[배송지 디버그] zipcode__wrapper가 있는 iframe 발견!");
+                    console.log(
+                      "[배송지 디버그] zipcode__wrapper가 있는 iframe 발견!",
+                    );
                     break;
                   }
                 }
@@ -1496,20 +1601,32 @@ async function fillAddressForm(page, shippingAddress) {
 
               // zipcodeFrame에서 searchInput 찾기
               if (zipcodeFrame) {
-                searchInput = await zipcodeFrame.$("div.zipcode__keyword-box._zipcodeSearchKeyBox > input");
-                console.log(`[배송지 디버그] searchInput (zipcodeFrame): ${searchInput ? "found" : "null"}`);
+                searchInput = await zipcodeFrame.$(
+                  "div.zipcode__keyword-box._zipcodeSearchKeyBox > input",
+                );
+                console.log(
+                  `[배송지 디버그] searchInput (zipcodeFrame): ${searchInput ? "found" : "null"}`,
+                );
               }
 
               // pickerFrame에서 찾기
               if (!searchInput) {
-                searchInput = await pickerFrame.$("div.zipcode__keyword-box._zipcodeSearchKeyBox > input");
-                console.log(`[배송지 디버그] searchInput (pickerFrame): ${searchInput ? "found" : "null"}`);
+                searchInput = await pickerFrame.$(
+                  "div.zipcode__keyword-box._zipcodeSearchKeyBox > input",
+                );
+                console.log(
+                  `[배송지 디버그] searchInput (pickerFrame): ${searchInput ? "found" : "null"}`,
+                );
               }
 
               // addressFrame에서 찾기
               if (!searchInput) {
-                searchInput = await addressFrame.$("div.zipcode__keyword-box._zipcodeSearchKeyBox > input");
-                console.log(`[배송지 디버그] searchInput (addressFrame): ${searchInput ? "found" : "null"}`);
+                searchInput = await addressFrame.$(
+                  "div.zipcode__keyword-box._zipcodeSearchKeyBox > input",
+                );
+                console.log(
+                  `[배송지 디버그] searchInput (addressFrame): ${searchInput ? "found" : "null"}`,
+                );
               }
             }
           }
@@ -1532,12 +1649,20 @@ async function fillAddressForm(page, shippingAddress) {
             // 검색 버튼 클릭 (zipcodeFrame 또는 pickerFrame 내에서)
             let searchBtn = null;
             if (zipcodeFrame) {
-              searchBtn = await zipcodeFrame.$("div.zipcode__search-trigger > button");
-              console.log(`[배송지 디버그] searchBtn (zipcodeFrame): ${searchBtn ? "found" : "null"}`);
+              searchBtn = await zipcodeFrame.$(
+                "div.zipcode__search-trigger > button",
+              );
+              console.log(
+                `[배송지 디버그] searchBtn (zipcodeFrame): ${searchBtn ? "found" : "null"}`,
+              );
             }
             if (!searchBtn) {
-              searchBtn = await pickerFrame.$("div.zipcode__search-trigger > button");
-              console.log(`[배송지 디버그] searchBtn (pickerFrame): ${searchBtn ? "found" : "null"}`);
+              searchBtn = await pickerFrame.$(
+                "div.zipcode__search-trigger > button",
+              );
+              console.log(
+                `[배송지 디버그] searchBtn (pickerFrame): ${searchBtn ? "found" : "null"}`,
+              );
             }
             if (searchBtn) {
               await searchBtn.click();
@@ -1552,19 +1677,29 @@ async function fillAddressForm(page, shippingAddress) {
 
             // 검색 결과에서 우편번호 일치하는 도로명 주소 선택
             const targetFrame = zipcodeFrame || pickerFrame;
-            const resultItems = await targetFrame.$$("._zipcodeResultSendTrigger.zipcode__result__item--road");
-            console.log(`[배송지 디버그] 검색 결과 개수: ${resultItems.length}`);
+            const resultItems = await targetFrame.$$(
+              "._zipcodeResultSendTrigger.zipcode__result__item--road",
+            );
+            console.log(
+              `[배송지 디버그] 검색 결과 개수: ${resultItems.length}`,
+            );
 
             let addressSelected = false;
             for (const item of resultItems) {
-              const dataResult = await item.evaluate((el) => el.getAttribute("data-result"));
+              const dataResult = await item.evaluate((el) =>
+                el.getAttribute("data-result"),
+              );
               if (dataResult) {
                 try {
                   const resultData = JSON.parse(dataResult);
-                  console.log(`[배송지 디버그] 결과 우편번호: ${resultData.zipcode}, 찾는 우편번호: ${postalCode}`);
+                  console.log(
+                    `[배송지 디버그] 결과 우편번호: ${resultData.zipcode}, 찾는 우편번호: ${postalCode}`,
+                  );
                   if (resultData.zipcode === postalCode) {
                     await item.click();
-                    console.log(`[배송지] 우편번호 ${postalCode} 일치하는 주소 선택: ${resultData.roadAddress}`);
+                    console.log(
+                      `[배송지] 우편번호 ${postalCode} 일치하는 주소 선택: ${resultData.roadAddress}`,
+                    );
                     addressSelected = true;
                     await delay(1500);
                     break;
@@ -1584,19 +1719,32 @@ async function fillAddressForm(page, shippingAddress) {
             }
 
             if (addressSelected) {
-              filledFields.push({ field: "roadAddress", value: searchQuery, postalCode });
+              filledFields.push({
+                field: "roadAddress",
+                value: searchQuery,
+                postalCode,
+              });
             } else {
               console.log("[배송지] 검색 결과 없음");
               errors.push({ field: "roadAddress", error: "검색 결과 없음" });
             }
           } else {
             console.log("[배송지] 검색 입력 필드 찾을 수 없음");
-            errors.push({ field: "roadAddress", error: "검색 입력 필드 찾을 수 없음" });
+            errors.push({
+              field: "roadAddress",
+              error: "검색 입력 필드 찾을 수 없음",
+            });
           }
         }
       } else {
-        console.log("[배송지] 우편번호 검색 버튼 찾을 수 없음 - 기존 주소 유지");
-        filledFields.push({ field: "roadAddress", value: "no_trigger", skipped: true });
+        console.log(
+          "[배송지] 우편번호 검색 버튼 찾을 수 없음 - 기존 주소 유지",
+        );
+        filledFields.push({
+          field: "roadAddress",
+          value: "no_trigger",
+          skipped: true,
+        });
       }
     } catch (e) {
       console.log("[배송지] 주소 검색 실패:", e.message);
@@ -1604,12 +1752,17 @@ async function fillAddressForm(page, shippingAddress) {
     }
   } else {
     console.log("[배송지] 주소 정보 없음 - 기존 주소 유지");
-    filledFields.push({ field: "roadAddress", value: "no_data", skipped: true });
+    filledFields.push({
+      field: "roadAddress",
+      value: "no_data",
+      skipped: true,
+    });
   }
 
   // 상세주소 (addressDetail) 입력 - streetAddress2 또는 addressDetail 사용
   // 주의: 주소 검색 후 상세주소가 초기화되므로 주소 선택 완료 후에 입력해야 함
-  const addressDetail = shippingAddress.streetAddress2 || shippingAddress.addressDetail;
+  const addressDetail =
+    shippingAddress.streetAddress2 || shippingAddress.addressDetail;
   if (addressDetail) {
     try {
       // pickerFrame 다시 찾기 (주소 검색 후 변경되었을 수 있음)
@@ -1656,7 +1809,9 @@ async function fillAddressForm(page, shippingAddress) {
     }
     const targetFrame = saveFrame || addressFrame;
 
-    const saveBtn = await targetFrame.$("div.addressbook__button-fixer > button");
+    const saveBtn = await targetFrame.$(
+      "div.addressbook__button-fixer > button",
+    );
     if (saveBtn) {
       await saveBtn.click();
       console.log("[배송지] 저장 버튼 클릭");
@@ -1673,10 +1828,11 @@ async function fillAddressForm(page, shippingAddress) {
 
   // 수정한 배송지 선택 버튼 클릭
   try {
-    await delay(2000);  // UI 갱신 대기
+    await delay(2000); // UI 갱신 대기
 
     // 버튼이 나타날 때까지 대기
-    const pickSelector = "form.address-card__form.address-card__form--pick._addressBookAddressCardPickForm > button";
+    const pickSelector =
+      "form.address-card__form.address-card__form--pick._addressBookAddressCardPickForm > button";
     await addressFrame.waitForSelector(pickSelector, { timeout: 5000 });
 
     const pickBtn = await addressFrame.$(pickSelector);
@@ -1687,7 +1843,10 @@ async function fillAddressForm(page, shippingAddress) {
       filledFields.push({ field: "pickAddress", value: "clicked" });
     } else {
       console.log("[배송지] 배송지 선택 버튼 찾을 수 없음");
-      errors.push({ field: "pickAddress", error: "배송지 선택 버튼 찾을 수 없음" });
+      errors.push({
+        field: "pickAddress",
+        error: "배송지 선택 버튼 찾을 수 없음",
+      });
     }
   } catch (e) {
     console.log("[배송지] 배송지 선택 버튼 클릭 실패:", e.message);
@@ -1714,7 +1873,7 @@ async function verifyCartItems(page, expectedProducts) {
     `[장바구니 검증] 기대 상품 ${expectedProducts.length}개:`,
     expectedProducts
       .map((p) => `${p.productName || "unknown"} x${p.quantity}`)
-      .join(", ")
+      .join(", "),
   );
 
   // 장바구니에서 선택된 상품 정보 추출
@@ -1736,16 +1895,16 @@ async function verifyCartItems(page, expectedProducts) {
 
       // 상품 정보 추출
       const nameEl = item.querySelector(
-        '[class*="product-name"], [class*="name"], .product-title, a[href*="products"]'
+        '[class*="product-name"], [class*="name"], .product-title, a[href*="products"]',
       );
       const name = nameEl ? nameEl.textContent?.trim() : "";
 
       // 수량 추출 - 쿠팡 장바구니 수량 input 셀렉터
       const qtyInput = item.querySelector(
-        'input.cart-quantity-input, input[type="number"], input[type="text"][class*="quantity"], input[class*="qty"], input[class*="quantity"], [class*="count"] input'
+        'input.cart-quantity-input, input[type="number"], input[type="text"][class*="quantity"], input[class*="qty"], input[class*="quantity"], [class*="count"] input',
       );
       const qtyText = item.querySelector(
-        '[class*="qty"], [class*="quantity"], [class*="count"]'
+        '[class*="qty"], [class*="quantity"], [class*="count"]',
       );
       let quantity = 1;
       if (qtyInput) {
@@ -1755,7 +1914,7 @@ async function verifyCartItems(page, expectedProducts) {
         quantity = match ? parseInt(match[0], 10) : 1;
       }
       console.log(
-        `[장바구니] 상품: ${name?.substring(0, 30)}... 수량: ${quantity}`
+        `[장바구니] 상품: ${name?.substring(0, 30)}... 수량: ${quantity}`,
       );
 
       // vendorItemId 추출 - data-vid 속성 우선 사용 (쿠팡 HTML 구조)
@@ -1771,7 +1930,7 @@ async function verifyCartItems(page, expectedProducts) {
 
       // 가격 추출
       const priceEl = item.querySelector(
-        '[class*="price"], [class*="amount"], .sale-price'
+        '[class*="price"], [class*="amount"], .sale-price',
       );
       const priceText = priceEl
         ? priceEl.textContent?.replace(/[^\d]/g, "")
@@ -1794,7 +1953,7 @@ async function verifyCartItems(page, expectedProducts) {
     `[장바구니 검증] 선택된 장바구니 상품 ${cartItems.length}개:`,
     cartItems
       .map((i) => `${i.name.substring(0, 30)}... x${i.quantity}`)
-      .join(", ")
+      .join(", "),
   );
 
   // 검증 결과
@@ -1858,7 +2017,7 @@ async function verifyCartItems(page, expectedProducts) {
           console.log(
             `[수량 불일치] ${cartItem.name.substring(0, 30)}... 기대: ${
               expected.quantity
-            }, 실제: ${cartItem.quantity}`
+            }, 실제: ${cartItem.quantity}`,
           );
         }
 
@@ -1870,7 +2029,7 @@ async function verifyCartItems(page, expectedProducts) {
           matchMethod,
         });
         console.log(
-          `[매칭 성공] ${cartItem.name.substring(0, 30)}... (${matchMethod})`
+          `[매칭 성공] ${cartItem.name.substring(0, 30)}... (${matchMethod})`,
         );
 
         expectedCopy.splice(i, 1);
@@ -1889,7 +2048,7 @@ async function verifyCartItems(page, expectedProducts) {
       console.log(
         `[예상외 상품] ${cartItem.name.substring(0, 30)}... 수량: ${
           cartItem.quantity
-        }`
+        }`,
       );
     }
   }
@@ -1927,7 +2086,7 @@ async function verifyCartItems(page, expectedProducts) {
  */
 async function adjustCartQuantity(page, vendorItemId, targetQuantity) {
   console.log(
-    `[수량 조정] vendorItemId: ${vendorItemId}, 목표 수량: ${targetQuantity}`
+    `[수량 조정] vendorItemId: ${vendorItemId}, 목표 수량: ${targetQuantity}`,
   );
 
   const adjusted = await page.evaluate(
@@ -1947,7 +2106,7 @@ async function adjustCartQuantity(page, vendorItemId, targetQuantity) {
 
         // 수량 입력 필드 찾기 - 쿠팡 장바구니 셀렉터
         const qtyInput = item.querySelector(
-          'input.cart-quantity-input, input[type="number"], input[type="text"][class*="quantity"], input[class*="qty"], input[class*="quantity"]'
+          'input.cart-quantity-input, input[type="number"], input[type="text"][class*="quantity"], input[class*="qty"], input[class*="quantity"]',
         );
 
         if (qtyInput) {
@@ -1968,17 +2127,17 @@ async function adjustCartQuantity(page, vendorItemId, targetQuantity) {
 
         // + / - 버튼으로 조정
         const currentQtyEl = item.querySelector(
-          '[class*="qty"], [class*="quantity"], [class*="count"]'
+          '[class*="qty"], [class*="quantity"], [class*="count"]',
         );
         const currentQty = currentQtyEl
           ? parseInt(currentQtyEl.textContent?.match(/\d+/)?.[0] || "1", 10)
           : 1;
 
         const plusBtn = item.querySelector(
-          '[class*="plus"], [class*="increase"], button[aria-label*="증가"]'
+          '[class*="plus"], [class*="increase"], button[aria-label*="증가"]',
         );
         const minusBtn = item.querySelector(
-          '[class*="minus"], [class*="decrease"], button[aria-label*="감소"]'
+          '[class*="minus"], [class*="decrease"], button[aria-label*="감소"]',
         );
 
         if (plusBtn && minusBtn) {
@@ -2003,7 +2162,7 @@ async function adjustCartQuantity(page, vendorItemId, targetQuantity) {
       return { success: false, error: "상품을 찾을 수 없음" };
     },
     vendorItemId,
-    targetQuantity
+    targetQuantity,
   );
 
   console.log(`[수량 조정] 결과:`, JSON.stringify(adjusted));
@@ -2090,7 +2249,7 @@ async function enterCoupangPayPin(page, pin) {
     // iframe에서 비밀번호 입력 UI 찾기
     const frames = page.frames();
     console.log(
-      `[쿠팡페이] 프레임 ${frames.length}개 검색 중... (시도 ${attempts}/${maxAttempts})`
+      `[쿠팡페이] 프레임 ${frames.length}개 검색 중... (시도 ${attempts}/${maxAttempts})`,
     );
 
     for (const frame of frames) {
@@ -2111,7 +2270,7 @@ async function enterCoupangPayPin(page, pin) {
           if (hasPinKeypad) {
             pinFrame = frame;
             console.log(
-              `[쿠팡페이] 비밀번호 키패드 프레임 발견: ${url.substring(0, 80)}`
+              `[쿠팡페이] 비밀번호 키패드 프레임 발견: ${url.substring(0, 80)}`,
             );
             break;
           }
@@ -2310,7 +2469,7 @@ async function enterCoupangPayPin(page, pin) {
   for (let ocrAttempt = 1; ocrAttempt <= maxOcrRetries; ocrAttempt++) {
     const config = ocrConfigs[ocrAttempt - 1] || ocrConfigs[0];
     console.log(
-      `[쿠팡페이] OCR 스캔 시작... (시도 ${ocrAttempt}/${maxOcrRetries}, th:${config.threshold}, neg:${config.negate}, psm:${config.psm}, blur:${config.blur}, gamma:${config.gamma}, size:${config.size})`
+      `[쿠팡페이] OCR 스캔 시작... (시도 ${ocrAttempt}/${maxOcrRetries}, th:${config.threshold}, neg:${config.negate}, psm:${config.psm}, blur:${config.blur}, gamma:${config.gamma}, size:${config.size})`,
     );
     // 첫 시도에서만 초기화, 이후에는 기존 결과 유지
     if (ocrAttempt === 1) {
@@ -2323,7 +2482,7 @@ async function enterCoupangPayPin(page, pin) {
     const sessionId = Date.now();
     const keypadScreenshot = path.join(
       tempDir,
-      `keypad_attempt_${ocrAttempt}_${sessionId}.png`
+      `keypad_attempt_${ocrAttempt}_${sessionId}.png`,
     );
     try {
       await page.screenshot({ path: keypadScreenshot, fullPage: false });
@@ -2351,10 +2510,13 @@ async function enterCoupangPayPin(page, pin) {
 
       try {
         const btnHandle = buttonHandles[i];
-        const screenshotPath = path.join(tempDir, `btn_${i}_attempt_${ocrAttempt}_${sessionId}.png`);
+        const screenshotPath = path.join(
+          tempDir,
+          `btn_${i}_attempt_${ocrAttempt}_${sessionId}.png`,
+        );
         const processedPath = path.join(
           tempDir,
-          `btn_${i}_processed_attempt_${ocrAttempt}_${sessionId}.png`
+          `btn_${i}_processed_attempt_${ocrAttempt}_${sessionId}.png`,
         );
 
         // 버튼 요소 직접 스크린샷 (iframe 좌표 문제 해결)
@@ -2421,27 +2583,27 @@ async function enterCoupangPayPin(page, pin) {
             digitMapSimple[recognizedDigit] = i;
             console.log(
               `[쿠팡페이] ✅ 버튼 ${i}: "${recognizedDigit}" (신뢰도: ${confidence.toFixed(
-                1
-              )}%)`
+                1,
+              )}%)`,
             );
           } else {
             // 중복 - 신뢰도 비교해서 더 높은 것 사용
             const existing = digitMap[recognizedDigit];
             if (confidence > existing.confidence) {
               console.log(
-                `[쿠팡페이] 🔄 버튼 ${i}: "${recognizedDigit}" 신뢰도 더 높음 (${confidence.toFixed(1)}% > ${existing.confidence.toFixed(1)}%), 교체`
+                `[쿠팡페이] 🔄 버튼 ${i}: "${recognizedDigit}" 신뢰도 더 높음 (${confidence.toFixed(1)}% > ${existing.confidence.toFixed(1)}%), 교체`,
               );
               digitMap[recognizedDigit] = { index: i, confidence };
               digitMapSimple[recognizedDigit] = i;
             } else {
               console.log(
-                `[쿠팡페이] 버튼 ${i}: 중복 숫자 "${recognizedDigit}" (${confidence.toFixed(1)}% ≤ ${existing.confidence.toFixed(1)}%) 무시`
+                `[쿠팡페이] 버튼 ${i}: 중복 숫자 "${recognizedDigit}" (${confidence.toFixed(1)}% ≤ ${existing.confidence.toFixed(1)}%) 무시`,
               );
             }
           }
         } else {
           console.log(
-            `[쿠팡페이] ❌ 버튼 ${i}: 인식 실패 - raw: "${text.trim()}"`
+            `[쿠팡페이] ❌ 버튼 ${i}: 인식 실패 - raw: "${text.trim()}"`,
           );
         }
 
@@ -2473,7 +2635,10 @@ async function enterCoupangPayPin(page, pin) {
     }
 
     // 시도별 로그 파일 저장
-    const logPath = path.join(tempDir, `ocr_attempt_${ocrAttempt}_${sessionId}.json`);
+    const logPath = path.join(
+      tempDir,
+      `ocr_attempt_${ocrAttempt}_${sessionId}.json`,
+    );
     try {
       const logData = {
         attempt: ocrAttempt,
@@ -2482,7 +2647,9 @@ async function enterCoupangPayPin(page, pin) {
         keypadScreenshot,
         results: attemptResults,
         digitMapSimple: { ...digitMapSimple },
-        missingDigits: requiredDigits.filter((d) => !digitMapSimple.hasOwnProperty(d)),
+        missingDigits: requiredDigits.filter(
+          (d) => !digitMapSimple.hasOwnProperty(d),
+        ),
       };
       fs.writeFileSync(logPath, JSON.stringify(logData, null, 2), "utf-8");
       console.log(`[쿠팡페이] OCR 로그 저장: ${logPath}`);
@@ -2492,12 +2659,12 @@ async function enterCoupangPayPin(page, pin) {
 
     console.log(`[쿠팡페이] OCR 완료. 매핑:`, JSON.stringify(digitMapSimple));
     console.log(
-      `[쿠팡페이] 인식된 숫자: ${Object.keys(digitMap).sort().join(", ")}`
+      `[쿠팡페이] 인식된 숫자: ${Object.keys(digitMap).sort().join(", ")}`,
     );
 
     // 필요한 모든 숫자가 인식되었는지 확인
     const missingDigits = requiredDigits.filter(
-      (d) => !digitMap.hasOwnProperty(d)
+      (d) => !digitMap.hasOwnProperty(d),
     );
     if (missingDigits.length === 0) {
       console.log(`[쿠팡페이] 모든 필요 숫자 인식 완료`);
@@ -2519,14 +2686,14 @@ async function enterCoupangPayPin(page, pin) {
         digitMapSimple[inferredDigit] = inferredBtn;
         digitMap[inferredDigit] = { index: inferredBtn, confidence: 0 };
         console.log(
-          `[쿠팡페이] 🎯 추론: 버튼 ${inferredBtn} = 숫자 "${inferredDigit}" (유일하게 남은 버튼/숫자)`
+          `[쿠팡페이] 🎯 추론: 버튼 ${inferredBtn} = 숫자 "${inferredDigit}" (유일하게 남은 버튼/숫자)`,
         );
         break;
       }
 
       if (ocrAttempt < maxOcrRetries) {
         console.log(
-          `[쿠팡페이] ${ocrAttempt + 1}번째 재시도 준비 중... (500ms 대기)`
+          `[쿠팡페이] ${ocrAttempt + 1}번째 재시도 준비 중... (500ms 대기)`,
         );
         await delay(500);
       } else {
@@ -2536,14 +2703,17 @@ async function enterCoupangPayPin(page, pin) {
           unmappedButtonIndices.length === missingDigits.length
         ) {
           console.log(
-            `[쿠팡페이] 🎯 최종 추론 시도: ${unmappedButtonIndices.length}개 버튼 ↔ ${missingDigits.length}개 숫자`
+            `[쿠팡페이] 🎯 최종 추론 시도: ${unmappedButtonIndices.length}개 버튼 ↔ ${missingDigits.length}개 숫자`,
           );
           // 순서대로 매핑 (완벽하지 않지만 시도)
           for (let idx = 0; idx < unmappedButtonIndices.length; idx++) {
             digitMapSimple[missingDigits[idx]] = unmappedButtonIndices[idx];
-            digitMap[missingDigits[idx]] = { index: unmappedButtonIndices[idx], confidence: 0 };
+            digitMap[missingDigits[idx]] = {
+              index: unmappedButtonIndices[idx],
+              confidence: 0,
+            };
             console.log(
-              `[쿠팡페이] 🎯 추론 매핑: 버튼 ${unmappedButtonIndices[idx]} = 숫자 "${missingDigits[idx]}"`
+              `[쿠팡페이] 🎯 추론 매핑: 버튼 ${unmappedButtonIndices[idx]} = 숫자 "${missingDigits[idx]}"`,
             );
           }
         }
@@ -2605,7 +2775,7 @@ async function enterCoupangPayPin(page, pin) {
 
     const confirmClicked = await pinFrame.evaluate(() => {
       const confirmBtns = document.querySelectorAll(
-        "button, input[type='submit']"
+        "button, input[type='submit']",
       );
       for (const btn of confirmBtns) {
         const text = btn.textContent || btn.innerText || btn.value || "";
@@ -2661,7 +2831,7 @@ async function clearCart(page) {
   const cartStatus = await page.evaluate(() => {
     // 빈 장바구니 확인
     const emptyCart = document.querySelector(
-      '[class*="empty-cart"], [class*="no-item"], .cart-empty'
+      '[class*="empty-cart"], [class*="no-item"], .cart-empty',
     );
     if (emptyCart && emptyCart.offsetParent !== null) {
       return { isEmpty: true, itemCount: 0 };
@@ -2727,7 +2897,7 @@ async function clearCart(page) {
   const dialogPromise = new Promise((resolve) => {
     const tempHandler = async (dialog) => {
       console.log(
-        `[장바구니 비우기] 다이얼로그 감지: ${dialog.type()} - "${dialog.message()}"`
+        `[장바구니 비우기] 다이얼로그 감지: ${dialog.type()} - "${dialog.message()}"`,
       );
       await dialog.accept();
       dialogHandled = true;
@@ -2775,7 +2945,7 @@ async function clearCart(page) {
         console.log(
           "[장바구니 비우기] 삭제 버튼 발견 (fallback):",
           el.tagName,
-          text
+          text,
         );
         el.click();
         return {
@@ -2802,7 +2972,7 @@ async function clearCart(page) {
   const dialogResult = await dialogPromise;
   console.log(
     `[장바구니 비우기] 다이얼로그 처리 결과:`,
-    JSON.stringify(dialogResult)
+    JSON.stringify(dialogResult),
   );
 
   // 네이티브 다이얼로그가 처리되지 않았다면 커스텀 모달 확인
@@ -2831,7 +3001,7 @@ async function clearCart(page) {
 
         // 먼저 화면에 보이는 모든 버튼 중에서 "확인", "삭제", "예" 버튼 찾기
         const allButtons = document.querySelectorAll(
-          'button, [role="button"], a[class*="btn"], div[class*="btn"]'
+          'button, [role="button"], a[class*="btn"], div[class*="btn"]',
         );
         for (const btn of allButtons) {
           const text = (btn.textContent || btn.innerText || "").trim();
@@ -2870,7 +3040,7 @@ async function clearCart(page) {
               console.log(
                 "[장바구니 비우기] 확인 버튼 발견:",
                 text,
-                btn.tagName
+                btn.tagName,
               );
               btn.click();
               return {
@@ -2891,7 +3061,7 @@ async function clearCart(page) {
               continue;
             }
             const buttons = modal.querySelectorAll(
-              'button, [role="button"], a, div'
+              'button, [role="button"], a, div',
             );
             for (const btn of buttons) {
               const text = (btn.textContent || btn.innerText || "").trim();
@@ -2908,7 +3078,7 @@ async function clearCart(page) {
                 console.log(
                   "[장바구니 비우기] 모달 확인 버튼 발견:",
                   text,
-                  btn.tagName
+                  btn.tagName,
                 );
                 btn.click();
                 return {
@@ -2927,7 +3097,7 @@ async function clearCart(page) {
 
       console.log(
         `[장바구니 비우기] 확인 모달 (시도 ${attempt + 1}):`,
-        JSON.stringify(confirmClicked)
+        JSON.stringify(confirmClicked),
       );
 
       if (confirmClicked.success) {
@@ -2942,11 +3112,11 @@ async function clearCart(page) {
   // 삭제 완료 확인
   const finalStatus = await page.evaluate(() => {
     const emptyCart = document.querySelector(
-      '[class*="empty-cart"], [class*="no-item"], .cart-empty'
+      '[class*="empty-cart"], [class*="no-item"], .cart-empty',
     );
     // div[id^="item_"] 또는 data-bundle-id 속성 사용
     const cartItems = document.querySelectorAll(
-      'div[id^="item_"], [data-bundle-id]'
+      'div[id^="item_"], [data-bundle-id]',
     );
     return {
       isEmpty:

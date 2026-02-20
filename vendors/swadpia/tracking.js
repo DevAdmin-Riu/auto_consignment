@@ -24,9 +24,11 @@ const SELECTORS = {
     // 주문번호 검색 input
     searchInput: "#search_value",
     // 조회 버튼
-    searchButton: "#contents > form:nth-child(2) > div.boxstyle04.mar_b20 > table > tbody > tr:nth-child(1) > td:nth-child(4) > a > input[type=image]",
+    searchButton:
+      "#contents > form:nth-child(2) > div.boxstyle04.mar_b20 > table > tbody > tr:nth-child(1) > td:nth-child(4) > a > input[type=image]",
     // 배송 조회 링크 (href에서 송장번호 추출)
-    deliveryTrackingLink: "#frm > table > tbody > tr:nth-child(2) > td:nth-child(8) > a",
+    deliveryTrackingLink:
+      "#frm > table > tbody > tr:nth-child(2) > td:nth-child(8) > a",
   },
 };
 
@@ -52,7 +54,11 @@ async function getSwadpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
       });
       console.log("[swadpia 송장조회] 로그인 완료");
     } catch (loginError) {
-      errorCollector.addError(TRACKING_STEPS.LOGIN, ERROR_CODES.LOGIN_FAILED, loginError.message);
+      errorCollector.addError(
+        TRACKING_STEPS.LOGIN,
+        ERROR_CODES.LOGIN_FAILED,
+        loginError.message,
+      );
       return { results, automationErrors: errorCollector.getErrors() };
     }
 
@@ -79,12 +85,21 @@ async function getSwadpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
     // 4. 각 주문번호에 대해 검색 및 송장번호 조회
     for (const openMallOrderNumber of openMallOrderNumbers) {
       try {
-        console.log(`[swadpia 송장조회] 주문번호 ${openMallOrderNumber} 검색 중...`);
+        console.log(
+          `[swadpia 송장조회] 주문번호 ${openMallOrderNumber} 검색 중...`,
+        );
 
         // 검색창 초기화 및 주문번호 입력
-        await page.waitForSelector(SELECTORS.orderIng.searchInput, { timeout: 5000 });
-        await page.$eval(SELECTORS.orderIng.searchInput, (el) => (el.value = ""));
-        await page.type(SELECTORS.orderIng.searchInput, openMallOrderNumber, { delay: 50 });
+        await page.waitForSelector(SELECTORS.orderIng.searchInput, {
+          timeout: 5000,
+        });
+        await page.$eval(
+          SELECTORS.orderIng.searchInput,
+          (el) => (el.value = ""),
+        );
+        await page.type(SELECTORS.orderIng.searchInput, openMallOrderNumber, {
+          delay: 50,
+        });
 
         // 조회 버튼 클릭
         const searchBtn = await page.$(SELECTORS.orderIng.searchButton);
@@ -94,15 +109,22 @@ async function getSwadpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
         }
 
         // 배송 조회 링크 확인 (없으면 송장 아직 없음)
-        const deliveryLink = await page.$(SELECTORS.orderIng.deliveryTrackingLink);
+        const deliveryLink = await page.$(
+          SELECTORS.orderIng.deliveryTrackingLink,
+        );
         if (!deliveryLink) {
-          console.log(`[swadpia 송장조회] ${openMallOrderNumber}: 배송 조회 링크 없음 (송장 미등록)`);
+          console.log(
+            `[swadpia 송장조회] ${openMallOrderNumber}: 배송 조회 링크 없음 (송장 미등록)`,
+          );
           continue;
         }
 
         // href에서 송장번호 추출
         // href="javascript:DeliverysearchView('316031413176','','21483039','DVM10','DVC09');"
-        const href = await page.$eval(SELECTORS.orderIng.deliveryTrackingLink, (el) => el.getAttribute("href") || "");
+        const href = await page.$eval(
+          SELECTORS.orderIng.deliveryTrackingLink,
+          (el) => el.getAttribute("href") || "",
+        );
         const trackingMatch = href.match(/DeliverysearchView\('(\d+)'/);
 
         if (trackingMatch && trackingMatch[1]) {
@@ -114,21 +136,41 @@ async function getSwadpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
             trackingNumber,
             carrier,
           });
-          console.log(`[swadpia 송장조회] ${openMallOrderNumber} → ${trackingNumber} (${carrier})`);
+          console.log(
+            `[swadpia 송장조회] ${openMallOrderNumber} → ${trackingNumber} (${carrier})`,
+          );
         } else {
-          console.log(`[swadpia 송장조회] ${openMallOrderNumber} → 송장번호 추출 실패`);
+          console.log(
+            `[swadpia 송장조회] ${openMallOrderNumber} → 송장번호 추출 실패`,
+          );
         }
-
       } catch (error) {
-        console.error(`[swadpia 송장조회] ${openMallOrderNumber} 에러:`, error.message);
-        errorCollector.addError(TRACKING_STEPS.EXTRACTION, ERROR_CODES.EXTRACTION_FAILED, error.message, { openMallOrderNumber });
+        console.error(
+          `[swadpia 송장조회] ${openMallOrderNumber} 에러:`,
+          error.message,
+        );
+        errorCollector.addError(
+          TRACKING_STEPS.EXTRACTION,
+          ERROR_CODES.EXTRACTION_FAILED,
+          error.message,
+          { openMallOrderNumber },
+        );
       }
     }
 
-    return { results, automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined };
+    return {
+      results,
+      automationErrors: errorCollector.hasErrors()
+        ? errorCollector.getErrors()
+        : undefined,
+    };
   } catch (error) {
     console.error("[swadpia 송장조회] 전체 에러:", error);
-    errorCollector.addError(TRACKING_STEPS.EXTRACTION, ERROR_CODES.UNEXPECTED_ERROR, error.message);
+    errorCollector.addError(
+      TRACKING_STEPS.EXTRACTION,
+      ERROR_CODES.UNEXPECTED_ERROR,
+      error.message,
+    );
     return { results, automationErrors: errorCollector.getErrors() };
   }
 }

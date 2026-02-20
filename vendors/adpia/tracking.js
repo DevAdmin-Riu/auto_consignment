@@ -21,17 +21,21 @@ const SELECTORS = {
   orderHistory: {
     url: "https://www.adpiamall.com/order/ing",
     // 기간 3개월 버튼
-    threeMonthBtn: "#sub_container > div > app-root > ordering > div > div > form > div > div.searchfield_wrap > div.searchdate > div.date > button:nth-child(5)",
+    threeMonthBtn:
+      "#sub_container > div > app-root > ordering > div > div > form > div > div.searchfield_wrap > div.searchdate > div.date > button:nth-child(5)",
     // 검색 주문번호 라디오
-    orderNumberRadio: "#sub_container > div > app-root > ordering > div > div > form > div > div.searchfield_wrap > div.searchwindow_keyword > p:nth-child(2) > label",
+    orderNumberRadio:
+      "#sub_container > div > app-root > ordering > div > div > form > div > div.searchfield_wrap > div.searchwindow_keyword > p:nth-child(2) > label",
     // 검색 input
     searchInput: ".searchwindow > #search_txt",
     // 조회 버튼
-    searchBtn: "#sub_container > div > app-root > ordering > div > div > form > div > div.searchwindow > button",
+    searchBtn:
+      "#sub_container > div > app-root > ordering > div > div > form > div > div.searchwindow > button",
   },
   // 배송조회 팝업
   deliverySearch: {
-    trackingLink: "#sub_container > div > app-root > ordering > div > div > deliverysearch > div > div > div > div > a",
+    trackingLink:
+      "#sub_container > div > app-root > ordering > div > div > deliverysearch > div > div > div > div > a",
   },
 };
 
@@ -56,7 +60,11 @@ async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
     const loginResult = await loginToAdpia(page, vendor);
     if (!loginResult.success) {
       console.error("[adpia 송장조회] 로그인 실패:", loginResult.message);
-      errorCollector.addError(TRACKING_STEPS.LOGIN, ERROR_CODES.LOGIN_FAILED, loginResult.message);
+      errorCollector.addError(
+        TRACKING_STEPS.LOGIN,
+        ERROR_CODES.LOGIN_FAILED,
+        loginResult.message,
+      );
       return { results, automationErrors: errorCollector.getErrors() };
     }
     console.log("[adpia 송장조회] 로그인 완료");
@@ -80,7 +88,9 @@ async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
 
     // 4. 검색 주문번호 라디오 클릭
     console.log("[adpia 송장조회] 주문번호 검색 선택...");
-    const orderNumberRadio = await page.$(SELECTORS.orderHistory.orderNumberRadio);
+    const orderNumberRadio = await page.$(
+      SELECTORS.orderHistory.orderNumberRadio,
+    );
     if (orderNumberRadio) {
       await orderNumberRadio.click();
       await delay(500);
@@ -89,7 +99,9 @@ async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
     // 5. 각 주문번호에 대해 조회
     for (const openMallOrderNumber of openMallOrderNumbers) {
       try {
-        console.log(`[adpia 송장조회] 주문번호 ${openMallOrderNumber} 검색 중...`);
+        console.log(
+          `[adpia 송장조회] 주문번호 ${openMallOrderNumber} 검색 중...`,
+        );
 
         // 검색어 입력
         const searchInput = await page.$(SELECTORS.orderHistory.searchInput);
@@ -122,7 +134,9 @@ async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
           await delay(2000);
 
           // 7. 배송조회 팝업에서 송장번호 추출
-          const trackingLink = await page.$(SELECTORS.deliverySearch.trackingLink);
+          const trackingLink = await page.$(
+            SELECTORS.deliverySearch.trackingLink,
+          );
           if (trackingLink) {
             const trackingInfo = await page.evaluate((el) => {
               return {
@@ -132,7 +146,9 @@ async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
             }, trackingLink);
 
             if (trackingInfo.trackingNumber) {
-              console.log(`[adpia 송장조회] ${openMallOrderNumber}: ${trackingInfo.trackingNumber} (${DEFAULT_CARRIER})`);
+              console.log(
+                `[adpia 송장조회] ${openMallOrderNumber}: ${trackingInfo.trackingNumber} (${DEFAULT_CARRIER})`,
+              );
               results.push({
                 openMallOrderNumber,
                 trackingNumber: trackingInfo.trackingNumber,
@@ -140,28 +156,43 @@ async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
               });
             }
           } else {
-            console.log(`[adpia 송장조회] ${openMallOrderNumber}: 송장번호 링크 없음`);
+            console.log(
+              `[adpia 송장조회] ${openMallOrderNumber}: 송장번호 링크 없음`,
+            );
           }
-
         } else {
-          console.log(`[adpia 송장조회] ${openMallOrderNumber}: 배송조회 버튼 없음 (발송 전)`);
+          console.log(
+            `[adpia 송장조회] ${openMallOrderNumber}: 배송조회 버튼 없음 (발송 전)`,
+          );
         }
-
       } catch (err) {
-        console.error(`[adpia 송장조회] ${openMallOrderNumber} 조회 실패:`, err.message);
-        errorCollector.addError(TRACKING_STEPS.EXTRACTION, ERROR_CODES.EXTRACTION_FAILED, err.message, { openMallOrderNumber });
+        console.error(
+          `[adpia 송장조회] ${openMallOrderNumber} 조회 실패:`,
+          err.message,
+        );
+        errorCollector.addError(
+          TRACKING_STEPS.EXTRACTION,
+          ERROR_CODES.EXTRACTION_FAILED,
+          err.message,
+          { openMallOrderNumber },
+        );
       }
     }
-
   } catch (error) {
     console.error("[adpia 송장조회] 에러:", error.message);
-    errorCollector.addError(TRACKING_STEPS.EXTRACTION, ERROR_CODES.UNEXPECTED_ERROR, error.message);
+    errorCollector.addError(
+      TRACKING_STEPS.EXTRACTION,
+      ERROR_CODES.UNEXPECTED_ERROR,
+      error.message,
+    );
   }
 
   console.log(`[adpia 송장조회] 완료: ${results.length}건 조회됨`);
   return {
     results,
-    automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
+    automationErrors: errorCollector.hasErrors()
+      ? errorCollector.getErrors()
+      : undefined,
   };
 }
 

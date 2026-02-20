@@ -18,9 +18,11 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // 셀렉터 상수
 const SELECTORS = {
   // 택배사
-  carrier: "#detailForm > div > div:nth-child(3) > div:nth-child(3) > table > tbody > tr:nth-child(1) > td:nth-child(6) > p:nth-child(2) > a",
+  carrier:
+    "#detailForm > div > div:nth-child(3) > div:nth-child(3) > table > tbody > tr:nth-child(1) > td:nth-child(6) > p:nth-child(2) > a",
   // 송장번호
-  trackingNumber: "#detailForm > div > div:nth-child(3) > div:nth-child(3) > table > tbody > tr:nth-child(1) > td:nth-child(6) > p:nth-child(3) > a",
+  trackingNumber:
+    "#detailForm > div > div:nth-child(3) > div:nth-child(3) > table > tbody > tr:nth-child(1) > td:nth-child(6) > p:nth-child(3) > a",
 };
 
 /**
@@ -41,7 +43,11 @@ async function getNapkinTrackingNumbers(page, vendor, openMallOrderNumbers) {
     const loginResult = await loginToNapkin(page, vendor);
     if (!loginResult.success) {
       console.error("[napkin 송장조회] 로그인 실패:", loginResult.message);
-      errorCollector.addError(TRACKING_STEPS.LOGIN, ERROR_CODES.LOGIN_FAILED, loginResult.message);
+      errorCollector.addError(
+        TRACKING_STEPS.LOGIN,
+        ERROR_CODES.LOGIN_FAILED,
+        loginResult.message,
+      );
       return { results, automationErrors: errorCollector.getErrors() };
     }
     console.log("[napkin 송장조회] 로그인 완료");
@@ -49,9 +55,14 @@ async function getNapkinTrackingNumbers(page, vendor, openMallOrderNumbers) {
     // 2. 각 주문번호에 대해 송장번호 조회
     for (const openMallOrderNumber of openMallOrderNumbers) {
       try {
-        console.log(`[napkin 송장조회] 주문번호 ${openMallOrderNumber} 검색 중...`);
+        console.log(
+          `[napkin 송장조회] 주문번호 ${openMallOrderNumber} 검색 중...`,
+        );
 
-        const trackingInfo = await findTrackingNumber(page, openMallOrderNumber);
+        const trackingInfo = await findTrackingNumber(
+          page,
+          openMallOrderNumber,
+        );
 
         if (trackingInfo?.trackingNumber) {
           const carrier = normalizeCarrier(trackingInfo.carrier);
@@ -60,21 +71,47 @@ async function getNapkinTrackingNumbers(page, vendor, openMallOrderNumbers) {
             trackingNumber: trackingInfo.trackingNumber,
             carrier,
           });
-          console.log(`[napkin 송장조회] ${openMallOrderNumber} → ${trackingInfo.trackingNumber} (${carrier})`);
+          console.log(
+            `[napkin 송장조회] ${openMallOrderNumber} → ${trackingInfo.trackingNumber} (${carrier})`,
+          );
         } else {
-          console.log(`[napkin 송장조회] ${openMallOrderNumber} → 송장번호 없음`);
+          console.log(
+            `[napkin 송장조회] ${openMallOrderNumber} → 송장번호 없음`,
+          );
         }
       } catch (error) {
-        console.error(`[napkin 송장조회] ${openMallOrderNumber} 에러:`, error.message);
-        errorCollector.addError(TRACKING_STEPS.EXTRACTION, ERROR_CODES.EXTRACTION_FAILED, error.message, { openMallOrderNumber });
+        console.error(
+          `[napkin 송장조회] ${openMallOrderNumber} 에러:`,
+          error.message,
+        );
+        errorCollector.addError(
+          TRACKING_STEPS.EXTRACTION,
+          ERROR_CODES.EXTRACTION_FAILED,
+          error.message,
+          { openMallOrderNumber },
+        );
       }
     }
 
-    return { results, automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined };
+    return {
+      results,
+      automationErrors: errorCollector.hasErrors()
+        ? errorCollector.getErrors()
+        : undefined,
+    };
   } catch (error) {
     console.error("[napkin 송장조회] 전체 에러:", error);
-    errorCollector.addError(TRACKING_STEPS.EXTRACTION, ERROR_CODES.EXTRACTION_FAILED, error.message);
-    return { results, automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined };
+    errorCollector.addError(
+      TRACKING_STEPS.EXTRACTION,
+      ERROR_CODES.EXTRACTION_FAILED,
+      error.message,
+    );
+    return {
+      results,
+      automationErrors: errorCollector.hasErrors()
+        ? errorCollector.getErrors()
+        : undefined,
+    };
   }
 }
 
@@ -99,7 +136,9 @@ async function findTrackingNumber(page, openMallOrderNumber) {
     // 2. 택배사 추출
     let carrier = null;
     try {
-      carrier = await page.$eval(SELECTORS.carrier, (el) => el.textContent?.trim());
+      carrier = await page.$eval(SELECTORS.carrier, (el) =>
+        el.textContent?.trim(),
+      );
     } catch (e) {
       console.log(`[napkin 송장조회] ${openMallOrderNumber}: 택배사 정보 없음`);
     }
@@ -107,7 +146,9 @@ async function findTrackingNumber(page, openMallOrderNumber) {
     // 3. 송장번호 추출
     let trackingNumber = null;
     try {
-      trackingNumber = await page.$eval(SELECTORS.trackingNumber, (el) => el.textContent?.trim());
+      trackingNumber = await page.$eval(SELECTORS.trackingNumber, (el) =>
+        el.textContent?.trim(),
+      );
     } catch (e) {
       console.log(`[napkin 송장조회] ${openMallOrderNumber}: 송장번호 없음`);
     }
@@ -119,7 +160,9 @@ async function findTrackingNumber(page, openMallOrderNumber) {
     }
 
     if (trackingNumber) {
-      console.log(`[napkin 송장조회] 찾음: ${carrier || "자체배송"} / ${trackingNumber}`);
+      console.log(
+        `[napkin 송장조회] 찾음: ${carrier || "자체배송"} / ${trackingNumber}`,
+      );
       return {
         trackingNumber,
         carrier: carrier || "자체배송",
@@ -128,10 +171,22 @@ async function findTrackingNumber(page, openMallOrderNumber) {
     }
 
     console.log(`[napkin 송장조회] ${openMallOrderNumber}: 송장번호 없음`);
-    return { trackingNumber: null, carrier: null, status: "tracking_not_found" };
+    return {
+      trackingNumber: null,
+      carrier: null,
+      status: "tracking_not_found",
+    };
   } catch (error) {
-    console.error(`[napkin 송장조회] ${openMallOrderNumber} 조회 실패:`, error.message);
-    return { trackingNumber: null, carrier: null, status: "error", error: error.message };
+    console.error(
+      `[napkin 송장조회] ${openMallOrderNumber} 조회 실패:`,
+      error.message,
+    );
+    return {
+      trackingNumber: null,
+      carrier: null,
+      status: "error",
+      error: error.message,
+    };
   }
 }
 

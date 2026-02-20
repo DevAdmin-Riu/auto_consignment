@@ -35,9 +35,16 @@ const {
   ORDER_STEPS,
   ERROR_CODES,
 } = require("../../lib/automation-error");
-const { saveOrderResults, createPaymentLogs, calculateExpectedPaymentAmount } = require("../../lib/graphql-client");
+const {
+  saveOrderResults,
+  createPaymentLogs,
+  calculateExpectedPaymentAmount,
+} = require("../../lib/graphql-client");
 // const { automateISPPayment } = require("../../lib/isp-payment"); // ISP 미사용 (신한카드)
-const { automateShinhanCardPayment, typeWithInterception } = require("../../lib/shinhan-payment");
+const {
+  automateShinhanCardPayment,
+  typeWithInterception,
+} = require("../../lib/shinhan-payment");
 const { getEnv } = require("../config");
 
 // 딜레이 함수
@@ -57,59 +64,64 @@ async function waitFor(page, selector, timeout = 10000) {
 const SELECTORS = {
   // 로그인
   login: {
-    idInput: '#member_id',
-    pwInput: '#member_passwd',
+    idInput: "#member_id",
+    pwInput: "#member_passwd",
     submitBtn: 'form[id^="member_form"] fieldset a, .btn_login, a.btn_login',
     loginForm: 'form[id^="member_form"]',
   },
   // 상품 페이지
   product: {
     // 옵션 선택
-    optionSelect: 'select[id^="product_option_id"], select[class^="ProductOption"]',
+    optionSelect:
+      'select[id^="product_option_id"], select[class^="ProductOption"]',
     optionItem: (value) => `option[value*="${value}"]`,
     // 수량
     quantityInput: 'input[name="quantity"], input.quantity',
-    quantityPlus: '.quantity_plus, .up, button.up',
-    quantityMinus: '.quantity_minus, .down, button.down',
+    quantityPlus: ".quantity_plus, .up, button.up",
+    quantityMinus: ".quantity_minus, .down, button.down",
     // 버튼
-    addToCartBtn: '#cartBtn',
-    buyNowBtn: '.btn_buy, a.btn_buy, #btn_buy',
+    addToCartBtn: "#cartBtn",
+    buyNowBtn: ".btn_buy, a.btn_buy, #btn_buy",
     // 장바구니 담기 후 팝업
-    confirmGoCartBtn: '#confirmLayer > div.xans-element-.xans-product.xans-product-basketadd.ec-base-layer > div.ec-base-button > p > a:nth-child(1)',
+    confirmGoCartBtn:
+      "#confirmLayer > div.xans-element-.xans-product.xans-product-basketadd.ec-base-layer > div.ec-base-button > p > a:nth-child(1)",
     // 가격
-    totalPrice: '.total_price, #totalPrice, .price_total',
+    totalPrice: ".total_price, #totalPrice, .price_total",
   },
   // 장바구니
   cart: {
-    url: 'https://www.napkinkorea.co.kr/order/basket.html',
+    url: "https://www.napkinkorea.co.kr/order/basket.html",
     selectAll: 'input[name="checkall"], input.check_all',
     orderBtn: '.btn_order, a.btn_order, #btn_order, a[href*="order"]',
-    orderAllBtn: '#sp-content > div:nth-child(2) > div.xans-element-.xans-order.xans-order-basketpackage > div.xans-element-.xans-order.xans-order-totalorder.ec-base-button.justify > a:nth-child(1)',
+    orderAllBtn:
+      "#sp-content > div:nth-child(2) > div.xans-element-.xans-order.xans-order-basketpackage > div.xans-element-.xans-order.xans-order-totalorder.ec-base-button.justify > a:nth-child(1)",
     itemCheckbox: 'input[name="cart_select[]"], input.cart_check',
-    clearBtn: '#sp-content > div:nth-child(2) > div.xans-element-.xans-order.xans-order-basketpackage > div.xans-element-.xans-order.xans-order-selectorder.ec-base-button > span.gRight > a:nth-child(2)',
+    clearBtn:
+      "#sp-content > div:nth-child(2) > div.xans-element-.xans-order.xans-order-basketpackage > div.xans-element-.xans-order.xans-order-selectorder.ec-base-button > span.gRight > a:nth-child(2)",
   },
   // 주문서
   order: {
     // 배송지 직접입력 버튼
-    newAddressBtn: '#ec-jigsaw-tab-shippingInfo-newAddress > a',
+    newAddressBtn: "#ec-jigsaw-tab-shippingInfo-newAddress > a",
     // 배송지
-    receiverName: '#rname',
-    addressSearchBtn: '#btn_search_rzipcode',
-    addressDetail: '#raddr2',
+    receiverName: "#rname",
+    addressSearchBtn: "#btn_search_rzipcode",
+    addressDetail: "#raddr2",
     // 휴대폰
-    phoneFirst: '#rphone2_1', // select
-    phoneMiddle: '#rphone2_2',
-    phoneLast: '#rphone2_3',
+    phoneFirst: "#rphone2_1", // select
+    phoneMiddle: "#rphone2_2",
+    phoneLast: "#rphone2_3",
     // 다음 주소 검색 iframe
     daumPostcodeFrame: "iframe[title='우편번호 검색 프레임']",
-    daumAddressInput: '#region_name',
-    daumSearchButton: '#searchForm > fieldset > div > button.btn_search',
-    daumAddressItem: 'li.list_post_item',
+    daumAddressInput: "#region_name",
+    daumSearchButton: "#searchForm > fieldset > div > button.btn_search",
+    daumAddressItem: "li.list_post_item",
     // 결제
-    payBtn: '#orderFixItem > div',
+    payBtn: "#orderFixItem > div",
     agreeAll: 'input[name="agree_all"], input.agree_all',
     // 결제 수단
-    cardPayment: 'input[value="card"], input[name="payment_method"][value*="card"]',
+    cardPayment:
+      'input[value="card"], input[name="payment_method"][value*="card"]',
   },
 };
 
@@ -144,7 +156,7 @@ async function loginToNapkin(page, vendor) {
     const el = document.querySelector(selector);
     if (!el) return false;
     const style = window.getComputedStyle(el);
-    return style.display !== 'none' && style.visibility !== 'hidden';
+    return style.display !== "none" && style.visibility !== "hidden";
   }, SELECTORS.login.idInput);
 
   if (!isVisible) {
@@ -259,33 +271,39 @@ async function processSingleOption(page, option) {
 
   if (type === "INPUT_TEXT") {
     // INPUT_TEXT: tr > th에서 title 찾고 → td에서 input에 텍스트 입력
-    const inputResult = await page.evaluate((optTitle, optValue) => {
-      // 모든 tr에서 th 텍스트로 찾기
-      const rows = document.querySelectorAll("tr");
-      for (const row of rows) {
-        const th = row.querySelector("th");
-        if (th) {
-          const thText = (th.textContent || "").trim();
-          if (thText.includes(optTitle)) {
-            // 같은 tr의 td에서 input 찾기
-            const td = row.querySelector("td");
-            if (td) {
-              const input = td.querySelector("input[type='text'], input:not([type]), textarea");
-              if (input) {
-                input.focus();
-                input.value = "";
-                input.dispatchEvent(new Event("input", { bubbles: true }));
-                input.value = optValue;
-                input.dispatchEvent(new Event("input", { bubbles: true }));
-                input.dispatchEvent(new Event("change", { bubbles: true }));
-                return { found: true, thText };
+    const inputResult = await page.evaluate(
+      (optTitle, optValue) => {
+        // 모든 tr에서 th 텍스트로 찾기
+        const rows = document.querySelectorAll("tr");
+        for (const row of rows) {
+          const th = row.querySelector("th");
+          if (th) {
+            const thText = (th.textContent || "").trim();
+            if (thText.includes(optTitle)) {
+              // 같은 tr의 td에서 input 찾기
+              const td = row.querySelector("td");
+              if (td) {
+                const input = td.querySelector(
+                  "input[type='text'], input:not([type]), textarea",
+                );
+                if (input) {
+                  input.focus();
+                  input.value = "";
+                  input.dispatchEvent(new Event("input", { bubbles: true }));
+                  input.value = optValue;
+                  input.dispatchEvent(new Event("input", { bubbles: true }));
+                  input.dispatchEvent(new Event("change", { bubbles: true }));
+                  return { found: true, thText };
+                }
               }
             }
           }
         }
-      }
-      return { found: false };
-    }, title, value);
+        return { found: false };
+      },
+      title,
+      value,
+    );
 
     if (inputResult.found) {
       console.log(`[napkin] ✅ INPUT_TEXT 입력 완료: "${title}" = "${value}"`);
@@ -295,64 +313,91 @@ async function processSingleOption(page, option) {
       console.log(`[napkin] ❌ INPUT_TEXT 입력창 못찾음: "${title}"`);
       return { success: false, message: `텍스트 입력창 못찾음: ${title}` };
     }
-
   } else {
     // SELECT: tr > th에서 title 찾고 → td에서 select 선택
-    const selectResult = await page.evaluate((optTitle, optValue) => {
-      const normalize = (str) => str.replace(/\s+/g, '');
-      const normalizedValue = normalize(optValue);
+    const selectResult = await page.evaluate(
+      (optTitle, optValue) => {
+        const normalize = (str) => str.replace(/\s+/g, "");
+        const normalizedValue = normalize(optValue);
 
-      // 모든 tr에서 th 텍스트로 찾기
-      const rows = document.querySelectorAll("tr");
-      for (const row of rows) {
-        const th = row.querySelector("th");
-        if (th) {
-          const thText = (th.textContent || "").trim();
-          if (thText.includes(optTitle)) {
-            // 같은 tr의 td에서 select 찾기
-            const td = row.querySelector("td");
-            if (td) {
-              const select = td.querySelector("select");
-              if (select) {
-                // select 내에서 옵션 찾기
-                const options = select.querySelectorAll("option");
-                for (const opt of options) {
-                  const normalizedText = normalize(opt.textContent);
-                  const normalizedOptValue = normalize(opt.value);
-                  if (normalizedText.includes(normalizedValue) || normalizedValue.includes(normalizedText) ||
-                      normalizedOptValue.includes(normalizedValue) || normalizedValue.includes(normalizedOptValue)) {
-                    select.value = opt.value;
-                    select.dispatchEvent(new Event("change", { bubbles: true }));
-                    return { found: true, thText, selectedValue: opt.value, selectedText: opt.textContent };
+        // 모든 tr에서 th 텍스트로 찾기
+        const rows = document.querySelectorAll("tr");
+        for (const row of rows) {
+          const th = row.querySelector("th");
+          if (th) {
+            const thText = (th.textContent || "").trim();
+            if (thText.includes(optTitle)) {
+              // 같은 tr의 td에서 select 찾기
+              const td = row.querySelector("td");
+              if (td) {
+                const select = td.querySelector("select");
+                if (select) {
+                  // select 내에서 옵션 찾기
+                  const options = select.querySelectorAll("option");
+                  for (const opt of options) {
+                    const normalizedText = normalize(opt.textContent);
+                    const normalizedOptValue = normalize(opt.value);
+                    if (
+                      normalizedText.includes(normalizedValue) ||
+                      normalizedValue.includes(normalizedText) ||
+                      normalizedOptValue.includes(normalizedValue) ||
+                      normalizedValue.includes(normalizedOptValue)
+                    ) {
+                      select.value = opt.value;
+                      select.dispatchEvent(
+                        new Event("change", { bubbles: true }),
+                      );
+                      return {
+                        found: true,
+                        thText,
+                        selectedValue: opt.value,
+                        selectedText: opt.textContent,
+                      };
+                    }
                   }
                 }
               }
             }
           }
         }
-      }
 
-      // title로 못 찾으면 기존 방식 (모든 select에서 value로 검색)
-      const allSelects = document.querySelectorAll('select[id^="product_option_id"], select[class^="ProductOption"]');
-      for (const select of allSelects) {
-        const options = select.querySelectorAll("option");
-        for (const opt of options) {
-          const normalizedText = normalize(opt.textContent);
-          const normalizedOptValue = normalize(opt.value);
-          if (normalizedText.includes(normalizedValue) || normalizedValue.includes(normalizedText) ||
-              normalizedOptValue.includes(normalizedValue) || normalizedValue.includes(normalizedOptValue)) {
-            select.value = opt.value;
-            select.dispatchEvent(new Event("change", { bubbles: true }));
-            return { found: true, fallback: true, selectedValue: opt.value, selectedText: opt.textContent };
+        // title로 못 찾으면 기존 방식 (모든 select에서 value로 검색)
+        const allSelects = document.querySelectorAll(
+          'select[id^="product_option_id"], select[class^="ProductOption"]',
+        );
+        for (const select of allSelects) {
+          const options = select.querySelectorAll("option");
+          for (const opt of options) {
+            const normalizedText = normalize(opt.textContent);
+            const normalizedOptValue = normalize(opt.value);
+            if (
+              normalizedText.includes(normalizedValue) ||
+              normalizedValue.includes(normalizedText) ||
+              normalizedOptValue.includes(normalizedValue) ||
+              normalizedValue.includes(normalizedOptValue)
+            ) {
+              select.value = opt.value;
+              select.dispatchEvent(new Event("change", { bubbles: true }));
+              return {
+                found: true,
+                fallback: true,
+                selectedValue: opt.value,
+                selectedText: opt.textContent,
+              };
+            }
           }
         }
-      }
 
-      return { found: false };
-    }, title, value);
+        return { found: false };
+      },
+      title,
+      value,
+    );
 
     if (selectResult.found) {
-      console.log(`[napkin] ✅ SELECT 선택 완료: "${title}" = "${selectResult.selectedText || value}"`);
+      console.log(
+        `[napkin] ✅ SELECT 선택 완료: "${title}" = "${selectResult.selectedText || value}"`,
+      );
       await delay(2000); // 페이지 업데이트 대기
       return { success: true };
     } else {
@@ -367,12 +412,19 @@ async function processSingleOption(page, option) {
  * @param {number} boxIndex - 옵션 박스 인덱스 (1부터 시작, 세트 추가 시 증가)
  * @returns { priceInfo }
  */
-async function setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat, boxIndex = 1) {
+async function setQuantityAndGetPrice(
+  page,
+  quantity,
+  vendorPriceExcludeVat,
+  boxIndex = 1,
+) {
   let priceInfo = null;
 
   // 수량 필드 찾기 및 수량 설정 (세트별로 다른 박스)
   const quantitySelector = `#option_box${boxIndex}_quantity`;
-  console.log(`[napkin] 수량 필드 대기: ${quantitySelector} (수량: ${quantity}, 박스: ${boxIndex})`);
+  console.log(
+    `[napkin] 수량 필드 대기: ${quantitySelector} (수량: ${quantity}, 박스: ${boxIndex})`,
+  );
 
   const quantityInput = await waitFor(page, quantitySelector, 10000);
   if (!quantityInput) {
@@ -384,21 +436,27 @@ async function setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat, box
 
     try {
       // page.evaluate로 클릭 및 값 입력 (더 안정적)
-      await page.evaluate((selector, qty) => {
-        const input = document.querySelector(selector);
-        if (input) {
-          input.focus();
-          input.select();
-          input.value = '';
-          input.value = String(qty);
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-          input.dispatchEvent(new Event('change', { bubbles: true }));
-          input.dispatchEvent(new Event('blur', { bubbles: true }));
-        }
-      }, quantitySelector, quantity);
+      await page.evaluate(
+        (selector, qty) => {
+          const input = document.querySelector(selector);
+          if (input) {
+            input.focus();
+            input.select();
+            input.value = "";
+            input.value = String(qty);
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+            input.dispatchEvent(new Event("blur", { bubbles: true }));
+          }
+        },
+        quantitySelector,
+        quantity,
+      );
       await delay(2000);
     } catch (e) {
-      console.log(`[napkin] 수량 입력 실패 (page.evaluate), Puppeteer 방식 시도: ${e.message}`);
+      console.log(
+        `[napkin] 수량 입력 실패 (page.evaluate), Puppeteer 방식 시도: ${e.message}`,
+      );
       // 폴백: Puppeteer 방식
       try {
         await quantityInput.click();
@@ -406,9 +464,9 @@ async function setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat, box
         await quantityInput.click({ clickCount: 3 });
         await delay(200);
         await page.keyboard.type(String(quantity), { delay: 50 });
-        await page.evaluate(el => {
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          el.dispatchEvent(new Event('blur', { bubbles: true }));
+        await page.evaluate((el) => {
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          el.dispatchEvent(new Event("blur", { bubbles: true }));
         }, quantityInput);
         await delay(2000);
       } catch (e2) {
@@ -422,9 +480,14 @@ async function setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat, box
   const priceInput = await page.$(priceSelector);
 
   if (priceInput) {
-    const totalPrice = await page.evaluate(el => parseInt(el.value) || 0, priceInput);
+    const totalPrice = await page.evaluate(
+      (el) => parseInt(el.value) || 0,
+      priceInput,
+    );
     const unitPrice = Math.round(totalPrice / quantity);
-    console.log(`[napkin] 가격 정보 - 총액: ${totalPrice}원, 수량: ${quantity}, 단가: ${unitPrice}원`);
+    console.log(
+      `[napkin] 가격 정보 - 총액: ${totalPrice}원, 수량: ${quantity}, 단가: ${unitPrice}원`,
+    );
 
     if (vendorPriceExcludeVat) {
       const expectedUnitPrice = Math.round(vendorPriceExcludeVat * 1.1);
@@ -432,7 +495,9 @@ async function setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat, box
       const PRICE_TOLERANCE = 3;
 
       if (priceDifference > PRICE_TOLERANCE) {
-        console.log(`[napkin] ⚠️ 가격 불일치: 냅킨 ${unitPrice}원 vs 협력사 ${expectedUnitPrice}원 (차이: ${unitPrice - expectedUnitPrice}원)`);
+        console.log(
+          `[napkin] ⚠️ 가격 불일치: 냅킨 ${unitPrice}원 vs 협력사 ${expectedUnitPrice}원 (차이: ${unitPrice - expectedUnitPrice}원)`,
+        );
         priceInfo = {
           unitPrice,
           totalPrice,
@@ -442,7 +507,9 @@ async function setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat, box
           difference: unitPrice - expectedUnitPrice,
         };
       } else {
-        console.log(`[napkin] ✓ 가격 일치: 냅킨 ${unitPrice}원, 협력사 ${expectedUnitPrice}원 (오차: ${priceDifference}원)`);
+        console.log(
+          `[napkin] ✓ 가격 일치: 냅킨 ${unitPrice}원, 협력사 ${expectedUnitPrice}원 (오차: ${priceDifference}원)`,
+        );
         priceInfo = {
           unitPrice,
           totalPrice,
@@ -468,7 +535,12 @@ async function setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat, box
  *
  * @returns { success, priceInfo }
  */
-async function selectOptions(page, openMallOptions, quantity = 1, vendorPriceExcludeVat = null) {
+async function selectOptions(
+  page,
+  openMallOptions,
+  quantity = 1,
+  vendorPriceExcludeVat = null,
+) {
   if (!openMallOptions || openMallOptions.length === 0) {
     console.log("[napkin] 옵션 없음, 스킵");
     return { success: true, skipped: true };
@@ -478,7 +550,11 @@ async function selectOptions(page, openMallOptions, quantity = 1, vendorPriceExc
 
   // 옵션 탭 로딩 대기
   console.log("[napkin] 옵션 탭 로딩 대기...");
-  const optionTab = await waitFor(page, '#sp-detail-optiontab > div > div', 10000);
+  const optionTab = await waitFor(
+    page,
+    "#sp-detail-optiontab > div > div",
+    10000,
+  );
   if (!optionTab) {
     console.log("[napkin] 옵션 탭 로딩 실패");
     return { success: false, message: "옵션 탭 로딩 실패" };
@@ -488,7 +564,8 @@ async function selectOptions(page, openMallOptions, quantity = 1, vendorPriceExc
   let priceInfo = null;
 
   // 2D 구조 검증: [{options: [{title, value}, ...]}, ...]
-  const is2DStructure = openMallOptions[0] && Array.isArray(openMallOptions[0].options);
+  const is2DStructure =
+    openMallOptions[0] && Array.isArray(openMallOptions[0].options);
 
   if (is2DStructure) {
     console.log(`[napkin] 옵션 세트 처리: ${openMallOptions.length}개 세트`);
@@ -497,12 +574,16 @@ async function selectOptions(page, openMallOptions, quantity = 1, vendorPriceExc
       const set = openMallOptions[s];
       const setOptions = set.options || [];
 
-      console.log(`[napkin] --- 세트 ${s + 1}/${openMallOptions.length} 처리 시작 (${setOptions.length}개 옵션) ---`);
+      console.log(
+        `[napkin] --- 세트 ${s + 1}/${openMallOptions.length} 처리 시작 (${setOptions.length}개 옵션) ---`,
+      );
 
       // 세트 내 모든 옵션 선택
       for (let i = 0; i < setOptions.length; i++) {
         const option = setOptions[i];
-        console.log(`[napkin] 세트 ${s + 1}, 옵션 ${i + 1}: ${option.title} = ${option.value}`);
+        console.log(
+          `[napkin] 세트 ${s + 1}, 옵션 ${i + 1}: ${option.title} = ${option.value}`,
+        );
 
         const result = await processSingleOption(page, option);
         if (!result.success) {
@@ -514,7 +595,12 @@ async function selectOptions(page, openMallOptions, quantity = 1, vendorPriceExc
       console.log(`[napkin] 세트 ${s + 1} 옵션 선택 완료, 수량 필드 대기...`);
       await delay(2000);
 
-      priceInfo = await setQuantityAndGetPrice(page, quantity, vendorPriceExcludeVat, s + 1);
+      priceInfo = await setQuantityAndGetPrice(
+        page,
+        quantity,
+        vendorPriceExcludeVat,
+        s + 1,
+      );
       await delay(1000);
     }
 
@@ -522,7 +608,10 @@ async function selectOptions(page, openMallOptions, quantity = 1, vendorPriceExc
   }
 
   // 2D 구조가 아닌 경우 에러
-  return { success: false, message: "잘못된 옵션 구조: 2D 구조 [{options: [...]}] 형식이어야 합니다" };
+  return {
+    success: false,
+    message: "잘못된 옵션 구조: 2D 구조 [{options: [...]}] 형식이어야 합니다",
+  };
 }
 
 /**
@@ -535,21 +624,27 @@ async function setQuantity(page, quantity) {
   if (quantityInput) {
     try {
       // page.evaluate로 값 입력 (더 안정적)
-      await page.evaluate((selector, qty) => {
-        const input = document.querySelector(selector);
-        if (input) {
-          input.focus();
-          input.select();
-          input.value = '';
-          input.value = String(qty);
-          input.dispatchEvent(new Event('input', { bubbles: true }));
-          input.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-      }, SELECTORS.product.quantityInput, quantity);
+      await page.evaluate(
+        (selector, qty) => {
+          const input = document.querySelector(selector);
+          if (input) {
+            input.focus();
+            input.select();
+            input.value = "";
+            input.value = String(qty);
+            input.dispatchEvent(new Event("input", { bubbles: true }));
+            input.dispatchEvent(new Event("change", { bubbles: true }));
+          }
+        },
+        SELECTORS.product.quantityInput,
+        quantity,
+      );
       await delay(300);
       return { success: true };
     } catch (e) {
-      console.log(`[napkin] 수량 입력 실패 (page.evaluate), Puppeteer 방식 시도: ${e.message}`);
+      console.log(
+        `[napkin] 수량 입력 실패 (page.evaluate), Puppeteer 방식 시도: ${e.message}`,
+      );
       try {
         await quantityInput.click({ clickCount: 3 });
         await delay(200);
@@ -594,7 +689,11 @@ async function addToCart(page) {
   if (!cartBtn) {
     console.log("[napkin] #cartBtn 없음, 대체 셀렉터 시도...");
     // 대체 셀렉터 시도
-    const altBtn = await waitFor(page, 'a[href*="basket"], .btn_cart, #btn_cart, .addToCart', 3000);
+    const altBtn = await waitFor(
+      page,
+      'a[href*="basket"], .btn_cart, #btn_cart, .addToCart',
+      3000,
+    );
     if (!altBtn) {
       return { success: false, message: "장바구니 버튼을 찾을 수 없음" };
     }
@@ -609,7 +708,13 @@ async function addToCart(page) {
         return true;
       }
       // 대체 셀렉터들 시도
-      const altSelectors = ['a[href*="basket"]', '.btn_cart', '#btn_cart', '.addToCart', '#cartBtn'];
+      const altSelectors = [
+        'a[href*="basket"]',
+        ".btn_cart",
+        "#btn_cart",
+        ".addToCart",
+        "#cartBtn",
+      ];
       for (const sel of altSelectors) {
         const altBtn = document.querySelector(sel);
         if (altBtn) {
@@ -641,7 +746,7 @@ async function processNapkinOrder(
   page,
   vendor,
   { products, purchaseOrderId, shippingAddress, poLineIds },
-  authToken
+  authToken,
 ) {
   console.log("=".repeat(50));
   console.log("[napkin] 주문 처리 시작");
@@ -659,7 +764,12 @@ async function processNapkinOrder(
     // 1. 로그인
     const loginResult = await loginToNapkin(page, vendor);
     if (!loginResult.success) {
-      errorCollector.addError(ORDER_STEPS.LOGIN, ERROR_CODES.LOGIN_FAILED, loginResult.message, { purchaseOrderId });
+      errorCollector.addError(
+        ORDER_STEPS.LOGIN,
+        ERROR_CODES.LOGIN_FAILED,
+        loginResult.message,
+        { purchaseOrderId },
+      );
       await saveOrderResults(authToken, {
         purchaseOrderId,
         products: [],
@@ -695,12 +805,14 @@ async function processNapkinOrder(
 
       // productUrl이 없으면 스킵
       if (!product.productUrl) {
-        console.log(`[napkin] ❌ 상품 URL이 없음 - 스킵: ${product.productName}`);
+        console.log(
+          `[napkin] ❌ 상품 URL이 없음 - 스킵: ${product.productName}`,
+        );
         errorCollector.addError(
           ORDER_STEPS.PRODUCT_ACCESS,
           ERROR_CODES.PRODUCT_NOT_FOUND,
           `상품 URL이 없음: ${product.productName}`,
-          { productSku: product.productSku, lineId }
+          { productSku: product.productSku, lineId },
         );
         results.push({
           success: false,
@@ -715,18 +827,22 @@ async function processNapkinOrder(
 
       try {
         // 3-1. 상품 페이지 이동
-        await page.goto(product.productUrl, {
-          waitUntil: "domcontentloaded",
-          timeout: 30000,
-        }).catch(() => {
-          console.log("[napkin] 페이지 이동 중 리다이렉트 발생, 계속 진행...");
-        });
+        await page
+          .goto(product.productUrl, {
+            waitUntil: "domcontentloaded",
+            timeout: 30000,
+          })
+          .catch(() => {
+            console.log(
+              "[napkin] 페이지 이동 중 리다이렉트 발생, 계속 진행...",
+            );
+          });
         await delay(2000);
 
         // 3-2. 옵션 선택
         let options = product.openMallOptions;
         // 문자열이면 파싱
-        if (typeof options === 'string') {
+        if (typeof options === "string") {
           try {
             options = JSON.parse(options);
           } catch (e) {
@@ -740,19 +856,31 @@ async function processNapkinOrder(
         const qtyPerUnit = product.openMallQtyPerUnit || 1;
         const actualQuantity = baseQuantity * qtyPerUnit;
         if (qtyPerUnit > 1) {
-          console.log(`[napkin] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`);
+          console.log(
+            `[napkin] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`,
+          );
         }
 
         let hasOptions = options && options.length > 0;
         let priceInfo = null;
         if (hasOptions) {
-          const optionResult = await selectOptions(page, options, actualQuantity, product.vendorPriceExcludeVat);
+          const optionResult = await selectOptions(
+            page,
+            options,
+            actualQuantity,
+            product.vendorPriceExcludeVat,
+          );
           if (!optionResult.success) {
-            errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, optionResult.message, {
-              purchaseOrderId,
-              purchaseOrderLineId: lineId,
-              productVariantVendorId: product.productVariantVendorId,
-            });
+            errorCollector.addError(
+              ORDER_STEPS.ADD_TO_CART,
+              null,
+              optionResult.message,
+              {
+                purchaseOrderId,
+                purchaseOrderLineId: lineId,
+                productVariantVendorId: product.productVariantVendorId,
+              },
+            );
             results.push({
               lineId,
               productName: product.productName,
@@ -775,11 +903,16 @@ async function processNapkinOrder(
         // 3-4. 장바구니 담기
         const cartResult = await addToCart(page);
         if (!cartResult.success) {
-          errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, cartResult.message, {
-            purchaseOrderId,
-            purchaseOrderLineId: lineId,
-            productVariantVendorId: product.productVariantVendorId,
-          });
+          errorCollector.addError(
+            ORDER_STEPS.ADD_TO_CART,
+            null,
+            cartResult.message,
+            {
+              purchaseOrderId,
+              purchaseOrderLineId: lineId,
+              productVariantVendorId: product.productVariantVendorId,
+            },
+          );
           results.push({
             lineId,
             productName: product.productName,
@@ -805,14 +938,18 @@ async function processNapkinOrder(
           priceInfo,
           needsManagerVerification: product.needsManagerVerification || false,
         });
-
       } catch (productError) {
         console.error(`[napkin] 상품 처리 에러:`, productError.message);
-        errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, productError.message, {
-          purchaseOrderId,
-          purchaseOrderLineId: lineId,
-          productVariantVendorId: product.productVariantVendorId,
-        });
+        errorCollector.addError(
+          ORDER_STEPS.ADD_TO_CART,
+          null,
+          productError.message,
+          {
+            purchaseOrderId,
+            purchaseOrderLineId: lineId,
+            productVariantVendorId: product.productVariantVendorId,
+          },
+        );
         results.push({
           lineId,
           productName: product.productName,
@@ -826,12 +963,12 @@ async function processNapkinOrder(
     }
 
     // 성공한 상품이 있는지 확인
-    const successCount = results.filter(r => r.success).length;
+    const successCount = results.filter((r) => r.success).length;
     if (successCount === 0) {
       console.log("[napkin] 모든 상품 처리 실패 - 장바구니 이동 안함");
       const optionFailedProducts = results
-        .filter(r => !r.success && r.message?.includes('옵션'))
-        .map(r => ({
+        .filter((r) => !r.success && r.message?.includes("옵션"))
+        .map((r) => ({
           productVariantVendorId: r.productVariantVendorId,
           purchaseOrderId: r.purchaseOrderId, // 개별 상품의 발주 ID
           reason: r.message,
@@ -859,9 +996,13 @@ async function processNapkinOrder(
 
     // 4. 장바구니 이동 버튼 클릭 (마지막 상품의 팝업에서)
     console.log("\n[napkin] 장바구니 이동 버튼 클릭...");
-    const goCartBtn = await waitFor(page, SELECTORS.product.confirmGoCartBtn, 5000);
+    const goCartBtn = await waitFor(
+      page,
+      SELECTORS.product.confirmGoCartBtn,
+      5000,
+    );
     if (goCartBtn) {
-      await page.evaluate(el => el.click(), goCartBtn);
+      await page.evaluate((el) => el.click(), goCartBtn);
       await delay(3000);
     } else {
       // 팝업이 없으면 직접 이동
@@ -876,7 +1017,7 @@ async function processNapkinOrder(
     // 현재 페이지 URL 확인
     const cartPageUrl = page.url();
     console.log(`[napkin] 현재 URL: ${cartPageUrl}`);
-    if (!cartPageUrl.includes('basket')) {
+    if (!cartPageUrl.includes("basket")) {
       console.log("[napkin] 장바구니 페이지가 아님, 직접 이동...");
       await page.goto(SELECTORS.cart.url, {
         waitUntil: "networkidle2",
@@ -889,598 +1030,757 @@ async function processNapkinOrder(
     let paymentCompleted = false;
     const MAX_PAYMENT_RETRIES = 5;
 
-    for (let paymentAttempt = 0; paymentAttempt < MAX_PAYMENT_RETRIES; paymentAttempt++) {
+    for (
+      let paymentAttempt = 0;
+      paymentAttempt < MAX_PAYMENT_RETRIES;
+      paymentAttempt++
+    ) {
       if (paymentAttempt > 0) {
-        console.log(`\n[napkin] === 결제 재시도 (${paymentAttempt}/${MAX_PAYMENT_RETRIES - 1}) ===`);
+        console.log(
+          `\n[napkin] === 결제 재시도 (${paymentAttempt}/${MAX_PAYMENT_RETRIES - 1}) ===`,
+        );
         console.log("[napkin] 장바구니로 이동...");
-        await page.goto(SELECTORS.cart.url, { waitUntil: "networkidle2", timeout: 30000 });
+        await page.goto(SELECTORS.cart.url, {
+          waitUntil: "networkidle2",
+          timeout: 30000,
+        });
         await delay(2000);
       }
 
-    // 5. 전체상품 주문하기 버튼 클릭
-    console.log("[napkin] 전체상품 주문하기 버튼 클릭...");
-    await delay(1500); // 페이지 로딩 대기
-    const orderAllBtn = await waitFor(page, SELECTORS.cart.orderAllBtn, 5000);
-    if (orderAllBtn) {
-      await page.evaluate(el => el.click(), orderAllBtn);
-      await delay(2000);
-    } else {
-      throw new Error("전체상품 주문하기 버튼을 찾을 수 없음 - 장바구니가 비어있거나 페이지 오류");
-    }
-
-    // 6. 배송지 직접입력 버튼 클릭
-    console.log("[napkin] 배송지 직접입력 버튼 클릭...");
-    await delay(2000); // 페이지 로딩 대기 (늘림)
-    const newAddressBtn = await waitFor(page, SELECTORS.order.newAddressBtn, 5000);
-    if (newAddressBtn) {
-      await page.evaluate(el => el.click(), newAddressBtn);
-      await delay(2000); // 탭 전환 대기 (늘림)
-    } else {
-      throw new Error("배송지 직접입력 버튼을 찾을 수 없음 - 주문서 페이지 로드 실패");
-    }
-
-    // 7. 배송지 정보 입력
-    if (shippingAddress) {
-      console.log("[napkin] 배송지 정보 입력 시작...");
-
-      // 7-1. 받는사람 입력
-      const receiverName = shippingAddress.name || shippingAddress.recipientName || "";
-      if (receiverName) {
-        console.log(`[napkin] 받는사람: ${receiverName}`);
-        const nameInput = await page.$(SELECTORS.order.receiverName);
-        if (nameInput) {
-          await nameInput.click({ clickCount: 3 });
-          await delay(300); // 선택 대기 (늘림)
-          await page.keyboard.type(receiverName, { delay: 50 });
-          await delay(500); // 입력 완료 대기 (늘림)
-        }
+      // 5. 전체상품 주문하기 버튼 클릭
+      console.log("[napkin] 전체상품 주문하기 버튼 클릭...");
+      await delay(1500); // 페이지 로딩 대기
+      const orderAllBtn = await waitFor(page, SELECTORS.cart.orderAllBtn, 5000);
+      if (orderAllBtn) {
+        await page.evaluate((el) => el.click(), orderAllBtn);
+        await delay(2000);
+      } else {
+        throw new Error(
+          "전체상품 주문하기 버튼을 찾을 수 없음 - 장바구니가 비어있거나 페이지 오류",
+        );
       }
 
-      // 7-2. 주소 검색 버튼 클릭
-      console.log("[napkin] 주소 검색 버튼 클릭...");
-      const addressSearchBtn = await page.$(SELECTORS.order.addressSearchBtn);
-      if (addressSearchBtn) {
-        await page.evaluate(el => el.click(), addressSearchBtn);
-        await delay(1500);
+      // 6. 배송지 직접입력 버튼 클릭
+      console.log("[napkin] 배송지 직접입력 버튼 클릭...");
+      await delay(2000); // 페이지 로딩 대기 (늘림)
+      const newAddressBtn = await waitFor(
+        page,
+        SELECTORS.order.newAddressBtn,
+        5000,
+      );
+      if (newAddressBtn) {
+        await page.evaluate((el) => el.click(), newAddressBtn);
+        await delay(2000); // 탭 전환 대기 (늘림)
+      } else {
+        throw new Error(
+          "배송지 직접입력 버튼을 찾을 수 없음 - 주문서 페이지 로드 실패",
+        );
+      }
 
-        // 7-3. 다음 주소 검색 iframe 찾기
-        console.log("[napkin] 주소 검색 iframe 찾기...");
-        let frame = null;
-        for (let i = 0; i < 30; i++) {
-          const allFrames = page.frames();
-          for (const f of allFrames) {
-            try {
-              const hasInput = await f.$(SELECTORS.order.daumAddressInput);
-              if (hasInput) {
-                frame = f;
-                console.log(`[napkin] 주소 검색 iframe 발견 (${i + 1}회)`);
-                break;
-              }
-            } catch (e) {
-              // 무시
-            }
+      // 7. 배송지 정보 입력
+      if (shippingAddress) {
+        console.log("[napkin] 배송지 정보 입력 시작...");
+
+        // 7-1. 받는사람 입력
+        const receiverName =
+          shippingAddress.name || shippingAddress.recipientName || "";
+        if (receiverName) {
+          console.log(`[napkin] 받는사람: ${receiverName}`);
+          const nameInput = await page.$(SELECTORS.order.receiverName);
+          if (nameInput) {
+            await nameInput.click({ clickCount: 3 });
+            await delay(300); // 선택 대기 (늘림)
+            await page.keyboard.type(receiverName, { delay: 50 });
+            await delay(500); // 입력 완료 대기 (늘림)
           }
-          if (frame) break;
-          await delay(500);
         }
 
-        if (frame) {
-          // iframe 로딩 대기
-          await delay(1000);
-
-          // 7-4. 주소 검색어 입력
-          const searchAddress = shippingAddress.streetAddress1 || shippingAddress.address || "";
-          if (searchAddress) {
-            console.log(`[napkin] 주소 검색어: ${searchAddress}`);
-            const addressInput = await frame.$(SELECTORS.order.daumAddressInput);
-            if (addressInput) {
-              await addressInput.click();
-              await addressInput.type(searchAddress, { delay: 50 });
-              await delay(300);
-
-              // 검색 버튼 클릭 또는 Enter
-              const searchBtn = await frame.$(SELECTORS.order.daumSearchButton);
-              if (searchBtn) {
-                await searchBtn.click();
-              } else {
-                await frame.keyboard.press("Enter");
-              }
-              await delay(1500);
-
-              // 7-5. 검색 결과 첫 번째 항목 클릭
-              console.log("[napkin] 주소 검색 결과 선택...");
-              try {
-                await frame.waitForSelector(SELECTORS.order.daumAddressItem, { timeout: 5000 });
-                await delay(500);
-                await frame.evaluate((selector) => {
-                  const firstItem = document.querySelector(selector);
-                  if (firstItem) {
-                    const roadAddrBtn = firstItem.querySelector(".main_road .link_post");
-                    if (roadAddrBtn) {
-                      roadAddrBtn.click();
-                    } else {
-                      firstItem.click();
-                    }
-                  }
-                }, SELECTORS.order.daumAddressItem);
-                console.log("[napkin] 주소 선택 완료");
-                await delay(1500);
-              } catch (e) {
-                console.log("[napkin] 주소 검색 결과 없음:", e.message);
-              }
-            }
-          }
-        } else {
-          console.log("[napkin] 주소 검색 iframe 못찾음");
-        }
-      }
-
-      // 7-6. 상세주소 입력
-      const detailAddress = shippingAddress.streetAddress2 || shippingAddress.addressDetail || "";
-      if (detailAddress) {
-        console.log(`[napkin] 상세주소: ${detailAddress}`);
-        await delay(700); // 주소 선택 후 대기 (늘림)
-        const detailInput = await page.$(SELECTORS.order.addressDetail);
-        if (detailInput) {
-          await detailInput.click({ clickCount: 3 });
-          await delay(300); // 선택 대기 (늘림)
-          await page.keyboard.type(detailAddress, { delay: 50 });
-          await delay(500); // 입력 완료 대기 (늘림)
-        }
-      }
-
-      // 7-7. 휴대폰 번호 입력
-      // 주소 변경 시 당일배송 여부 렌더링이 발생하므로
-      // 먼저 phoneFirst를 클릭하여 렌더링 트리거 후 대기
-      const phone = shippingAddress.phone || shippingAddress.recipientPhone || "";
-      if (phone) {
-        // 숫자만 추출
-        let phoneDigits = phone.replace(/[^0-9]/g, "");
-
-        // 국가번호(82) 제거하고 0 추가 (예: 821012345678 → 01012345678)
-        if (phoneDigits.startsWith("82")) {
-          phoneDigits = "0" + phoneDigits.substring(2);
-        }
-
-        if (phoneDigits.length >= 10) {
-          const first = phoneDigits.substring(0, 3);   // 010
-          const middle = phoneDigits.substring(3, 7);  // XXXX
-          const last = phoneDigits.substring(7, 11);   // XXXX
-
-          console.log(`[napkin] 휴대폰: ${first}-${middle}-${last}`);
-
-          // 앞자리 select 클릭 → 렌더링 트리거 후 대기
-          await page.click(SELECTORS.order.phoneFirst);
+        // 7-2. 주소 검색 버튼 클릭
+        console.log("[napkin] 주소 검색 버튼 클릭...");
+        const addressSearchBtn = await page.$(SELECTORS.order.addressSearchBtn);
+        if (addressSearchBtn) {
+          await page.evaluate((el) => el.click(), addressSearchBtn);
           await delay(1500);
 
-          // 앞자리 선택 (select)
-          await page.select(SELECTORS.order.phoneFirst, first);
-          await delay(800);
-
-          // 가운데 4자리
-          const middleInput = await page.$(SELECTORS.order.phoneMiddle);
-          if (middleInput) {
-            await middleInput.click({ clickCount: 3 });
+          // 7-3. 다음 주소 검색 iframe 찾기
+          console.log("[napkin] 주소 검색 iframe 찾기...");
+          let frame = null;
+          for (let i = 0; i < 30; i++) {
+            const allFrames = page.frames();
+            for (const f of allFrames) {
+              try {
+                const hasInput = await f.$(SELECTORS.order.daumAddressInput);
+                if (hasInput) {
+                  frame = f;
+                  console.log(`[napkin] 주소 검색 iframe 발견 (${i + 1}회)`);
+                  break;
+                }
+              } catch (e) {
+                // 무시
+              }
+            }
+            if (frame) break;
             await delay(500);
-            await page.keyboard.type(middle, { delay: 80 });
-            await delay(600);
           }
 
-          // 마지막 4자리
-          const lastInput = await page.$(SELECTORS.order.phoneLast);
-          if (lastInput) {
-            await lastInput.click({ clickCount: 3 });
-            await delay(500);
-            await page.keyboard.type(last, { delay: 80 });
-            await delay(600);
+          if (frame) {
+            // iframe 로딩 대기
+            await delay(1000);
+
+            // 7-4. 주소 검색어 입력
+            const searchAddress =
+              shippingAddress.streetAddress1 || shippingAddress.address || "";
+            if (searchAddress) {
+              console.log(`[napkin] 주소 검색어: ${searchAddress}`);
+              const addressInput = await frame.$(
+                SELECTORS.order.daumAddressInput,
+              );
+              if (addressInput) {
+                await addressInput.click();
+                await addressInput.type(searchAddress, { delay: 50 });
+                await delay(300);
+
+                // 검색 버튼 클릭 또는 Enter
+                const searchBtn = await frame.$(
+                  SELECTORS.order.daumSearchButton,
+                );
+                if (searchBtn) {
+                  await searchBtn.click();
+                } else {
+                  await frame.keyboard.press("Enter");
+                }
+                await delay(1500);
+
+                // 7-5. 검색 결과 첫 번째 항목 클릭
+                console.log("[napkin] 주소 검색 결과 선택...");
+                try {
+                  await frame.waitForSelector(SELECTORS.order.daumAddressItem, {
+                    timeout: 5000,
+                  });
+                  await delay(500);
+                  await frame.evaluate((selector) => {
+                    const firstItem = document.querySelector(selector);
+                    if (firstItem) {
+                      const roadAddrBtn = firstItem.querySelector(
+                        ".main_road .link_post",
+                      );
+                      if (roadAddrBtn) {
+                        roadAddrBtn.click();
+                      } else {
+                        firstItem.click();
+                      }
+                    }
+                  }, SELECTORS.order.daumAddressItem);
+                  console.log("[napkin] 주소 선택 완료");
+                  await delay(1500);
+                } catch (e) {
+                  console.log("[napkin] 주소 검색 결과 없음:", e.message);
+                }
+              }
+            }
+          } else {
+            console.log("[napkin] 주소 검색 iframe 못찾음");
           }
         }
-      }
 
-      console.log("[napkin] 배송지 정보 입력 완료");
-    }
+        // 7-6. 상세주소 입력
+        const detailAddress =
+          shippingAddress.streetAddress2 || shippingAddress.addressDetail || "";
+        if (detailAddress) {
+          console.log(`[napkin] 상세주소: ${detailAddress}`);
+          await delay(700); // 주소 선택 후 대기 (늘림)
+          const detailInput = await page.$(SELECTORS.order.addressDetail);
+          if (detailInput) {
+            await detailInput.click({ clickCount: 3 });
+            await delay(300); // 선택 대기 (늘림)
+            await page.keyboard.type(detailAddress, { delay: 50 });
+            await delay(500); // 입력 완료 대기 (늘림)
+          }
+        }
 
-    // 일반배송 선택 (새벽배송 대신)
-    console.log("[napkin] 일반배송 선택...");
-    const normalDeliverySelector = '#chatis_dd_entrance_form_area > div > div.chatis_dd_modal_delivery_type_wrap > label.dawn_entrance_radio_wrap.dawn_entrance_inline_radio_wrap.chatis_dd_modal_type_radio_normal > input';
-    const normalDeliveryRadio = await waitFor(page, normalDeliverySelector, 3000);
-    if (normalDeliveryRadio) {
-      await normalDeliveryRadio.click();
-      console.log("[napkin] ✅ 일반배송 선택 완료");
-      await delay(500);
-    } else {
-      console.log("[napkin] ⚠️ 일반배송 라디오 버튼을 찾을 수 없음 (무시하고 진행)");
-    }
+        // 7-7. 휴대폰 번호 입력
+        // 주소 변경 시 당일배송 여부 렌더링이 발생하므로
+        // 먼저 phoneFirst를 클릭하여 렌더링 트리거 후 대기
+        const phone =
+          shippingAddress.phone || shippingAddress.recipientPhone || "";
+        if (phone) {
+          // 숫자만 추출
+          let phoneDigits = phone.replace(/[^0-9]/g, "");
 
-    // 결제금액 파싱 (결제 버튼 클릭 전)
-    let actualPaymentAmount = 0;
-    try {
-      const amountText = await page.$eval(
-        "#payment_total_order_sale_price_view",
-        (el) => el.textContent?.trim() || ""
-      );
-      actualPaymentAmount = parseInt(amountText.replace(/[^0-9]/g, ""), 10) || 0;
-      console.log(`[napkin] 결제금액 파싱: ${amountText} → ${actualPaymentAmount}원`);
-    } catch (e) {
-      console.log("[napkin] 결제금액 파싱 실패 (결제 진행에 영향 없음):", e.message);
-    }
-
-    // 결제하기 (신한카드)
-    console.log("[napkin] 결제하기 버튼 클릭...");
-    await delay(1000);
-
-    const payBtn = await waitFor(page, SELECTORS.order.payBtn, 5000);
-    if (payBtn) {
-      await payBtn.click();
-      console.log("[napkin] ✅ 결제하기 버튼 클릭 완료");
-      await delay(3000);
-
-      // 토스페이먼츠 iframe 대기 및 전환
-      console.log("[napkin] 토스페이먼츠 결제창 대기...");
-      const iframeSelector = 'iframe#_lguplus_popup__iframe';
-      const iframeEl = await waitFor(page, iframeSelector, 60000);
-
-      if (iframeEl) {
-        const frame = await iframeEl.contentFrame();
-        if (frame) {
-          console.log("[napkin] 토스페이먼츠 iframe 진입");
-          await delay(2000);
-
-          // 신한카드 찾아서 클릭 (텍스트 기반, 최대 30초 대기)
-          console.log("[napkin] 신한카드 찾는 중...");
-          let cardClicked = false;
-          for (let retry = 0; retry < 30; retry++) {
-            cardClicked = await frame.evaluate(() => {
-              const links = document.querySelectorAll('a[data-focus-item="true"]');
-              for (const link of links) {
-                const text = link.textContent || '';
-                if (text.includes('신한')) {
-                  link.click();
-                  return true;
-                }
-              }
-              return false;
-            });
-            if (cardClicked) break;
-            console.log(`[napkin] 신한카드 대기 중... (${retry + 1}/15)`);
-            await delay(1000);
+          // 국가번호(82) 제거하고 0 추가 (예: 821012345678 → 01012345678)
+          if (phoneDigits.startsWith("82")) {
+            phoneDigits = "0" + phoneDigits.substring(2);
           }
 
-          if (cardClicked) {
-            console.log("[napkin] ✅ 신한카드 선택 완료");
-            await delay(3000);
+          if (phoneDigits.length >= 10) {
+            const first = phoneDigits.substring(0, 3); // 010
+            const middle = phoneDigits.substring(3, 7); // XXXX
+            const last = phoneDigits.substring(7, 11); // XXXX
 
-            // 필수 동의 버튼 클릭 (최대 10초 대기하면서 재시도)
-            console.log("[napkin] 필수 동의 버튼 찾는 중...");
+            console.log(`[napkin] 휴대폰: ${first}-${middle}-${last}`);
 
-            let agreeClicked = null;
-            for (let retry = 0; retry < 10; retry++) {
-              agreeClicked = await frame.evaluate(() => {
-                const inputs = document.querySelectorAll('input[type="checkbox"]');
-                for (const input of inputs) {
-                  const ariaLabel = input.getAttribute('aria-label') || '';
-                  if (ariaLabel.includes('필수')) {
-                    input.click();
-                    return 'aria-label';
+            // 앞자리 select 클릭 → 렌더링 트리거 후 대기
+            await page.click(SELECTORS.order.phoneFirst);
+            await delay(1500);
+
+            // 앞자리 선택 (select)
+            await page.select(SELECTORS.order.phoneFirst, first);
+            await delay(800);
+
+            // 가운데 4자리
+            const middleInput = await page.$(SELECTORS.order.phoneMiddle);
+            if (middleInput) {
+              await middleInput.click({ clickCount: 3 });
+              await delay(500);
+              await page.keyboard.type(middle, { delay: 80 });
+              await delay(600);
+            }
+
+            // 마지막 4자리
+            const lastInput = await page.$(SELECTORS.order.phoneLast);
+            if (lastInput) {
+              await lastInput.click({ clickCount: 3 });
+              await delay(500);
+              await page.keyboard.type(last, { delay: 80 });
+              await delay(600);
+            }
+          }
+        }
+
+        console.log("[napkin] 배송지 정보 입력 완료");
+      }
+
+      // 일반배송 선택 (새벽배송 대신)
+      console.log("[napkin] 일반배송 선택...");
+      const normalDeliverySelector =
+        "#chatis_dd_entrance_form_area > div > div.chatis_dd_modal_delivery_type_wrap > label.dawn_entrance_radio_wrap.dawn_entrance_inline_radio_wrap.chatis_dd_modal_type_radio_normal > input";
+      const normalDeliveryRadio = await waitFor(
+        page,
+        normalDeliverySelector,
+        3000,
+      );
+      if (normalDeliveryRadio) {
+        await normalDeliveryRadio.click();
+        console.log("[napkin] ✅ 일반배송 선택 완료");
+        await delay(500);
+      } else {
+        console.log(
+          "[napkin] ⚠️ 일반배송 라디오 버튼을 찾을 수 없음 (무시하고 진행)",
+        );
+      }
+
+      // 결제금액 파싱 (결제 버튼 클릭 전)
+      let actualPaymentAmount = 0;
+      try {
+        const amountText = await page.$eval(
+          "#payment_total_order_sale_price_view",
+          (el) => el.textContent?.trim() || "",
+        );
+        actualPaymentAmount =
+          parseInt(amountText.replace(/[^0-9]/g, ""), 10) || 0;
+        console.log(
+          `[napkin] 결제금액 파싱: ${amountText} → ${actualPaymentAmount}원`,
+        );
+      } catch (e) {
+        console.log(
+          "[napkin] 결제금액 파싱 실패 (결제 진행에 영향 없음):",
+          e.message,
+        );
+      }
+
+      // 결제하기 (신한카드)
+      console.log("[napkin] 결제하기 버튼 클릭...");
+      await delay(1000);
+
+      const payBtn = await waitFor(page, SELECTORS.order.payBtn, 5000);
+      if (payBtn) {
+        await payBtn.click();
+        console.log("[napkin] ✅ 결제하기 버튼 클릭 완료");
+        await delay(3000);
+
+        // 토스페이먼츠 iframe 대기 및 전환
+        console.log("[napkin] 토스페이먼츠 결제창 대기...");
+        const iframeSelector = "iframe#_lguplus_popup__iframe";
+        const iframeEl = await waitFor(page, iframeSelector, 60000);
+
+        if (iframeEl) {
+          const frame = await iframeEl.contentFrame();
+          if (frame) {
+            console.log("[napkin] 토스페이먼츠 iframe 진입");
+            await delay(2000);
+
+            // 신한카드 찾아서 클릭 (텍스트 기반, 최대 30초 대기)
+            console.log("[napkin] 신한카드 찾는 중...");
+            let cardClicked = false;
+            for (let retry = 0; retry < 30; retry++) {
+              cardClicked = await frame.evaluate(() => {
+                const links = document.querySelectorAll(
+                  'a[data-focus-item="true"]',
+                );
+                for (const link of links) {
+                  const text = link.textContent || "";
+                  if (text.includes("신한")) {
+                    link.click();
+                    return true;
                   }
                 }
-                const labels = document.querySelectorAll('label');
-                for (const label of labels) {
-                  const text = label.textContent || '';
-                  if (text.includes('필수')) {
-                    const input = label.querySelector('input[type="checkbox"]');
-                    if (input) { input.click(); return 'label-input'; }
-                    const forId = label.getAttribute('for');
-                    if (forId) {
-                      const linkedInput = document.getElementById(forId);
-                      if (linkedInput) { linkedInput.click(); return 'label-for'; }
-                    }
-                    label.click();
-                    return 'label-click';
-                  }
-                }
-                return null;
+                return false;
               });
-
-              if (agreeClicked) {
-                console.log(`[napkin] ✅ 필수 동의 클릭 (방법: ${agreeClicked}, 시도: ${retry + 1})`);
-                await delay(2000);
-                break;
-              }
-              console.log(`[napkin] 필수 동의 버튼 대기 중... (${retry + 1}/10)`);
+              if (cardClicked) break;
+              console.log(`[napkin] 신한카드 대기 중... (${retry + 1}/15)`);
               await delay(1000);
             }
 
-            if (!agreeClicked) {
-              console.log("[napkin] ⚠️ 필수 동의 버튼을 찾지 못함 (10초 대기 후)");
-            }
-
-            // 다음 버튼 클릭 (최대 10초 대기하면서 재시도)
-            console.log("[napkin] 다음 버튼 찾는 중...");
-            let nextClicked = null;
-            for (let retry = 0; retry < 10; retry++) {
-              nextClicked = await frame.evaluate(() => {
-                const buttons = document.querySelectorAll('button');
-                for (const btn of buttons) {
-                  const text = (btn.textContent || '').trim();
-                  if (text === '다음' || text.includes('다음')) { btn.click(); return 'text-다음'; }
-                }
-                const submitBtns = document.querySelectorAll('button[type="submit"]');
-                for (const btn of submitBtns) { btn.click(); return 'submit'; }
-                return null;
-              });
-              if (nextClicked) {
-                console.log(`[napkin] ✅ 다음 버튼 클릭 (방법: ${nextClicked}, 시도: ${retry + 1})`);
-                await delay(3000);
-                break;
-              }
-              console.log(`[napkin] 다음 버튼 대기 중... (${retry + 1}/10)`);
-              await delay(1000);
-            }
-
-            if (nextClicked) {
-              // 신한카드: 토스페이먼츠 전자결제 iframe 찾기
-              console.log("[napkin] 토스페이먼츠 전자결제 iframe 대기...");
+            if (cardClicked) {
+              console.log("[napkin] ✅ 신한카드 선택 완료");
               await delay(3000);
 
-              let paymentFrame = null;
-              for (let i = 0; i < 10; i++) {
-                const frames = page.frames();
-                for (const f of frames) {
-                  const frameName = f.name();
-                  if (frameName.includes('토스페이먼츠')) {
-                    paymentFrame = f;
-                    console.log("[napkin] 토스페이먼츠 iframe 발견:", frameName);
-                    break;
-                  }
-                }
-                if (paymentFrame) break;
+              // 필수 동의 버튼 클릭 (최대 10초 대기하면서 재시도)
+              console.log("[napkin] 필수 동의 버튼 찾는 중...");
 
-                const iframeEl2 = await page.$('iframe[title="토스페이먼츠 전자결제"]');
-                if (iframeEl2) {
-                  paymentFrame = await iframeEl2.contentFrame();
-                  if (paymentFrame) {
-                    console.log("[napkin] 토스페이먼츠 iframe 발견 (title 기반)");
-                    break;
+              let agreeClicked = null;
+              for (let retry = 0; retry < 10; retry++) {
+                agreeClicked = await frame.evaluate(() => {
+                  const inputs = document.querySelectorAll(
+                    'input[type="checkbox"]',
+                  );
+                  for (const input of inputs) {
+                    const ariaLabel = input.getAttribute("aria-label") || "";
+                    if (ariaLabel.includes("필수")) {
+                      input.click();
+                      return "aria-label";
+                    }
                   }
-                }
+                  const labels = document.querySelectorAll("label");
+                  for (const label of labels) {
+                    const text = label.textContent || "";
+                    if (text.includes("필수")) {
+                      const input = label.querySelector(
+                        'input[type="checkbox"]',
+                      );
+                      if (input) {
+                        input.click();
+                        return "label-input";
+                      }
+                      const forId = label.getAttribute("for");
+                      if (forId) {
+                        const linkedInput = document.getElementById(forId);
+                        if (linkedInput) {
+                          linkedInput.click();
+                          return "label-for";
+                        }
+                      }
+                      label.click();
+                      return "label-click";
+                    }
+                  }
+                  return null;
+                });
 
-                console.log(`[napkin] 토스페이먼츠 iframe 대기 중... (${i + 1}/10)`);
+                if (agreeClicked) {
+                  console.log(
+                    `[napkin] ✅ 필수 동의 클릭 (방법: ${agreeClicked}, 시도: ${retry + 1})`,
+                  );
+                  await delay(2000);
+                  break;
+                }
+                console.log(
+                  `[napkin] 필수 동의 버튼 대기 중... (${retry + 1}/10)`,
+                );
                 await delay(1000);
               }
 
-              if (paymentFrame) {
-                await delay(2000);
+              if (!agreeClicked) {
+                console.log(
+                  "[napkin] ⚠️ 필수 동의 버튼을 찾지 못함 (10초 대기 후)",
+                );
+              }
 
-                // "다른결제" 탭 클릭
-                console.log("[napkin] 다른결제 탭 클릭...");
-                const otherPaymentClicked = await paymentFrame.evaluate(() => {
-                  const tabs = document.querySelectorAll('a[role="tab"]');
-                  for (const tab of tabs) {
-                    const text = tab.textContent || '';
-                    if (text.includes('다른결제')) {
-                      tab.click();
-                      return true;
+              // 다음 버튼 클릭 (최대 10초 대기하면서 재시도)
+              console.log("[napkin] 다음 버튼 찾는 중...");
+              let nextClicked = null;
+              for (let retry = 0; retry < 10; retry++) {
+                nextClicked = await frame.evaluate(() => {
+                  const buttons = document.querySelectorAll("button");
+                  for (const btn of buttons) {
+                    const text = (btn.textContent || "").trim();
+                    if (text === "다음" || text.includes("다음")) {
+                      btn.click();
+                      return "text-다음";
                     }
                   }
-                  return false;
+                  const submitBtns = document.querySelectorAll(
+                    'button[type="submit"]',
+                  );
+                  for (const btn of submitBtns) {
+                    btn.click();
+                    return "submit";
+                  }
+                  return null;
                 });
+                if (nextClicked) {
+                  console.log(
+                    `[napkin] ✅ 다음 버튼 클릭 (방법: ${nextClicked}, 시도: ${retry + 1})`,
+                  );
+                  await delay(3000);
+                  break;
+                }
+                console.log(`[napkin] 다음 버튼 대기 중... (${retry + 1}/10)`);
+                await delay(1000);
+              }
 
-                if (otherPaymentClicked) {
-                  console.log("[napkin] ✅ 다른결제 탭 클릭 완료");
+              if (nextClicked) {
+                // 신한카드: 토스페이먼츠 전자결제 iframe 찾기
+                console.log("[napkin] 토스페이먼츠 전자결제 iframe 대기...");
+                await delay(3000);
+
+                let paymentFrame = null;
+                for (let i = 0; i < 10; i++) {
+                  const frames = page.frames();
+                  for (const f of frames) {
+                    const frameName = f.name();
+                    if (frameName.includes("토스페이먼츠")) {
+                      paymentFrame = f;
+                      console.log(
+                        "[napkin] 토스페이먼츠 iframe 발견:",
+                        frameName,
+                      );
+                      break;
+                    }
+                  }
+                  if (paymentFrame) break;
+
+                  const iframeEl2 = await page.$(
+                    'iframe[title="토스페이먼츠 전자결제"]',
+                  );
+                  if (iframeEl2) {
+                    paymentFrame = await iframeEl2.contentFrame();
+                    if (paymentFrame) {
+                      console.log(
+                        "[napkin] 토스페이먼츠 iframe 발견 (title 기반)",
+                      );
+                      break;
+                    }
+                  }
+
+                  console.log(
+                    `[napkin] 토스페이먼츠 iframe 대기 중... (${i + 1}/10)`,
+                  );
+                  await delay(1000);
+                }
+
+                if (paymentFrame) {
                   await delay(2000);
 
-                  // "앱없이결제" 버튼 클릭
-                  console.log("[napkin] 앱없이결제 버튼 클릭...");
-                  const applessPayClicked = await paymentFrame.evaluate(() => {
-                    const subTits = document.querySelectorAll('.sub-tit');
-                    for (const span of subTits) {
-                      const text = span.textContent || '';
-                      if (text.includes('앱없이결제')) {
-                        const link = span.closest('a');
-                        if (link) {
-                          link.click();
-                          return true;
-                        }
-                      }
-                    }
-                    return false;
-                  });
-
-                  if (applessPayClicked) {
-                    console.log("[napkin] ✅ 앱없이결제 클릭 완료");
-                    await delay(2000);
-
-                    // "카드번호 결제" 탭 클릭
-                    console.log("[napkin] 카드번호 결제 탭 클릭...");
-                    const cardTabClicked = await paymentFrame.evaluate(() => {
-                      const tabs = document.querySelectorAll('a, button, [role="tab"]');
+                  // "다른결제" 탭 클릭
+                  console.log("[napkin] 다른결제 탭 클릭...");
+                  const otherPaymentClicked = await paymentFrame.evaluate(
+                    () => {
+                      const tabs = document.querySelectorAll('a[role="tab"]');
                       for (const tab of tabs) {
-                        const text = tab.textContent || '';
-                        if (text.includes('카드번호') && text.includes('결제')) {
+                        const text = tab.textContent || "";
+                        if (text.includes("다른결제")) {
                           tab.click();
                           return true;
                         }
                       }
                       return false;
-                    });
+                    },
+                  );
 
-                    if (cardTabClicked) {
-                      console.log("[napkin] ✅ 카드번호 결제 탭 클릭 완료");
+                  if (otherPaymentClicked) {
+                    console.log("[napkin] ✅ 다른결제 탭 클릭 완료");
+                    await delay(2000);
+
+                    // "앱없이결제" 버튼 클릭
+                    console.log("[napkin] 앱없이결제 버튼 클릭...");
+                    const applessPayClicked = await paymentFrame.evaluate(
+                      () => {
+                        const subTits = document.querySelectorAll(".sub-tit");
+                        for (const span of subTits) {
+                          const text = span.textContent || "";
+                          if (text.includes("앱없이결제")) {
+                            const link = span.closest("a");
+                            if (link) {
+                              link.click();
+                              return true;
+                            }
+                          }
+                        }
+                        return false;
+                      },
+                    );
+
+                    if (applessPayClicked) {
+                      console.log("[napkin] ✅ 앱없이결제 클릭 완료");
                       await delay(2000);
 
-                      // 카드번호 입력
-                      const cardNum1 = getEnv('SHINHAN_CARD_NUM1');
-                      const cardNum4 = getEnv('SHINHAN_CARD_NUM4');
-
-                      if (cardNum1 && cardNum4) {
-                        console.log("[napkin] 카드번호 입력 시작...");
-
-                        // cardNum1 (앞 4자리) - 보안키패드 없음
-                        await paymentFrame.click('#cardNum1');
-                        await delay(100);
-                        await paymentFrame.type('#cardNum1', cardNum1, { delay: 50 });
-                        console.log("[napkin] ✅ cardNum1 입력 완료");
-                        await delay(300);
-
-                        // cardNum2, cardNum3 - 보안키패드 필드 → Interception
-                        console.log("[napkin] 보안키패드 필드 키보드 입력 시작...");
-                        await page.bringToFront();
-                        await delay(300);
-                        const shinhanResult = await automateShinhanCardPayment(paymentFrame);
-
-                        if (shinhanResult.success) {
-                          console.log("[napkin] ✅ cardNum2, cardNum3 입력 완료");
-
-                          await delay(300);
-
-                          // cardNum4 (뒤 4자리) - 보안키패드 없음
-                          await paymentFrame.click('#cardNum4');
-                          await delay(100);
-                          await paymentFrame.type('#cardNum4', cardNum4, { delay: 50 });
-                          console.log("[napkin] ✅ cardNum4 입력 완료");
-                          await delay(300);
-
-                          // CVC 입력 - Interception
-                          const cardCVC = getEnv('SHINHAN_CVC');
-                          if (cardCVC) {
-                            await delay(1000);
-                            await paymentFrame.click('#inputCVC');
-                            await delay(300);
-                            console.log("[napkin] CVC 입력 중...");
-                            typeWithInterception(cardCVC);
-                            await delay(500);
-                            console.log("[napkin] ✅ CVC 입력 완료");
+                      // "카드번호 결제" 탭 클릭
+                      console.log("[napkin] 카드번호 결제 탭 클릭...");
+                      const cardTabClicked = await paymentFrame.evaluate(() => {
+                        const tabs = document.querySelectorAll(
+                          'a, button, [role="tab"]',
+                        );
+                        for (const tab of tabs) {
+                          const text = tab.textContent || "";
+                          if (
+                            text.includes("카드번호") &&
+                            text.includes("결제")
+                          ) {
+                            tab.click();
+                            return true;
                           }
-                          await delay(500);
+                        }
+                        return false;
+                      });
 
-                          // 다음 버튼 클릭 (카드번호 입력 후)
-                          console.log("[napkin] 다음 버튼 클릭...");
-                          const submitClicked = await paymentFrame.evaluate(() => {
-                            const btn = document.querySelector('.submit-btn');
-                            if (btn) { btn.click(); return true; }
-                            return false;
+                      if (cardTabClicked) {
+                        console.log("[napkin] ✅ 카드번호 결제 탭 클릭 완료");
+                        await delay(2000);
+
+                        // 카드번호 입력
+                        const cardNum1 = getEnv("SHINHAN_CARD_NUM1");
+                        const cardNum4 = getEnv("SHINHAN_CARD_NUM4");
+
+                        if (cardNum1 && cardNum4) {
+                          console.log("[napkin] 카드번호 입력 시작...");
+
+                          // cardNum1 (앞 4자리) - 보안키패드 없음
+                          await paymentFrame.click("#cardNum1");
+                          await delay(100);
+                          await paymentFrame.type("#cardNum1", cardNum1, {
+                            delay: 50,
                           });
+                          console.log("[napkin] ✅ cardNum1 입력 완료");
+                          await delay(300);
 
-                          if (submitClicked) {
-                            console.log("[napkin] ✅ 다음 버튼 클릭 완료");
-                            await delay(3000);
+                          // cardNum2, cardNum3 - 보안키패드 필드 → Interception
+                          console.log(
+                            "[napkin] 보안키패드 필드 키보드 입력 시작...",
+                          );
+                          await page.bringToFront();
+                          await delay(300);
+                          const shinhanResult =
+                            await automateShinhanCardPayment(paymentFrame);
 
-                            // 비밀번호 입력
-                            console.log("[napkin] 비밀번호 입력 화면 대기...");
+                          if (shinhanResult.success) {
+                            console.log(
+                              "[napkin] ✅ cardNum2, cardNum3 입력 완료",
+                            );
 
-                            // HTML 구조 덤프 (디버깅용)
-                            const iframeHtml = await paymentFrame.evaluate(() => {
-                              return document.body.innerHTML;
+                            await delay(300);
+
+                            // cardNum4 (뒤 4자리) - 보안키패드 없음
+                            await paymentFrame.click("#cardNum4");
+                            await delay(100);
+                            await paymentFrame.type("#cardNum4", cardNum4, {
+                              delay: 50,
                             });
-                            console.log("[napkin] === 비밀번호 화면 HTML ===");
-                            console.log(iframeHtml.substring(0, 3000));
-                            console.log("[napkin] === HTML 끝 ===");
+                            console.log("[napkin] ✅ cardNum4 입력 완료");
+                            await delay(300);
 
-                            const cardPassword = getEnv('SHINHAN_CARD_PASSWORD');
-                            if (cardPassword) {
-                              const passwordSelectors = [
-                                'input[type="password"]',
-                                'input[type="tel"]',
-                                'input[name="password"]',
-                                'input[id*="password"]',
-                                'input[id*="pwd"]',
-                                'input[id*="cardPw"]',
-                                '#cardPwd',
-                                '#cardPw',
-                                'input[data-nppfs-form-id]'
-                              ];
+                            // CVC 입력 - Interception
+                            const cardCVC = getEnv("SHINHAN_CVC");
+                            if (cardCVC) {
+                              await delay(1000);
+                              await paymentFrame.click("#inputCVC");
+                              await delay(300);
+                              console.log("[napkin] CVC 입력 중...");
+                              typeWithInterception(cardCVC);
+                              await delay(500);
+                              console.log("[napkin] ✅ CVC 입력 완료");
+                            }
+                            await delay(500);
 
-                              let passwordInputFound = false;
-                              for (let i = 0; i < 10 && !passwordInputFound; i++) {
-                                for (const selector of passwordSelectors) {
-                                  try {
-                                    const pwdInput = await paymentFrame.$(selector);
-                                    if (pwdInput) {
-                                      console.log(`[napkin] 비밀번호 필드 발견: ${selector}`);
-                                      await paymentFrame.click(selector);
-                                      await delay(500);
-                                      await paymentFrame.evaluate((sel) => {
-                                        const el = document.querySelector(sel);
-                                        if (el) { el.focus(); el.click(); }
-                                      }, selector);
-                                      await delay(500);
+                            // 다음 버튼 클릭 (카드번호 입력 후)
+                            console.log("[napkin] 다음 버튼 클릭...");
+                            const submitClicked = await paymentFrame.evaluate(
+                              () => {
+                                const btn =
+                                  document.querySelector(".submit-btn");
+                                if (btn) {
+                                  btn.click();
+                                  return true;
+                                }
+                                return false;
+                              },
+                            );
 
-                                      await page.bringToFront();
-                                      await delay(300);
-                                      console.log("[napkin] 카드 비밀번호 입력 중 (Interception)...");
-                                      const result = typeWithInterception(cardPassword);
-                                      console.log("[napkin] Interception 입력 결과:", result);
-                                      await delay(1500);
-                                      console.log("[napkin] ✅ 카드 비밀번호 입력 완료");
-                                      passwordInputFound = true;
-                                      break;
+                            if (submitClicked) {
+                              console.log("[napkin] ✅ 다음 버튼 클릭 완료");
+                              await delay(3000);
+
+                              // 비밀번호 입력
+                              console.log(
+                                "[napkin] 비밀번호 입력 화면 대기...",
+                              );
+
+                              // HTML 구조 덤프 (디버깅용)
+                              const iframeHtml = await paymentFrame.evaluate(
+                                () => {
+                                  return document.body.innerHTML;
+                                },
+                              );
+                              console.log(
+                                "[napkin] === 비밀번호 화면 HTML ===",
+                              );
+                              console.log(iframeHtml.substring(0, 3000));
+                              console.log("[napkin] === HTML 끝 ===");
+
+                              const cardPassword = getEnv(
+                                "SHINHAN_CARD_PASSWORD",
+                              );
+                              if (cardPassword) {
+                                const passwordSelectors = [
+                                  'input[type="password"]',
+                                  'input[type="tel"]',
+                                  'input[name="password"]',
+                                  'input[id*="password"]',
+                                  'input[id*="pwd"]',
+                                  'input[id*="cardPw"]',
+                                  "#cardPwd",
+                                  "#cardPw",
+                                  "input[data-nppfs-form-id]",
+                                ];
+
+                                let passwordInputFound = false;
+                                for (
+                                  let i = 0;
+                                  i < 10 && !passwordInputFound;
+                                  i++
+                                ) {
+                                  for (const selector of passwordSelectors) {
+                                    try {
+                                      const pwdInput =
+                                        await paymentFrame.$(selector);
+                                      if (pwdInput) {
+                                        console.log(
+                                          `[napkin] 비밀번호 필드 발견: ${selector}`,
+                                        );
+                                        await paymentFrame.click(selector);
+                                        await delay(500);
+                                        await paymentFrame.evaluate((sel) => {
+                                          const el =
+                                            document.querySelector(sel);
+                                          if (el) {
+                                            el.focus();
+                                            el.click();
+                                          }
+                                        }, selector);
+                                        await delay(500);
+
+                                        await page.bringToFront();
+                                        await delay(300);
+                                        console.log(
+                                          "[napkin] 카드 비밀번호 입력 중 (Interception)...",
+                                        );
+                                        const result =
+                                          typeWithInterception(cardPassword);
+                                        console.log(
+                                          "[napkin] Interception 입력 결과:",
+                                          result,
+                                        );
+                                        await delay(1500);
+                                        console.log(
+                                          "[napkin] ✅ 카드 비밀번호 입력 완료",
+                                        );
+                                        passwordInputFound = true;
+                                        break;
+                                      }
+                                    } catch (e) {
+                                      console.log(
+                                        `[napkin] 비밀번호 필드 에러 (${selector}):`,
+                                        e.message,
+                                      );
                                     }
-                                  } catch (e) {
-                                    console.log(`[napkin] 비밀번호 필드 에러 (${selector}):`, e.message);
+                                  }
+                                  if (!passwordInputFound) {
+                                    console.log(
+                                      `[napkin] 비밀번호 필드 탐색 중... (${i + 1}/10)`,
+                                    );
+                                    await delay(1000);
                                   }
                                 }
-                                if (!passwordInputFound) {
-                                  console.log(`[napkin] 비밀번호 필드 탐색 중... (${i + 1}/10)`);
-                                  await delay(1000);
-                                }
-                              }
 
-                              if (passwordInputFound) {
-                                await delay(500);
-                                // 결제요청 버튼 클릭
-                                console.log("[napkin] 결제요청 버튼 찾는 중...");
-                                const paymentBtnClicked = await paymentFrame.evaluate(() => {
-                                  const btn = document.querySelector('.submit-btn');
-                                  if (btn) { btn.click(); return true; }
-                                  const buttons = document.querySelectorAll('button');
-                                  for (const b of buttons) {
-                                    const text = (b.textContent || '').trim();
-                                    if (text.includes('결제') || text.includes('확인')) {
-                                      b.click();
-                                      return true;
-                                    }
+                                if (passwordInputFound) {
+                                  await delay(500);
+                                  // 결제요청 버튼 클릭
+                                  console.log(
+                                    "[napkin] 결제요청 버튼 찾는 중...",
+                                  );
+                                  const paymentBtnClicked =
+                                    await paymentFrame.evaluate(() => {
+                                      const btn =
+                                        document.querySelector(".submit-btn");
+                                      if (btn) {
+                                        btn.click();
+                                        return true;
+                                      }
+                                      const buttons =
+                                        document.querySelectorAll("button");
+                                      for (const b of buttons) {
+                                        const text = (
+                                          b.textContent || ""
+                                        ).trim();
+                                        if (
+                                          text.includes("결제") ||
+                                          text.includes("확인")
+                                        ) {
+                                          b.click();
+                                          return true;
+                                        }
+                                      }
+                                      return false;
+                                    });
+                                  if (paymentBtnClicked) {
+                                    console.log(
+                                      "[napkin] ✅ 결제요청 버튼 클릭 완료",
+                                    );
+                                    paymentCompleted = true;
                                   }
-                                  return false;
-                                });
-                                if (paymentBtnClicked) {
-                                  console.log("[napkin] ✅ 결제요청 버튼 클릭 완료");
-                                  paymentCompleted = true;
                                 }
                               }
                             }
+                          } else {
+                            console.log(
+                              "[napkin] ⚠️ 보안키패드 입력 실패:",
+                              shinhanResult.error,
+                            );
                           }
                         } else {
-                          console.log("[napkin] ⚠️ 보안키패드 입력 실패:", shinhanResult.error);
+                          console.log(
+                            "[napkin] ⚠️ 신한카드 정보가 환경변수에 없음",
+                          );
                         }
                       } else {
-                        console.log("[napkin] ⚠️ 신한카드 정보가 환경변수에 없음");
+                        console.log(
+                          "[napkin] ⚠️ 카드번호 결제 탭을 찾을 수 없음",
+                        );
                       }
                     } else {
-                      console.log("[napkin] ⚠️ 카드번호 결제 탭을 찾을 수 없음");
+                      console.log("[napkin] ⚠️ 앱없이결제 버튼을 찾을 수 없음");
                     }
                   } else {
-                    console.log("[napkin] ⚠️ 앱없이결제 버튼을 찾을 수 없음");
+                    console.log("[napkin] ⚠️ 다른결제 탭을 찾을 수 없음");
                   }
                 } else {
-                  console.log("[napkin] ⚠️ 다른결제 탭을 찾을 수 없음");
+                  console.log(
+                    "[napkin] ⚠️ 토스페이먼츠 전자결제 iframe을 찾을 수 없음",
+                  );
                 }
-              } else {
-                console.log("[napkin] ⚠️ 토스페이먼츠 전자결제 iframe을 찾을 수 없음");
               }
+            } else {
+              console.log("[napkin] ⚠️ 신한카드를 찾을 수 없음");
             }
           } else {
-            console.log("[napkin] ⚠️ 신한카드를 찾을 수 없음");
+            console.log("[napkin] ⚠️ iframe contentFrame 접근 실패");
           }
         } else {
-          console.log("[napkin] ⚠️ iframe contentFrame 접근 실패");
+          console.log("[napkin] ⚠️ 토스페이먼츠 iframe을 찾을 수 없음");
         }
       } else {
-        console.log("[napkin] ⚠️ 토스페이먼츠 iframe을 찾을 수 없음");
+        console.log("[napkin] ⚠️ 결제하기 버튼을 찾을 수 없음");
       }
-    } else {
-      console.log("[napkin] ⚠️ 결제하기 버튼을 찾을 수 없음");
-    }
 
       // 결제 완료 확인
       if (paymentCompleted) {
@@ -1489,7 +1789,9 @@ async function processNapkinOrder(
       }
 
       if (paymentAttempt < MAX_PAYMENT_RETRIES - 1) {
-        console.log("[napkin] ⚠️ 결제 미완료 (빈 창 등) - 20초 대기 후 장바구니에서 재시도...");
+        console.log(
+          "[napkin] ⚠️ 결제 미완료 (빈 창 등) - 20초 대기 후 장바구니에서 재시도...",
+        );
         await delay(20000);
       }
     } // end of payment retry loop
@@ -1503,7 +1805,12 @@ async function processNapkinOrder(
         console.log("[napkin] dialog 핸들러 제거 완료");
       }
 
-      errorCollector.addError("PAYMENT", "PAYMENT_FAILED", "신한카드 결제 실패 (빈 창 등) - 최대 재시도 초과", { purchaseOrderId });
+      errorCollector.addError(
+        "PAYMENT",
+        "PAYMENT_FAILED",
+        "신한카드 결제 실패 (빈 창 등) - 최대 재시도 초과",
+        { purchaseOrderId },
+      );
       await saveOrderResults(authToken, {
         purchaseOrderId,
         products: [],
@@ -1527,11 +1834,14 @@ async function processNapkinOrder(
 
     // 주문번호 추출
     let vendorOrderNumber = null;
-    const orderNumberSelector = "#mCafe24Order > div.resultArea > div > div > table > tbody > tr:nth-child(1) > td > span";
+    const orderNumberSelector =
+      "#mCafe24Order > div.resultArea > div > div > table > tbody > tr:nth-child(1) > td > span";
 
     try {
       await page.waitForSelector(orderNumberSelector, { timeout: 60000 });
-      vendorOrderNumber = await page.$eval(orderNumberSelector, (el) => el.textContent.trim());
+      vendorOrderNumber = await page.$eval(orderNumberSelector, (el) =>
+        el.textContent.trim(),
+      );
       console.log("[napkin] ✅ 주문번호:", vendorOrderNumber);
     } catch (orderNumError) {
       console.log("[napkin] ⚠️ 주문번호 추출 실패:", orderNumError.message);
@@ -1541,8 +1851,8 @@ async function processNapkinOrder(
     const currentUrl = page.url();
 
     // 가격 불일치 상세 데이터 (시스템 저장용)
-    const priceMismatchList = results.filter(r => r.priceInfo?.priceMismatch);
-    const priceMismatches = priceMismatchList.map(r => ({
+    const priceMismatchList = results.filter((r) => r.priceInfo?.priceMismatch);
+    const priceMismatches = priceMismatchList.map((r) => ({
       purchaseOrderLineId: r.lineId,
       purchaseOrderId: r.purchaseOrderId, // 개별 상품의 발주 ID
       productVariantVendorId: r.productVariantVendorId || null,
@@ -1553,15 +1863,19 @@ async function processNapkinOrder(
       expectedPrice: r.priceInfo?.expectedUnitPrice,
       vendorPriceExcludeVat: r.priceInfo?.vendorPriceExcludeVat,
       difference: r.priceInfo?.difference,
-      differencePercent: r.priceInfo?.expectedUnitPrice > 0
-        ? ((r.priceInfo?.difference / r.priceInfo?.expectedUnitPrice) * 100).toFixed(2)
-        : 0,
+      differencePercent:
+        r.priceInfo?.expectedUnitPrice > 0
+          ? (
+              (r.priceInfo?.difference / r.priceInfo?.expectedUnitPrice) *
+              100
+            ).toFixed(2)
+          : 0,
     }));
 
     // 옵션 실패 상품 필터링
     const optionFailedProducts = results
-      .filter(r => !r.success && r.message?.includes('옵션'))
-      .map(r => ({
+      .filter((r) => !r.success && r.message?.includes("옵션"))
+      .map((r) => ({
         purchaseOrderLineId: r.lineId,
         purchaseOrderId: r.purchaseOrderId, // 개별 상품의 발주 ID
         productVariantVendorId: r.productVariantVendorId,
@@ -1577,12 +1891,13 @@ async function processNapkinOrder(
         orderLineIds: p.orderLineIds,
         openMallOrderNumber: vendorOrderNumber || null,
       })),
-      priceMismatches: priceMismatches?.map(p => ({
-        productVariantVendorId: p.productVariantVendorId,
-        purchaseOrderId: p.purchaseOrderId, // 개별 상품의 발주 ID
-        vendorPriceExcludeVat: p.vendorPriceExcludeVat,
-        openMallPrice: p.openMallPrice,
-      })) || [],
+      priceMismatches:
+        priceMismatches?.map((p) => ({
+          productVariantVendorId: p.productVariantVendorId,
+          purchaseOrderId: p.purchaseOrderId, // 개별 상품의 발주 ID
+          vendorPriceExcludeVat: p.vendorPriceExcludeVat,
+          openMallPrice: p.openMallPrice,
+        })) || [],
       optionFailedProducts: [],
       automationErrors: [],
       poLineIds,
@@ -1594,12 +1909,14 @@ async function processNapkinOrder(
     if (actualPaymentAmount > 0) {
       const expectedAmount = calculateExpectedPaymentAmount(products);
       try {
-        await createPaymentLogs(authToken, [{
-          vendor: "napkin",
-          paymentAmount: actualPaymentAmount,
-          expectedAmount,
-          purchaseOrderId,
-        }]);
+        await createPaymentLogs(authToken, [
+          {
+            vendor: "napkin",
+            paymentAmount: actualPaymentAmount,
+            expectedAmount,
+            purchaseOrderId,
+          },
+        ]);
       } catch (e) {
         console.log("[napkin] 결제 로그 저장 실패 (무시):", e.message);
       }
@@ -1642,7 +1959,6 @@ async function processNapkinOrder(
       optionFailedCount: optionFailedProducts.length,
       optionFailedProducts,
     });
-
   } catch (error) {
     console.error("[napkin] 주문 처리 에러:", error);
 
@@ -1658,7 +1974,9 @@ async function processNapkinOrder(
       products: [],
       priceMismatches: [],
       optionFailedProducts: [],
-      automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : [],
+      automationErrors: errorCollector.hasErrors()
+        ? errorCollector.getErrors()
+        : [],
       poLineIds,
       success: false,
       vendor: "napkin",
@@ -1667,7 +1985,9 @@ async function processNapkinOrder(
       success: false,
       vendor: vendor.name,
       message: `주문 처리 에러: ${error.message}`,
-      automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
+      automationErrors: errorCollector.hasErrors()
+        ? errorCollector.getErrors()
+        : undefined,
     });
   }
 }

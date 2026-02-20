@@ -36,9 +36,14 @@ async function getCoupangTrackingNumbers(page, vendor, openMallOrderNumbers) {
     // 2. 각 주문번호에 대해 송장번호 조회
     for (const openMallOrderNumber of openMallOrderNumbers) {
       try {
-        console.log(`[coupang 송장조회] 주문번호 ${openMallOrderNumber} 검색 중...`);
+        console.log(
+          `[coupang 송장조회] 주문번호 ${openMallOrderNumber} 검색 중...`,
+        );
 
-        const trackingInfo = await findTrackingNumber(page, openMallOrderNumber);
+        const trackingInfo = await findTrackingNumber(
+          page,
+          openMallOrderNumber,
+        );
 
         if (trackingInfo?.trackingNumber) {
           const carrier = normalizeCarrier(trackingInfo.carrier);
@@ -47,26 +52,46 @@ async function getCoupangTrackingNumbers(page, vendor, openMallOrderNumbers) {
             trackingNumber: trackingInfo.trackingNumber,
             carrier,
           });
-          console.log(`[coupang 송장조회] ${openMallOrderNumber} → ${trackingInfo.trackingNumber} (${carrier})`);
+          console.log(
+            `[coupang 송장조회] ${openMallOrderNumber} → ${trackingInfo.trackingNumber} (${carrier})`,
+          );
         } else {
-          console.log(`[coupang 송장조회] ${openMallOrderNumber} → 송장번호 없음`);
+          console.log(
+            `[coupang 송장조회] ${openMallOrderNumber} → 송장번호 없음`,
+          );
         }
       } catch (error) {
-        console.error(`[coupang 송장조회] ${openMallOrderNumber} 에러:`, error.message);
-        errorCollector.addError(TRACKING_STEPS.EXTRACTION, ERROR_CODES.EXTRACTION_FAILED, error.message, { openMallOrderNumber });
+        console.error(
+          `[coupang 송장조회] ${openMallOrderNumber} 에러:`,
+          error.message,
+        );
+        errorCollector.addError(
+          TRACKING_STEPS.EXTRACTION,
+          ERROR_CODES.EXTRACTION_FAILED,
+          error.message,
+          { openMallOrderNumber },
+        );
       }
     }
 
     return {
       results,
-      automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
+      automationErrors: errorCollector.hasErrors()
+        ? errorCollector.getErrors()
+        : undefined,
     };
   } catch (error) {
     console.error("[coupang 송장조회] 전체 에러:", error);
-    errorCollector.addError(TRACKING_STEPS.LOGIN, ERROR_CODES.LOGIN_FAILED, error.message);
+    errorCollector.addError(
+      TRACKING_STEPS.LOGIN,
+      ERROR_CODES.LOGIN_FAILED,
+      error.message,
+    );
     return {
       results,
-      automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
+      automationErrors: errorCollector.hasErrors()
+        ? errorCollector.getErrors()
+        : undefined,
     };
   }
 }
@@ -74,9 +99,11 @@ async function getCoupangTrackingNumbers(page, vendor, openMallOrderNumbers) {
 // 셀렉터 상수 (클래스 제거하고 구조로만 찾기)
 const SELECTORS = {
   // 배송 조회 버튼
-  deliveryTrackingBtn: '#__next > div.my-area-body > div.my-area-contents > div > div > table > tbody > tr > td > div > button',
+  deliveryTrackingBtn:
+    "#__next > div.my-area-body > div.my-area-contents > div > div > table > tbody > tr > td > div > button",
   // 배송 정보 테이블 기본 경로
-  deliveryTableBase: '#__next > div.my-area-body > div.my-area-contents > div > table > tbody > tr > td > table > tbody',
+  deliveryTableBase:
+    "#__next > div.my-area-body > div.my-area-contents > div > table > tbody > tr > td > table > tbody",
 };
 
 /**
@@ -100,8 +127,14 @@ async function findTrackingNumber(page, openMallOrderNumber) {
     // 2. 배송 조회 버튼 클릭
     const deliveryBtn = await page.$(SELECTORS.deliveryTrackingBtn);
     if (!deliveryBtn) {
-      console.log(`[coupang 송장조회] ${openMallOrderNumber}: 배송 조회 버튼 없음`);
-      return { trackingNumber: null, carrier: null, status: "no_delivery_button" };
+      console.log(
+        `[coupang 송장조회] ${openMallOrderNumber}: 배송 조회 버튼 없음`,
+      );
+      return {
+        trackingNumber: null,
+        carrier: null,
+        status: "no_delivery_button",
+      };
     }
 
     await deliveryBtn.click();
@@ -117,21 +150,21 @@ async function findTrackingNumber(page, openMallOrderNumber) {
       let trackingNumber = null;
 
       // 로켓배송 여부 확인 (중첩 테이블 구조)
-      const allText = tbody.textContent || '';
-      const isRocketDelivery = allText.includes('로켓배송');
+      const allText = tbody.textContent || "";
+      const isRocketDelivery = allText.includes("로켓배송");
 
       if (isRocketDelivery) {
         // 로켓배송: 중첩된 테이블에서 송장번호 찾기
-        carrier = '로켓배송';
-        const allRows = tbody.querySelectorAll('tr');
+        carrier = "로켓배송";
+        const allRows = tbody.querySelectorAll("tr");
         for (const row of allRows) {
-          const cells = row.querySelectorAll('td');
+          const cells = row.querySelectorAll("td");
           for (let i = 0; i < cells.length - 1; i++) {
-            const label = cells[i].textContent?.trim() || '';
-            const value = cells[i + 1].textContent?.trim() || '';
-            if (label.includes('송장')) {
+            const label = cells[i].textContent?.trim() || "";
+            const value = cells[i + 1].textContent?.trim() || "";
+            if (label.includes("송장")) {
               if (value && /^[\d-]+$/.test(value) && value.length >= 10) {
-                trackingNumber = value.replace(/-/g, '');
+                trackingNumber = value.replace(/-/g, "");
                 break;
               }
             }
@@ -140,25 +173,25 @@ async function findTrackingNumber(page, openMallOrderNumber) {
         }
       } else {
         // 일반배송: 기존 로직
-        const rows = tbody.querySelectorAll(':scope > tr');
+        const rows = tbody.querySelectorAll(":scope > tr");
         for (const row of rows) {
-          const labelCell = row.querySelector('td:first-child');
-          const valueCell = row.querySelector('td:last-child');
+          const labelCell = row.querySelector("td:first-child");
+          const valueCell = row.querySelector("td:last-child");
 
           if (!labelCell || !valueCell) continue;
 
-          const label = labelCell.textContent?.trim() || '';
-          const value = valueCell.textContent?.trim() || '';
+          const label = labelCell.textContent?.trim() || "";
+          const value = valueCell.textContent?.trim() || "";
 
           // 택배사 찾기
-          if (label.includes('택배사') || label.includes('배송사')) {
+          if (label.includes("택배사") || label.includes("배송사")) {
             carrier = value;
           }
 
           // 송장번호 찾기 (라벨에 "송장" 포함)
-          if (label.includes('송장')) {
+          if (label.includes("송장")) {
             if (value && /^[\d-]+$/.test(value) && value.length >= 10) {
-              trackingNumber = value.replace(/-/g, '');
+              trackingNumber = value.replace(/-/g, "");
             }
           }
         }
@@ -168,8 +201,10 @@ async function findTrackingNumber(page, openMallOrderNumber) {
     }, SELECTORS.deliveryTableBase);
 
     if (trackingInfo?.trackingNumber) {
-      const deliveryType = trackingInfo.isRocketDelivery ? '[로켓]' : '[일반]';
-      console.log(`[coupang 송장조회] ${deliveryType} 찾음: ${trackingInfo.carrier} / ${trackingInfo.trackingNumber}`);
+      const deliveryType = trackingInfo.isRocketDelivery ? "[로켓]" : "[일반]";
+      console.log(
+        `[coupang 송장조회] ${deliveryType} 찾음: ${trackingInfo.carrier} / ${trackingInfo.trackingNumber}`,
+      );
       return {
         trackingNumber: trackingInfo.trackingNumber,
         carrier: trackingInfo.carrier || "알 수 없음",
@@ -178,10 +213,22 @@ async function findTrackingNumber(page, openMallOrderNumber) {
     }
 
     console.log(`[coupang 송장조회] ${openMallOrderNumber}: 송장번호 없음`);
-    return { trackingNumber: null, carrier: null, status: "tracking_not_found" };
+    return {
+      trackingNumber: null,
+      carrier: null,
+      status: "tracking_not_found",
+    };
   } catch (error) {
-    console.error(`[coupang 송장조회] ${openMallOrderNumber} 조회 실패:`, error.message);
-    return { trackingNumber: null, carrier: null, status: "error", error: error.message };
+    console.error(
+      `[coupang 송장조회] ${openMallOrderNumber} 조회 실패:`,
+      error.message,
+    );
+    return {
+      trackingNumber: null,
+      carrier: null,
+      status: "error",
+      error: error.message,
+    };
   }
 }
 

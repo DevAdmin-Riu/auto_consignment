@@ -10,7 +10,7 @@ async function processWowpressOrder(
   res,
   page,
   vendor,
-  { productUrl, productName, quantity, orderData }
+  { productUrl, productName, quantity, orderData },
 ) {
   return res.json({
     success: false,

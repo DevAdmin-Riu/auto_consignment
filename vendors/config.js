@@ -48,7 +48,7 @@ function loadEnvFile() {
       console.log(
         "[config] .env 파일 로드됨:",
         Object.keys(envCache).length,
-        "개 항목"
+        "개 항목",
       );
     }
   } catch (error) {

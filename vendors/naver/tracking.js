@@ -66,7 +66,7 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
       errorCollector.addError(
         TRACKING_STEPS.LOGIN,
         ERROR_CODES.LOGIN_FAILED,
-        loginError.message
+        loginError.message,
       );
       return { results, automationErrors: errorCollector.getErrors() };
     }
@@ -75,7 +75,7 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
     for (const openMallOrderNumber of openMallOrderNumbers) {
       try {
         console.log(
-          `[naver 송장조회] 주문번호 ${openMallOrderNumber} 조회 중...`
+          `[naver 송장조회] 주문번호 ${openMallOrderNumber} 조회 중...`,
         );
 
         // 주문 상태 페이지로 이동
@@ -94,7 +94,7 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
 
         if (!trackBtn) {
           console.log(
-            `[naver 송장조회] ${openMallOrderNumber}: 배송조회 버튼 없음 (아직 배송 전)`
+            `[naver 송장조회] ${openMallOrderNumber}: 배송조회 버튼 없음 (아직 배송 전)`,
           );
           // 배송 전이므로 에러가 아님 - 에러 수집 안함
           continue;
@@ -107,7 +107,7 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
 
         if (!btnText.includes("배송조회")) {
           console.log(
-            `[naver 송장조회] ${openMallOrderNumber}: 버튼 텍스트가 "배송조회"가 아님 (${btnText})`
+            `[naver 송장조회] ${openMallOrderNumber}: 버튼 텍스트가 "배송조회"가 아님 (${btnText})`,
           );
           continue;
         }
@@ -122,17 +122,17 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
         try {
           carrier = await page.$eval(
             SELECTORS.deliveryTracking.carrier,
-            (el) => el.textContent?.trim() || ""
+            (el) => el.textContent?.trim() || "",
           );
         } catch (e) {
           try {
             carrier = await page.$eval(
               SELECTORS.deliveryTracking.carrierAlt,
-              (el) => el.textContent?.trim() || ""
+              (el) => el.textContent?.trim() || "",
             );
           } catch (e2) {
             console.log(
-              `[naver 송장조회] ${openMallOrderNumber}: 택배사 추출 실패`
+              `[naver 송장조회] ${openMallOrderNumber}: 택배사 추출 실패`,
             );
           }
         }
@@ -142,23 +142,23 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
         try {
           trackingNumber = await page.$eval(
             SELECTORS.deliveryTracking.trackingNumber,
-            (el) => el.textContent?.trim() || ""
+            (el) => el.textContent?.trim() || "",
           );
         } catch (e) {
           try {
             trackingNumber = await page.$eval(
               SELECTORS.deliveryTracking.trackingNumberAlt,
-              (el) => el.textContent?.trim() || ""
+              (el) => el.textContent?.trim() || "",
             );
           } catch (e2) {
             console.log(
-              `[naver 송장조회] ${openMallOrderNumber}: 송장번호 추출 실패`
+              `[naver 송장조회] ${openMallOrderNumber}: 송장번호 추출 실패`,
             );
             errorCollector.addError(
               TRACKING_STEPS.EXTRACTION,
               ERROR_CODES.EXTRACTION_FAILED,
               "송장번호 추출 실패",
-              { openMallOrderNumber }
+              { openMallOrderNumber },
             );
           }
         }
@@ -173,11 +173,11 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
             carrier: normalizedCarrier || carrier,
           });
           console.log(
-            `[naver 송장조회] ${openMallOrderNumber} → ${trackingNumber} (${normalizedCarrier || carrier})`
+            `[naver 송장조회] ${openMallOrderNumber} → ${trackingNumber} (${normalizedCarrier || carrier})`,
           );
         } else {
           console.log(
-            `[naver 송장조회] ${openMallOrderNumber}: 송장번호를 찾을 수 없음`
+            `[naver 송장조회] ${openMallOrderNumber}: 송장번호를 찾을 수 없음`,
           );
           // 송장번호가 없는 경우는 아직 발송 전일 수 있으므로 에러 수집 안함
         }
@@ -187,30 +187,32 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
       } catch (error) {
         console.error(
           `[naver 송장조회] ${openMallOrderNumber} 에러:`,
-          error.message
+          error.message,
         );
         errorCollector.addError(
           TRACKING_STEPS.EXTRACTION,
           ERROR_CODES.EXTRACTION_FAILED,
           error.message,
-          { openMallOrderNumber }
+          { openMallOrderNumber },
         );
       }
     }
 
     console.log(
-      `[naver 송장조회] 완료: ${results.length}/${openMallOrderNumbers.length}건 조회됨`
+      `[naver 송장조회] 완료: ${results.length}/${openMallOrderNumbers.length}건 조회됨`,
     );
     return {
       results,
-      automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
+      automationErrors: errorCollector.hasErrors()
+        ? errorCollector.getErrors()
+        : undefined,
     };
   } catch (error) {
     console.error("[naver 송장조회] 전체 에러:", error);
     errorCollector.addError(
       TRACKING_STEPS.EXTRACTION,
       ERROR_CODES.UNEXPECTED_ERROR,
-      error.message
+      error.message,
     );
     return {
       results,

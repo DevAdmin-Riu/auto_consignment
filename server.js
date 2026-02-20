@@ -75,7 +75,7 @@ async function processQueue() {
 
     if (isDetachedError && retryCount < 2) {
       console.log(
-        `[복구] Detached Frame 에러 감지, 재시도 ${retryCount + 1}/2...`
+        `[복구] Detached Frame 에러 감지, 재시도 ${retryCount + 1}/2...`,
       );
       await recoverPage();
       requestQueue.unshift({ req, res, resolve, retryCount: retryCount + 1 });
@@ -91,7 +91,9 @@ async function processQueue() {
     if (requestQueue.length > 0) {
       // WAF 우회: 다음 주문 처리 전 딜레이 (5-10초 랜덤)
       const delayMs = 5000 + Math.random() * 5000;
-      console.log(`[큐] 다음 주문까지 ${(delayMs / 1000).toFixed(1)}초 대기...`);
+      console.log(
+        `[큐] 다음 주문까지 ${(delayMs / 1000).toFixed(1)}초 대기...`,
+      );
       await delay(delayMs);
       processQueue();
     } else {
@@ -135,14 +137,17 @@ async function handleVendorOrder(req, res) {
     } = req.body;
 
     // purchaseOrderId 처리: purchaseOrderIds 배열 우선, 없으면 단일 값, 없으면 products에서 추출
-    let purchaseOrderId = (purchaseOrderIds && purchaseOrderIds.length > 0)
-      ? purchaseOrderIds[0]
-      : rawPurchaseOrderId;
+    let purchaseOrderId =
+      purchaseOrderIds && purchaseOrderIds.length > 0
+        ? purchaseOrderIds[0]
+        : rawPurchaseOrderId;
 
     if (!purchaseOrderId && products && products.length > 0) {
       purchaseOrderId = products[0].purchaseOrderId;
       if (purchaseOrderId) {
-        console.log(`[발주ID] products[0]에서 purchaseOrderId 추출: ${purchaseOrderId}`);
+        console.log(
+          `[발주ID] products[0]에서 purchaseOrderId 추출: ${purchaseOrderId}`,
+        );
       }
     }
 
@@ -191,18 +196,20 @@ async function handleVendorOrder(req, res) {
 
     console.log(`\n========== [${vendor.name}] 발주 시작 ==========`);
     console.log(`자동화 타입: ${AUTOMATION_TYPES[vendor.automationType]}`);
-    console.log(`발주 ID: ${purchaseOrderId || '없음'} (원본: purchaseOrderIds=${JSON.stringify(purchaseOrderIds)}, rawPurchaseOrderId=${rawPurchaseOrderId})`);
+    console.log(
+      `발주 ID: ${purchaseOrderId || "없음"} (원본: purchaseOrderIds=${JSON.stringify(purchaseOrderIds)}, rawPurchaseOrderId=${rawPurchaseOrderId})`,
+    );
     console.log(`상품 수: ${productsList.length}개`);
     if (resolvedShippingAddress) {
       console.log(
-        `배송지: ${resolvedShippingAddress.firstName} / ${resolvedShippingAddress.phone} / ${resolvedShippingAddress.streetAddress1}`
+        `배송지: ${resolvedShippingAddress.firstName} / ${resolvedShippingAddress.phone} / ${resolvedShippingAddress.streetAddress1}`,
       );
     } else {
       console.log(`배송지: 없음 (장바구니만 담기)`);
     }
     productsList.forEach((p, i) => {
       console.log(
-        `  상품 ${i + 1}: ${p.productName || p.productUrl} x ${p.quantity || 1}`
+        `  상품 ${i + 1}: ${p.productName || p.productUrl} x ${p.quantity || 1}`,
       );
     });
 
@@ -247,8 +254,8 @@ async function handleVendorOrder(req, res) {
           notes: vendor.requiresKakaoDesign
             ? "카톡으로 디자인 확정 필요"
             : vendor.requiresKakaoFile
-            ? "카톡으로 양식/디자인 파일 전달 필요"
-            : null,
+              ? "카톡으로 양식/디자인 파일 전달 필요"
+              : null,
           siteUrl: vendor.siteUrl,
         });
 
@@ -276,7 +283,14 @@ async function handleVendorOrder(req, res) {
 async function handleProductSearchOrder(
   res,
   vendor,
-  { products, shippingAddress, orderData, poLineIds, purchaseOrderId, authToken }
+  {
+    products,
+    shippingAddress,
+    orderData,
+    poLineIds,
+    purchaseOrderId,
+    authToken,
+  },
 ) {
   let { browser, page } = await getBrowser(vendor.key);
 
@@ -300,7 +314,7 @@ async function handleProductSearchOrder(
           poLineIds,
           purchaseOrderId,
         },
-        authToken
+        authToken,
       );
 
     case "napkin":
@@ -314,7 +328,7 @@ async function handleProductSearchOrder(
           poLineIds,
           purchaseOrderId,
         },
-        authToken
+        authToken,
       );
 
     case "baemin":
@@ -328,7 +342,7 @@ async function handleProductSearchOrder(
           poLineIds,
           purchaseOrderId,
         },
-        authToken
+        authToken,
       );
 
     case "naver":
@@ -342,7 +356,7 @@ async function handleProductSearchOrder(
           poLineIds,
           purchaseOrderId,
         },
-        authToken
+        authToken,
       );
 
     case "wowpress":
@@ -364,7 +378,7 @@ async function handleProductSearchOrder(
           poLineIds,
           purchaseOrderId,
         },
-        authToken
+        authToken,
       );
 
     case "adpia":
@@ -378,7 +392,7 @@ async function handleProductSearchOrder(
           poLineIds,
           purchaseOrderId,
         },
-        authToken
+        authToken,
       );
 
     default:
@@ -397,7 +411,7 @@ async function handleProductSearchOrder(
 async function handleReorder(
   res,
   vendor,
-  { productName, quantity, orderData }
+  { productName, quantity, orderData },
 ) {
   return res.json({
     success: false,
