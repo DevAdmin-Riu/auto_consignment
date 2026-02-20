@@ -1546,6 +1546,9 @@ async function processNapkinOrder(
                           console.log("[napkin] 카드번호 입력 시작...");
 
                           // cardNum1 (앞 4자리) - 보안키패드 없음
+                          await paymentFrame.waitForSelector("#cardNum1", {
+                            timeout: 10000,
+                          });
                           await paymentFrame.click("#cardNum1");
                           await delay(100);
                           await paymentFrame.type("#cardNum1", cardNum1, {
@@ -1571,6 +1574,9 @@ async function processNapkinOrder(
                             await delay(300);
 
                             // cardNum4 (뒤 4자리) - 보안키패드 없음
+                            await paymentFrame.waitForSelector("#cardNum4", {
+                              timeout: 10000,
+                            });
                             await paymentFrame.click("#cardNum4");
                             await delay(100);
                             await paymentFrame.type("#cardNum4", cardNum4, {
@@ -1583,6 +1589,10 @@ async function processNapkinOrder(
                             const cardCVC = getEnv("SHINHAN_CVC");
                             if (cardCVC) {
                               await delay(1000);
+                              await paymentFrame.waitForSelector(
+                                "#inputCVC",
+                                { timeout: 10000 },
+                              );
                               await paymentFrame.click("#inputCVC");
                               await delay(300);
                               console.log("[napkin] CVC 입력 중...");
