@@ -32,7 +32,6 @@ let pageInstance = null;
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-
 /**
  * 브라우저 시작
  */
@@ -129,7 +128,11 @@ app.post("/api/vendor/tracking", async (req, res) => {
       }
 
       // openMallOrderNumbers 유효성 검사
-      if (!openMallOrderNumbers || !Array.isArray(openMallOrderNumbers) || openMallOrderNumbers.length === 0) {
+      if (
+        !openMallOrderNumbers ||
+        !Array.isArray(openMallOrderNumbers) ||
+        openMallOrderNumbers.length === 0
+      ) {
         console.log(`[tracking] ${vendor}: openMallOrderNumbers 없음, 스킵`);
         continue;
       }
@@ -140,11 +143,16 @@ app.post("/api/vendor/tracking", async (req, res) => {
         continue;
       }
 
-      console.log(`[tracking] ${vendor} 송장 조회: ${openMallOrderNumbers.length}건`);
+      console.log(
+        `[tracking] ${vendor} 송장 조회: ${openMallOrderNumbers.length}건`,
+      );
 
       // 벤더 전환 전 페이지 초기화 (Frame detach 방지)
       try {
-        await page.goto("about:blank", { waitUntil: "domcontentloaded", timeout: 5000 });
+        await page.goto("about:blank", {
+          waitUntil: "domcontentloaded",
+          timeout: 5000,
+        });
         await delay(500);
       } catch (e) {
         console.log(`[tracking] 페이지 초기화 실패, 새 페이지 생성`);
@@ -155,7 +163,11 @@ app.post("/api/vendor/tracking", async (req, res) => {
 
       // 벤더별 tracking 함수 호출
       const trackingHandler = trackingHandlers[vendor];
-      const trackingResponse = await trackingHandler(page, vendorConfig, openMallOrderNumbers);
+      const trackingResponse = await trackingHandler(
+        page,
+        vendorConfig,
+        openMallOrderNumbers,
+      );
 
       // 반환 형식 처리: { results: [...], automationErrors: ... } 또는 배열
       const results = Array.isArray(trackingResponse)

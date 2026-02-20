@@ -74,14 +74,18 @@ async function loginNapkin(page, vendor) {
 
     // 로그인 버튼 클릭
     console.log("[napkin] 4. 로그인 버튼 클릭...");
-    const loginBtn = await page.$("a.btnSubmit, .btn_login, button[type='submit']");
+    const loginBtn = await page.$(
+      "a.btnSubmit, .btn_login, button[type='submit']",
+    );
     if (loginBtn) {
       await loginBtn.click();
     } else {
       await page.keyboard.press("Enter");
     }
 
-    await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 10000 }).catch(() => {});
+    await page
+      .waitForNavigation({ waitUntil: "domcontentloaded", timeout: 10000 })
+      .catch(() => {});
     await delay(1500);
 
     console.log("[napkin] 로그인 완료!");
@@ -126,7 +130,10 @@ async function loginBaemin(page, vendor) {
     const currentUrl = page.url();
     console.log(`[baemin] 현재 URL: ${currentUrl}`);
 
-    if (!currentUrl.includes("biz-member.baemin.com/login") && !currentUrl.includes("/login")) {
+    if (
+      !currentUrl.includes("biz-member.baemin.com/login") &&
+      !currentUrl.includes("/login")
+    ) {
       console.log("[baemin] 이미 로그인됨");
       return { success: true };
     }
@@ -161,7 +168,9 @@ async function loginBaemin(page, vendor) {
       await submitBtn.click();
     }
 
-    await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 10000 }).catch(() => {});
+    await page
+      .waitForNavigation({ waitUntil: "domcontentloaded", timeout: 10000 })
+      .catch(() => {});
     await delay(1500);
 
     console.log("[baemin] 로그인 완료!");
@@ -232,7 +241,9 @@ async function loginNaver(page, vendor) {
       await loginBtn.click();
     }
 
-    await page.waitForNavigation({ waitUntil: "domcontentloaded", timeout: 15000 }).catch(() => {});
+    await page
+      .waitForNavigation({ waitUntil: "domcontentloaded", timeout: 15000 })
+      .catch(() => {});
     await delay(2000);
 
     console.log("[naver] 로그인 완료!");
@@ -300,7 +311,11 @@ async function extractBaeminOptions(page) {
     await delay(2000);
 
     // 드롭다운 버튼 찾기
-    const dropdownBtn = await waitFor(page, SELECTORS.optionDropdownButton, 3000);
+    const dropdownBtn = await waitFor(
+      page,
+      SELECTORS.optionDropdownButton,
+      3000,
+    );
     await delay(1100);
     if (!dropdownBtn) {
       console.log("[baemin] 옵션 드롭다운 버튼 없음");
@@ -308,7 +323,10 @@ async function extractBaeminOptions(page) {
     }
 
     // 버튼 텍스트 그대로 가져오기
-    const btnText = await page.evaluate((el) => el.textContent.trim(), dropdownBtn);
+    const btnText = await page.evaluate(
+      (el) => el.textContent.trim(),
+      dropdownBtn,
+    );
     console.log(`[baemin] 옵션명: "${btnText}"`);
 
     if (btnText) {
@@ -330,7 +348,8 @@ async function extractNapkinOptions(page) {
     await delay(2000);
 
     // 냅킨코리아 옵션 select 셀렉터
-    const optionSelectSelector = 'select[id^="product_option_id"], select[class*="ProductOption"]';
+    const optionSelectSelector =
+      'select[id^="product_option_id"], select[class*="ProductOption"]';
 
     // 옵션 셀렉트 박스 대기
     const optionSelects = await page.$$(optionSelectSelector);
@@ -356,7 +375,10 @@ async function extractNapkinOptions(page) {
           const th = row.querySelector("th");
           if (th) {
             // "필수"는 단어로, *와 공백은 개별 문자로 제거
-            title = th.textContent?.trim()?.replace(/필수|\*|\s/g, "").trim();
+            title = th.textContent
+              ?.trim()
+              ?.replace(/필수|\*|\s/g, "")
+              .trim();
           }
         }
 
@@ -456,7 +478,9 @@ async function main() {
     naver: data.filter((r) => getDomainType(r.open_mall_url) === "naver"),
   };
 
-  console.log(`도메인별 분포: 냅킨 ${groupedData.napkin.length}건, 배민 ${groupedData.baemin.length}건, 네이버 ${groupedData.naver.length}건\n`);
+  console.log(
+    `도메인별 분포: 냅킨 ${groupedData.napkin.length}건, 배민 ${groupedData.baemin.length}건, 네이버 ${groupedData.naver.length}건\n`,
+  );
 
   const results = [];
   let successCount = 0;
@@ -473,7 +497,9 @@ async function main() {
     const url = row.open_mall_url;
     const domainType = getDomainType(url);
 
-    console.log(`[${i + 1}/${orderedData.length}] ${domainType}: ${url.substring(0, 60)}...`);
+    console.log(
+      `[${i + 1}/${orderedData.length}] ${domainType}: ${url.substring(0, 60)}...`,
+    );
 
     try {
       // 도메인별 로그인 (한 번만)
@@ -512,7 +538,9 @@ async function main() {
           console.log(`  [!] 알 수 없는 도메인: ${url}`);
       }
 
-      console.log(`  옵션 ${optionTitles.length}개: ${optionTitles.join(", ") || "(없음)"}`);
+      console.log(
+        `  옵션 ${optionTitles.length}개: ${optionTitles.join(", ") || "(없음)"}`,
+      );
 
       if (optionTitles.length === 0) {
         // 옵션 없는 경우
