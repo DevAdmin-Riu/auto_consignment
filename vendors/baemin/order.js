@@ -668,6 +668,28 @@ async function selectOption(page, optionValue, quantity = 1) {
   const selectedOptions = [];
   let totalOptionPrice = 0;
 
+  // 페이지에 옵션 드롭다운이 실제로 있는지 확인
+  const hasOptionDropdown = await page.evaluate(() => {
+    // 방법 1: downArrow 이미지가 있는 버튼
+    if (document.querySelector('button:has(img[alt="downArrow"])')) return true;
+    // 방법 2: "옵션을 선택해주세요" 텍스트
+    const buttons = Array.from(document.querySelectorAll("button"));
+    return buttons.some((b) => b.textContent.includes("옵션을 선택해주세요"));
+  });
+
+  if (!hasOptionDropdown) {
+    console.log(
+      "[baemin] 옵션 드롭다운 없음 (옵션 없는 상품) - 수량만 설정",
+    );
+    await setQuantity(page, quantity);
+    return {
+      success: true,
+      selectedOption: null,
+      selectedOptions: [],
+      totalOptionPrice: 0,
+    };
+  }
+
   if (is2DStructure) {
     console.log(
       `[baemin] 옵션 세트 처리: ${parsed.length}개 세트 (각 수량: ${quantity})`,
