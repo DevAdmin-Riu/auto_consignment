@@ -1184,8 +1184,8 @@ async function processNapkinOrder(
         }
 
         // 7-6. 상세주소 입력
-        const detailAddress =
-          shippingAddress.streetAddress2 || shippingAddress.addressDetail || "";
+        const rawDetail = (shippingAddress.streetAddress2 || shippingAddress.addressDetail || "").trim();
+        const detailAddress = rawDetail || shippingAddress.firstName || "";
         if (detailAddress) {
           console.log(`[napkin] 상세주소: ${detailAddress}`);
           await delay(700); // 주소 선택 후 대기 (늘림)
