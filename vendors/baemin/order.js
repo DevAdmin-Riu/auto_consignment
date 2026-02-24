@@ -653,7 +653,8 @@ async function selectOption(page, optionValue, quantity = 1) {
   }
 
   if (!Array.isArray(parsed) || parsed.length === 0) {
-    console.log("[baemin] 파싱된 옵션값 없음");
+    console.log("[baemin] 파싱된 옵션값 없음 - 수량만 설정");
+    await setQuantity(page, quantity);
     return {
       success: true,
       selectedOption: null,
