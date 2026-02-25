@@ -121,12 +121,20 @@ async function handleCustomsCode(page) {
     };
   }
 
-  // 1. 개인통관고유부호 입력 버튼 찾기
-  const customsBtnSelector =
-    "#root > div > div.DoubleTemplate_container__5LG6a > div.DoubleTemplate_content__KzCZb > div.DoubleTemplate_content-left__lMo44 > div > div:nth-child(2) > div.ContentWrapper_article__Bg6i8.ContentWrapper_bg-white__lpLoa > div > div > div > button";
+  // 1. 개인통관고유부호 입력 버튼 찾기 (텍스트 기반)
+  const customsBtn = await page.evaluateHandle(() => {
+    const buttons = document.querySelectorAll("button");
+    for (const btn of buttons) {
+      const text = (btn.textContent || "").trim();
+      if (text.includes("통관") && text.includes("입력")) {
+        return btn;
+      }
+    }
+    return null;
+  });
 
-  const customsBtn = await page.$(customsBtnSelector);
-  if (!customsBtn) {
+  const isValidBtn = await page.evaluate((el) => el instanceof HTMLElement, customsBtn);
+  if (!isValidBtn) {
     console.log("[naver] 통관고유부호 입력 버튼 없음 (해외직배송 상품 아님)");
     return { success: true, handled: false };
   }
