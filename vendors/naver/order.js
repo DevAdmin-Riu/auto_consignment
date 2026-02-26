@@ -534,24 +534,43 @@ async function clearCart(page) {
   });
   await delay(2000);
 
-  // dialog 핸들러 (confirm, alert 처리) - named function으로 나중에 제거 가능
-  const naverDialogHandler = async (dialog) => {
-    console.log(`[naver] Dialog: ${dialog.type()} - ${dialog.message()}`);
-    await dialog.accept();
-  };
-  page.on("dialog", naverDialogHandler);
-  // 핸들러 반환해서 나중에 제거할 수 있게 함
-  page._naverDialogHandler = naverDialogHandler;
+  // 선택 삭제 버튼 찾기 (텍스트 기반)
+  const deleteBtnHandle = await page.evaluateHandle(() => {
+    const buttons = document.querySelectorAll("button");
+    for (const btn of buttons) {
+      const text = (btn.textContent || "").trim();
+      if (text === "선택 삭제" || text === "선택삭제") {
+        return btn;
+      }
+    }
+    return null;
+  });
 
-  // 선택 삭제 버튼 찾기
-  const deleteBtn = await page.$(
-    "#app > div > div.check_all--mLXOEtPdIW > div > div > button",
-  );
-
-  if (deleteBtn) {
-    await deleteBtn.click();
+  const isValid = await page.evaluate((el) => el instanceof HTMLElement, deleteBtnHandle);
+  if (isValid) {
+    await deleteBtnHandle.click();
     console.log("[naver] 선택 삭제 버튼 클릭");
-    await delay(3000); // confirm → alert 처리 대기
+    await delay(1000);
+
+    // 커스텀 모달 확인 버튼 클릭
+    const confirmed = await page.evaluate(() => {
+      const buttons = document.querySelectorAll("button");
+      for (const btn of buttons) {
+        const text = (btn.textContent || "").trim();
+        if (text === "확인" && btn.closest("[class*='modal']")) {
+          btn.click();
+          return true;
+        }
+      }
+      return false;
+    });
+
+    if (confirmed) {
+      console.log("[naver] 장바구니 삭제 확인 클릭");
+    } else {
+      console.log("[naver] 삭제 확인 모달을 찾을 수 없음");
+    }
+    await delay(2000);
     console.log("[naver] 장바구니 비우기 완료");
   } else {
     console.log("[naver] 장바구니가 비어있음 (삭제 버튼 없음)");
@@ -1223,32 +1242,36 @@ async function selectDeliveryAddress(page, shippingAddress) {
 async function addToCart(page) {
   console.log("[naver] 장바구니 담기...");
 
-  // 장바구니 버튼 클릭
-  const cartBtnSelector =
-    "#content > div > div.Cpf2P_YsRS > div.RUSA6W3qmn > fieldset > div.J7P_iH8gvp > div:nth-child(2) > div.gvKCxawvOj.KlIstkZ0Ff.sys_chk_cart > a";
-
-  const cartBtn = await page.$(cartBtnSelector);
-  if (cartBtn) {
-    await cartBtn.click();
-    console.log("[naver] 장바구니 버튼 클릭");
-    await delay(2000);
-
-    // 모달에서 바로가기 버튼 클릭
-    const goCartBtnSelector = "#MODAL_ROOT_ID > div > div > div.DlzoyvIyhw > a";
-    const goCartBtn = await page.$(goCartBtnSelector);
-    if (goCartBtn) {
-      await goCartBtn.click();
-      console.log("[naver] 장바구니 바로가기 클릭");
-      await delay(2000);
-      return true;
-    } else {
-      console.log("[naver] 바로가기 버튼 없음");
-      return true; // 장바구니 버튼은 클릭됨
+  // 장바구니 버튼 클릭 (data 속성 + 텍스트 폴백)
+  const cartClicked = await page.evaluate(() => {
+    // 1) data-shp-area="pcs.cart" 속성으로 찾기 (가장 정확)
+    const cartByAttr = document.querySelector('[data-shp-area="pcs.cart"], [data-shp-contents-type="cart"]');
+    if (cartByAttr) {
+      cartByAttr.click();
+      return `attr: "${cartByAttr.tagName}"`;
     }
+    // 2) 텍스트 폴백
+    const allElements = document.querySelectorAll("a, button");
+    for (const el of allElements) {
+      const text = (el.textContent || "").trim();
+      if (text.includes("장바구니") && !text.includes("이동") && !text.includes("비우")) {
+        el.click();
+        return `text: "${text}"`;
+      }
+    }
+    return null;
+  });
+
+  if (!cartClicked) {
+    console.log("[naver] 장바구니 버튼 없음");
+    return false;
   }
 
-  console.log("[naver] 장바구니 버튼 없음");
-  return false;
+  console.log(`[naver] 장바구니 버튼 클릭 (${cartClicked})`);
+  await delay(1000);
+  // 모달/레이어 무시 - 다음 상품 페이지로 직접 goto 하므로 처리 불필요
+
+  return true;
 }
 
 /**
@@ -1842,13 +1865,27 @@ async function processNaverOrder(
       );
     }
 
-    // 4. 장바구니 페이지에서 주문하기 버튼 클릭
+    // 4. 장바구니 페이지로 이동 후 주문하기
+    console.log("[naver] 장바구니 페이지로 이동...");
+    await page.goto("https://shopping.naver.com/cart", {
+      waitUntil: "networkidle2",
+      timeout: 30000,
+    });
+    await delay(2000);
+
     console.log("[naver] 주문하기 버튼 클릭...");
-    const orderBtnSelector =
-      "#app > div > div.floating_wrap--OgE5RZwbz5 > div > div > div.buy_area--1s7Qe73yzk > div > button.link_buy--jXvxZ8Agr-._nlog_click";
-    const orderBtn = await page.$(orderBtnSelector);
-    if (orderBtn) {
-      await orderBtn.click();
+    const orderBtnClicked = await page.evaluate(() => {
+      const buttons = document.querySelectorAll("button");
+      for (const btn of buttons) {
+        const text = (btn.textContent || "").trim();
+        if (text.startsWith("주문하기")) {
+          btn.click();
+          return true;
+        }
+      }
+      return false;
+    });
+    if (orderBtnClicked) {
       console.log("[naver] 주문하기 버튼 클릭 완료");
       await delay(3000);
       steps.push({ step: "order_button", success: true });
