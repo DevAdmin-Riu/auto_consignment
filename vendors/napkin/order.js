@@ -44,6 +44,7 @@ const {
 const {
   automateShinhanCardPayment,
   typeWithInterception,
+  processPhonePayment,
 } = require("../../lib/shinhan-payment");
 const { getEnv } = require("../config");
 
@@ -839,15 +840,6 @@ async function processNapkinOrder(
           });
         await delay(2000);
 
-        // 리뷰 유도 오버레이 제거 (Shadow DOM이라 호스트 엘리먼트 통째로 제거)
-        await page.evaluate(() => {
-          const overlay = document.querySelector("review-overlay-portal");
-          if (overlay) {
-            overlay.remove();
-            console.log("[napkin] 리뷰 오버레이 제거됨");
-          }
-        });
-
         // 3-2. 옵션 선택
         let options = product.openMallOptions;
         // 문자열이면 파싱
@@ -1069,15 +1061,10 @@ async function processNapkinOrder(
         );
       }
 
-      // 리뷰 유도 오버레이 제거 (주문서 페이지에서도 늦게 뜰 수 있음)
-      await page.evaluate(() => {
-        const overlay = document.querySelector("review-overlay-portal");
-        if (overlay) overlay.remove();
-      });
-
       // 6. 배송지 직접입력 버튼 클릭
+      console.log("[napkin] 주문서 페이지 로딩 대기 (2초)...");
+      await delay(2000); // 주문서 페이지 전환 후 대기 (리뷰 오버레이 등 로딩 완료 대기)
       console.log("[napkin] 배송지 직접입력 버튼 클릭...");
-      await delay(2000); // 페이지 로딩 대기 (늘림)
       const newAddressBtn = await waitFor(
         page,
         SELECTORS.order.newAddressBtn,
@@ -1530,257 +1517,277 @@ async function processNapkinOrder(
                       console.log("[napkin] ✅ 앱없이결제 클릭 완료");
                       await delay(2000);
 
-                      // "카드번호 결제" 탭 클릭
-                      console.log("[napkin] 카드번호 결제 탭 클릭...");
-                      const cardTabClicked = await paymentFrame.evaluate(() => {
-                        const tabs = document.querySelectorAll(
-                          'a, button, [role="tab"]',
-                        );
-                        for (const tab of tabs) {
-                          const text = tab.textContent || "";
-                          if (
-                            text.includes("카드번호") &&
-                            text.includes("결제")
-                          ) {
-                            tab.click();
-                            return true;
-                          }
-                        }
-                        return false;
-                      });
+                      // 결제 방식 분기: phone(기본) / card
+                      const paymentMethod = getEnv("SHINHAN_PAYMENT_METHOD") || "phone";
+                      console.log(`[napkin] 결제 방식: ${paymentMethod}`);
 
-                      if (cardTabClicked) {
-                        console.log("[napkin] ✅ 카드번호 결제 탭 클릭 완료");
-                        await delay(2000);
-
-                        // 카드번호 입력
-                        const cardNum1 = getEnv("SHINHAN_CARD_NUM1");
-                        const cardNum4 = getEnv("SHINHAN_CARD_NUM4");
-
-                        if (cardNum1 && cardNum4) {
-                          console.log("[napkin] 카드번호 입력 시작...");
-
-                          // cardNum1 (앞 4자리) - 보안키패드 없음
-                          await paymentFrame.waitForSelector("#cardNum1", {
-                            timeout: 10000,
-                          });
-                          await paymentFrame.click("#cardNum1");
-                          await delay(100);
-                          await paymentFrame.type("#cardNum1", cardNum1, {
-                            delay: 50,
-                          });
-                          console.log("[napkin] ✅ cardNum1 입력 완료");
-                          await delay(300);
-
-                          // cardNum2, cardNum3 - 보안키패드 필드 → Interception
-                          console.log(
-                            "[napkin] 보안키패드 필드 키보드 입력 시작...",
+                      if (paymentMethod === "card") {
+                        // === 카드번호 결제 ===
+                        console.log("[napkin] 카드번호 결제 탭 클릭...");
+                        const cardTabClicked = await paymentFrame.evaluate(() => {
+                          const tabs = document.querySelectorAll(
+                            'a, button, [role="tab"]',
                           );
-                          await page.bringToFront();
-                          await delay(300);
-                          const shinhanResult =
-                            await automateShinhanCardPayment(paymentFrame);
+                          for (const tab of tabs) {
+                            const text = tab.textContent || "";
+                            if (
+                              text.includes("카드번호") &&
+                              text.includes("결제")
+                            ) {
+                              tab.click();
+                              return true;
+                            }
+                          }
+                          return false;
+                        });
 
-                          if (shinhanResult.success) {
-                            console.log(
-                              "[napkin] ✅ cardNum2, cardNum3 입력 완료",
-                            );
+                        if (cardTabClicked) {
+                          console.log("[napkin] ✅ 카드번호 결제 탭 클릭 완료");
+                          await delay(2000);
 
-                            await delay(300);
+                          const cardNum1 = getEnv("SHINHAN_CARD_NUM1");
+                          const cardNum4 = getEnv("SHINHAN_CARD_NUM4");
 
-                            // cardNum4 (뒤 4자리) - 보안키패드 없음
-                            await paymentFrame.waitForSelector("#cardNum4", {
+                          if (cardNum1 && cardNum4) {
+                            console.log("[napkin] 카드번호 입력 시작...");
+
+                            // cardNum1 (앞 4자리) - 보안키패드 없음
+                            await paymentFrame.waitForSelector("#cardNum1", {
                               timeout: 10000,
                             });
-                            await paymentFrame.click("#cardNum4");
+                            await paymentFrame.click("#cardNum1");
                             await delay(100);
-                            await paymentFrame.type("#cardNum4", cardNum4, {
+                            await paymentFrame.type("#cardNum1", cardNum1, {
                               delay: 50,
                             });
-                            console.log("[napkin] ✅ cardNum4 입력 완료");
+                            console.log("[napkin] ✅ cardNum1 입력 완료");
                             await delay(300);
 
-                            // CVC 입력 - Interception
-                            const cardCVC = getEnv("SHINHAN_CVC");
-                            if (cardCVC) {
-                              await delay(1000);
-                              await paymentFrame.waitForSelector(
-                                "#inputCVC",
-                                { timeout: 10000 },
-                              );
-                              await paymentFrame.click("#inputCVC");
-                              await delay(300);
-                              console.log("[napkin] CVC 입력 중...");
-                              typeWithInterception(cardCVC);
-                              await delay(500);
-                              console.log("[napkin] ✅ CVC 입력 완료");
-                            }
-                            await delay(500);
-
-                            // 다음 버튼 클릭 (카드번호 입력 후)
-                            console.log("[napkin] 다음 버튼 클릭...");
-                            const submitClicked = await paymentFrame.evaluate(
-                              () => {
-                                const btn =
-                                  document.querySelector(".submit-btn");
-                                if (btn) {
-                                  btn.click();
-                                  return true;
-                                }
-                                return false;
-                              },
+                            // cardNum2, cardNum3 - 보안키패드 필드 → Interception
+                            console.log(
+                              "[napkin] 보안키패드 필드 키보드 입력 시작...",
                             );
+                            await page.bringToFront();
+                            await delay(300);
+                            const shinhanResult =
+                              await automateShinhanCardPayment(paymentFrame);
 
-                            if (submitClicked) {
-                              console.log("[napkin] ✅ 다음 버튼 클릭 완료");
-                              await delay(3000);
-
-                              // 비밀번호 입력
+                            if (shinhanResult.success) {
                               console.log(
-                                "[napkin] 비밀번호 입력 화면 대기...",
+                                "[napkin] ✅ cardNum2, cardNum3 입력 완료",
                               );
 
-                              // HTML 구조 덤프 (디버깅용)
-                              const iframeHtml = await paymentFrame.evaluate(
+                              await delay(300);
+
+                              // cardNum4 (뒤 4자리) - 보안키패드 없음
+                              await paymentFrame.waitForSelector("#cardNum4", {
+                                timeout: 10000,
+                              });
+                              await paymentFrame.click("#cardNum4");
+                              await delay(100);
+                              await paymentFrame.type("#cardNum4", cardNum4, {
+                                delay: 50,
+                              });
+                              console.log("[napkin] ✅ cardNum4 입력 완료");
+                              await delay(300);
+
+                              // CVC 입력 - Interception
+                              const cardCVC = getEnv("SHINHAN_CVC");
+                              if (cardCVC) {
+                                await delay(1000);
+                                await paymentFrame.waitForSelector(
+                                  "#inputCVC",
+                                  { timeout: 10000 },
+                                );
+                                await paymentFrame.click("#inputCVC");
+                                await delay(300);
+                                console.log("[napkin] CVC 입력 중...");
+                                typeWithInterception(cardCVC);
+                                await delay(500);
+                                console.log("[napkin] ✅ CVC 입력 완료");
+                              }
+                              await delay(500);
+
+                              // 다음 버튼 클릭
+                              console.log("[napkin] 다음 버튼 클릭...");
+                              const submitClicked = await paymentFrame.evaluate(
                                 () => {
-                                  return document.body.innerHTML;
+                                  const btn =
+                                    document.querySelector(".submit-btn");
+                                  if (btn) {
+                                    btn.click();
+                                    return true;
+                                  }
+                                  return false;
                                 },
                               );
-                              console.log(
-                                "[napkin] === 비밀번호 화면 HTML ===",
-                              );
-                              console.log(iframeHtml.substring(0, 3000));
-                              console.log("[napkin] === HTML 끝 ===");
 
-                              const cardPassword = getEnv(
-                                "SHINHAN_CARD_PASSWORD",
-                              );
-                              if (cardPassword) {
-                                const passwordSelectors = [
-                                  'input[type="password"]',
-                                  'input[type="tel"]',
-                                  'input[name="password"]',
-                                  'input[id*="password"]',
-                                  'input[id*="pwd"]',
-                                  'input[id*="cardPw"]',
-                                  "#cardPwd",
-                                  "#cardPw",
-                                  "input[data-nppfs-form-id]",
-                                ];
+                              if (submitClicked) {
+                                console.log("[napkin] ✅ 다음 버튼 클릭 완료");
+                                await delay(3000);
 
-                                let passwordInputFound = false;
-                                for (
-                                  let i = 0;
-                                  i < 10 && !passwordInputFound;
-                                  i++
-                                ) {
-                                  for (const selector of passwordSelectors) {
-                                    try {
-                                      const pwdInput =
-                                        await paymentFrame.$(selector);
-                                      if (pwdInput) {
-                                        console.log(
-                                          `[napkin] 비밀번호 필드 발견: ${selector}`,
-                                        );
-                                        await paymentFrame.click(selector);
-                                        await delay(500);
-                                        await paymentFrame.evaluate((sel) => {
-                                          const el =
-                                            document.querySelector(sel);
-                                          if (el) {
-                                            el.focus();
-                                            el.click();
-                                          }
-                                        }, selector);
-                                        await delay(500);
+                                // 비밀번호 입력
+                                console.log(
+                                  "[napkin] 비밀번호 입력 화면 대기...",
+                                );
 
-                                        await page.bringToFront();
-                                        await delay(300);
+                                const iframeHtml = await paymentFrame.evaluate(
+                                  () => {
+                                    return document.body.innerHTML;
+                                  },
+                                );
+                                console.log(
+                                  "[napkin] === 비밀번호 화면 HTML ===",
+                                );
+                                console.log(iframeHtml.substring(0, 3000));
+                                console.log("[napkin] === HTML 끝 ===");
+
+                                const cardPassword = getEnv(
+                                  "SHINHAN_CARD_PASSWORD",
+                                );
+                                if (cardPassword) {
+                                  const passwordSelectors = [
+                                    'input[type="password"]',
+                                    'input[type="tel"]',
+                                    'input[name="password"]',
+                                    'input[id*="password"]',
+                                    'input[id*="pwd"]',
+                                    'input[id*="cardPw"]',
+                                    "#cardPwd",
+                                    "#cardPw",
+                                    "input[data-nppfs-form-id]",
+                                  ];
+
+                                  let passwordInputFound = false;
+                                  for (
+                                    let i = 0;
+                                    i < 10 && !passwordInputFound;
+                                    i++
+                                  ) {
+                                    for (const selector of passwordSelectors) {
+                                      try {
+                                        const pwdInput =
+                                          await paymentFrame.$(selector);
+                                        if (pwdInput) {
+                                          console.log(
+                                            `[napkin] 비밀번호 필드 발견: ${selector}`,
+                                          );
+                                          await paymentFrame.click(selector);
+                                          await delay(500);
+                                          await paymentFrame.evaluate((sel) => {
+                                            const el =
+                                              document.querySelector(sel);
+                                            if (el) {
+                                              el.focus();
+                                              el.click();
+                                            }
+                                          }, selector);
+                                          await delay(500);
+
+                                          await page.bringToFront();
+                                          await delay(300);
+                                          console.log(
+                                            "[napkin] 카드 비밀번호 입력 중 (Interception)...",
+                                          );
+                                          const result =
+                                            typeWithInterception(cardPassword);
+                                          console.log(
+                                            "[napkin] Interception 입력 결과:",
+                                            result,
+                                          );
+                                          await delay(1500);
+                                          console.log(
+                                            "[napkin] ✅ 카드 비밀번호 입력 완료",
+                                          );
+                                          passwordInputFound = true;
+                                          break;
+                                        }
+                                      } catch (e) {
                                         console.log(
-                                          "[napkin] 카드 비밀번호 입력 중 (Interception)...",
+                                          `[napkin] 비밀번호 필드 에러 (${selector}):`,
+                                          e.message,
                                         );
-                                        const result =
-                                          typeWithInterception(cardPassword);
-                                        console.log(
-                                          "[napkin] Interception 입력 결과:",
-                                          result,
-                                        );
-                                        await delay(1500);
-                                        console.log(
-                                          "[napkin] ✅ 카드 비밀번호 입력 완료",
-                                        );
-                                        passwordInputFound = true;
-                                        break;
                                       }
-                                    } catch (e) {
+                                    }
+                                    if (!passwordInputFound) {
                                       console.log(
-                                        `[napkin] 비밀번호 필드 에러 (${selector}):`,
-                                        e.message,
+                                        `[napkin] 비밀번호 필드 탐색 중... (${i + 1}/10)`,
                                       );
+                                      await delay(1000);
                                     }
                                   }
-                                  if (!passwordInputFound) {
-                                    console.log(
-                                      `[napkin] 비밀번호 필드 탐색 중... (${i + 1}/10)`,
-                                    );
-                                    await delay(1000);
-                                  }
-                                }
 
-                                if (passwordInputFound) {
-                                  await delay(500);
-                                  // 결제요청 버튼 클릭
-                                  console.log(
-                                    "[napkin] 결제요청 버튼 찾는 중...",
-                                  );
-                                  const paymentBtnClicked =
-                                    await paymentFrame.evaluate(() => {
-                                      const btn =
-                                        document.querySelector(".submit-btn");
-                                      if (btn) {
-                                        btn.click();
-                                        return true;
-                                      }
-                                      const buttons =
-                                        document.querySelectorAll("button");
-                                      for (const b of buttons) {
-                                        const text = (
-                                          b.textContent || ""
-                                        ).trim();
-                                        if (
-                                          text.includes("결제") ||
-                                          text.includes("확인")
-                                        ) {
-                                          b.click();
+                                  if (passwordInputFound) {
+                                    await delay(500);
+                                    console.log(
+                                      "[napkin] 결제요청 버튼 찾는 중...",
+                                    );
+                                    const paymentBtnClicked =
+                                      await paymentFrame.evaluate(() => {
+                                        const btn =
+                                          document.querySelector(".submit-btn");
+                                        if (btn) {
+                                          btn.click();
                                           return true;
                                         }
-                                      }
-                                      return false;
-                                    });
-                                  if (paymentBtnClicked) {
-                                    console.log(
-                                      "[napkin] ✅ 결제요청 버튼 클릭 완료",
-                                    );
-                                    paymentCompleted = true;
+                                        const buttons =
+                                          document.querySelectorAll("button");
+                                        for (const b of buttons) {
+                                          const text = (
+                                            b.textContent || ""
+                                          ).trim();
+                                          if (
+                                            text.includes("결제") ||
+                                            text.includes("확인")
+                                          ) {
+                                            b.click();
+                                            return true;
+                                          }
+                                        }
+                                        return false;
+                                      });
+                                    if (paymentBtnClicked) {
+                                      console.log(
+                                        "[napkin] ✅ 결제요청 버튼 클릭 완료",
+                                      );
+                                      paymentCompleted = true;
+                                    }
                                   }
                                 }
                               }
+                            } else {
+                              console.log(
+                                "[napkin] ⚠️ 보안키패드 입력 실패:",
+                                shinhanResult.error,
+                              );
                             }
                           } else {
                             console.log(
-                              "[napkin] ⚠️ 보안키패드 입력 실패:",
-                              shinhanResult.error,
+                              "[napkin] ⚠️ 신한카드 정보가 환경변수에 없음",
                             );
                           }
                         } else {
                           console.log(
-                            "[napkin] ⚠️ 신한카드 정보가 환경변수에 없음",
+                            "[napkin] ⚠️ 카드번호 결제 탭을 찾을 수 없음",
                           );
                         }
                       } else {
-                        console.log(
-                          "[napkin] ⚠️ 카드번호 결제 탭을 찾을 수 없음",
+                        // === 휴대폰번호로 결제 (기본) ===
+                        console.log("[napkin] 휴대폰번호로 결제 진행...");
+                        const phoneResult = await processPhonePayment(
+                          paymentFrame,
+                          page,
                         );
+
+                        if (phoneResult.success) {
+                          console.log("[napkin] ✅ 휴대폰번호 결제 완료");
+                          paymentCompleted = true;
+                        } else {
+                          console.log(
+                            "[napkin] ⚠️ 휴대폰번호 결제 실패:",
+                            phoneResult.error,
+                          );
+                        }
                       }
                     } else {
                       console.log("[napkin] ⚠️ 앱없이결제 버튼을 찾을 수 없음");
