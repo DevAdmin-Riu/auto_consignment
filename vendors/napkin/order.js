@@ -839,6 +839,15 @@ async function processNapkinOrder(
           });
         await delay(2000);
 
+        // 리뷰 유도 오버레이 제거 (Shadow DOM이라 호스트 엘리먼트 통째로 제거)
+        await page.evaluate(() => {
+          const overlay = document.querySelector("review-overlay-portal");
+          if (overlay) {
+            overlay.remove();
+            console.log("[napkin] 리뷰 오버레이 제거됨");
+          }
+        });
+
         // 3-2. 옵션 선택
         let options = product.openMallOptions;
         // 문자열이면 파싱
@@ -1059,6 +1068,12 @@ async function processNapkinOrder(
           "전체상품 주문하기 버튼을 찾을 수 없음 - 장바구니가 비어있거나 페이지 오류",
         );
       }
+
+      // 리뷰 유도 오버레이 제거 (주문서 페이지에서도 늦게 뜰 수 있음)
+      await page.evaluate(() => {
+        const overlay = document.querySelector("review-overlay-portal");
+        if (overlay) overlay.remove();
+      });
 
       // 6. 배송지 직접입력 버튼 클릭
       console.log("[napkin] 배송지 직접입력 버튼 클릭...");
