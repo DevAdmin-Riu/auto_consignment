@@ -1027,6 +1027,18 @@ async function processNapkinOrder(
       await delay(2000);
     }
 
+    // 리뷰 오버레이 CSS로 영구 차단 (페이지 이동해도 유지)
+    await page.evaluateOnNewDocument(() => {
+      const style = document.createElement("style");
+      style.textContent = "review-overlay-portal { display: none !important; pointer-events: none !important; }";
+      (document.head || document.documentElement).appendChild(style);
+    });
+    // 현재 페이지에도 즉시 적용
+    await page.addStyleTag({
+      content: "review-overlay-portal { display: none !important; pointer-events: none !important; }",
+    });
+    console.log("[napkin] 리뷰 오버레이 CSS 차단 적용됨");
+
     // 결제 재시도 루프 (빈 창 등 결제 실패 시 장바구니에서 재시도)
     let paymentCompleted = false;
     const MAX_PAYMENT_RETRIES = 5;
@@ -1060,21 +1072,6 @@ async function processNapkinOrder(
           "전체상품 주문하기 버튼을 찾을 수 없음 - 장바구니가 비어있거나 페이지 오류",
         );
       }
-
-      // 리뷰 오버레이 감시 및 제거 (뜨면 바로 제거, 백그라운드로 실행)
-      const overlayWatcher = setInterval(async () => {
-        try {
-          await page.evaluate(() => {
-            const overlay = document.querySelector("review-overlay-portal");
-            if (overlay) {
-              overlay.remove();
-              console.log("[napkin] 리뷰 오버레이 제거됨");
-            }
-          });
-        } catch (e) {
-          // 페이지 이동 등으로 에러 발생 시 무시
-        }
-      }, 1000);
 
       // 6. 배송지 직접입력 버튼 클릭
       console.log("[napkin] 주문서 페이지 로딩 대기 (2초)...");
@@ -1843,8 +1840,7 @@ async function processNapkinOrder(
       }
     } // end of payment retry loop
 
-    // 리뷰 오버레이 감시 종료
-    clearInterval(overlayWatcher);
+
 
     if (!paymentCompleted) {
       console.log("[napkin] ❌ 결제 최대 재시도 초과 - 실패 처리");
