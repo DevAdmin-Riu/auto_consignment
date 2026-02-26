@@ -1041,6 +1041,7 @@ async function processNapkinOrder(
 
     // 결제 재시도 루프 (빈 창 등 결제 실패 시 장바구니에서 재시도)
     let paymentCompleted = false;
+    let actualPaymentAmount = 0;
     const MAX_PAYMENT_RETRIES = 5;
 
     for (
@@ -1284,7 +1285,7 @@ async function processNapkinOrder(
       }
 
       // 결제금액 파싱 (결제 버튼 클릭 전)
-      let actualPaymentAmount = 0;
+      actualPaymentAmount = 0;
       try {
         const amountText = await page.$eval(
           "#payment_total_order_sale_price_view",
