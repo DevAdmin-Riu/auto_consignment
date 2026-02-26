@@ -1061,9 +1061,24 @@ async function processNapkinOrder(
         );
       }
 
+      // 리뷰 오버레이 감시 및 제거 (뜨면 바로 제거, 백그라운드로 실행)
+      const overlayWatcher = setInterval(async () => {
+        try {
+          await page.evaluate(() => {
+            const overlay = document.querySelector("review-overlay-portal");
+            if (overlay) {
+              overlay.remove();
+              console.log("[napkin] 리뷰 오버레이 제거됨");
+            }
+          });
+        } catch (e) {
+          // 페이지 이동 등으로 에러 발생 시 무시
+        }
+      }, 1000);
+
       // 6. 배송지 직접입력 버튼 클릭
       console.log("[napkin] 주문서 페이지 로딩 대기 (2초)...");
-      await delay(2000); // 주문서 페이지 전환 후 대기 (리뷰 오버레이 등 로딩 완료 대기)
+      await delay(2000); // 주문서 페이지 전환 후 대기
       console.log("[napkin] 배송지 직접입력 버튼 클릭...");
       const newAddressBtn = await waitFor(
         page,
@@ -1227,7 +1242,7 @@ async function processNapkinOrder(
 
             // 앞자리 선택 (select)
             await page.select(SELECTORS.order.phoneFirst, first);
-            await delay(800);
+            await delay(2000); // 새벽배송 가능 여부 렌더링 대기
 
             // 가운데 4자리
             const middleInput = await page.$(SELECTORS.order.phoneMiddle);
@@ -1827,6 +1842,9 @@ async function processNapkinOrder(
         await delay(20000);
       }
     } // end of payment retry loop
+
+    // 리뷰 오버레이 감시 종료
+    clearInterval(overlayWatcher);
 
     if (!paymentCompleted) {
       console.log("[napkin] ❌ 결제 최대 재시도 초과 - 실패 처리");
