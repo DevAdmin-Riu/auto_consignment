@@ -789,7 +789,21 @@ async function processNapkinOrder(
       });
     }
 
-    // 2. 장바구니 비우기
+    // 2. 리뷰 오버레이 DOM 제거 + MutationObserver (페이지 이동해도 유지)
+    await page.evaluateOnNewDocument(() => {
+      const kill = () => document.querySelectorAll("review-overlay-portal").forEach(el => el.remove());
+      kill();
+      new MutationObserver(kill).observe(document.documentElement, { childList: true, subtree: true });
+    });
+    // 현재 페이지에도 즉시 적용
+    await page.evaluate(() => {
+      const kill = () => document.querySelectorAll("review-overlay-portal").forEach(el => el.remove());
+      kill();
+      new MutationObserver(kill).observe(document.documentElement, { childList: true, subtree: true });
+    });
+    console.log("[napkin] 리뷰 오버레이 DOM 제거 + MutationObserver 적용됨");
+
+    // 3. 장바구니 비우기
     await clearCart(page);
 
     const results = [];
@@ -1027,17 +1041,6 @@ async function processNapkinOrder(
       await delay(2000);
     }
 
-    // 리뷰 오버레이 CSS로 영구 차단 (페이지 이동해도 유지)
-    await page.evaluateOnNewDocument(() => {
-      const style = document.createElement("style");
-      style.textContent = "review-overlay-portal { display: none !important; pointer-events: none !important; }";
-      (document.head || document.documentElement).appendChild(style);
-    });
-    // 현재 페이지에도 즉시 적용
-    await page.addStyleTag({
-      content: "review-overlay-portal { display: none !important; pointer-events: none !important; }",
-    });
-    console.log("[napkin] 리뷰 오버레이 CSS 차단 적용됨");
 
     // 결제 재시도 루프 (빈 창 등 결제 실패 시 장바구니에서 재시도)
     let paymentCompleted = false;
