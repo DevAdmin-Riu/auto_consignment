@@ -486,6 +486,8 @@ function setupEventListeners() {
     document.getElementById("input-api-key").value = config.n8nApiKey || "";
     document.getElementById("input-n8n-email").value = config.n8nEmail || "";
     document.getElementById("input-n8n-password").value = config.n8nPassword || "";
+    document.getElementById("input-po-email").value = config.poEmail || "";
+    document.getElementById("input-graphql-url").value = config.graphqlUrl || "";
     document.getElementById("settings-modal").style.display = "flex";
     await loadWfConfig();
   });
@@ -553,11 +555,15 @@ function setupEventListeners() {
     const apiKey = document.getElementById("input-api-key").value.trim();
     const email = document.getElementById("input-n8n-email").value.trim();
     const password = document.getElementById("input-n8n-password").value;
+    const poEmail = document.getElementById("input-po-email").value.trim();
+    const graphqlUrl = document.getElementById("input-graphql-url").value.trim();
     const visibleWorkflows = getVisibleWorkflowsFromConfig();
     await window.api.saveConfig({
       n8nApiKey: apiKey,
       n8nEmail: email,
       n8nPassword: password,
+      poEmail: poEmail,
+      graphqlUrl: graphqlUrl,
       visibleWorkflows,
     });
     document.getElementById("settings-modal").style.display = "none";

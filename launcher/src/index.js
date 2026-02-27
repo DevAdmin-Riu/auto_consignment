@@ -30,7 +30,7 @@ function loadConfig() {
   } catch (e) {
     console.error("설정 로드 실패:", e.message);
   }
-  return { environment: "production", n8nApiKey: "" };
+  return { environment: "production", n8nApiKey: "", poEmail: "xdswwwj@riupack.com", smtpPassword: "", graphqlUrl: "" };
 }
 
 function saveConfig(config) {
@@ -48,6 +48,12 @@ function generateComposeFile(envKey) {
   const env = environments[envKey];
   if (!env) throw new Error(`환경을 찾을 수 없습니다: ${envKey}`);
 
+  const config = loadConfig();
+  const poEmail = config.poEmail || 'xdswwwj@riupack.com';
+  const smtpPassword = config.smtpPassword || '';
+
+  const graphqlUrl = config.graphqlUrl || env.GRAPHQL_URL;
+
   const content = `services:
   n8n:
     build:
@@ -64,12 +70,14 @@ function generateComposeFile(envKey) {
       - TZ=Asia/Seoul
       - WEBHOOK_URL=https://settings-themselves-gulf-ink.trycloudflare.com/
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false
-      - N8N_ALLOW_ENV_ACCESS=AUTH_TOKEN,GRAPHQL_URL,CONTENT_TYPE,MALL_URL
+      - N8N_ALLOW_ENV_ACCESS=AUTH_TOKEN,GRAPHQL_URL,CONTENT_TYPE,MALL_URL,SMTP_PASSWORD,PO_EMAIL
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
-      - NODE_FUNCTION_ALLOW_EXTERNAL=xlsx,xlsx-js-style
-      - GRAPHQL_URL=${env.GRAPHQL_URL}
+      - NODE_FUNCTION_ALLOW_EXTERNAL=xlsx,xlsx-js-style,exceljs,axios,nodemailer
+      - GRAPHQL_URL=${graphqlUrl}
       - MALL_URL=${env.MALL_URL}
       - AUTH_TOKEN=${env.AUTH_TOKEN}
+      - SMTP_PASSWORD=${smtpPassword}
+      - PO_EMAIL=${poEmail}
 `;
 
   fs.writeFileSync(COMPOSE_FILE, content, "utf-8");

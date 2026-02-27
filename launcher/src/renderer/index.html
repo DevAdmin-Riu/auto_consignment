@@ -124,6 +124,16 @@
           <input type="text" id="input-n8n-password" placeholder="n8n 로그인 비밀번호">
           <p class="form-hint">워크플로우 실행에 필요 (n8n 내부 API 세션 인증)</p>
         </div>
+        <div class="form-group">
+          <label for="input-po-email">발주서 수신 이메일</label>
+          <input type="email" id="input-po-email" placeholder="예: xdswwwj@riupack.com">
+          <p class="form-hint">위탁발주서 메일 수신 주소 (변경 시 n8n 재시작 필요)</p>
+        </div>
+        <div class="form-group">
+          <label for="input-graphql-url">로컬 GraphQL URL</label>
+          <input type="url" id="input-graphql-url" placeholder="https://xxx.trycloudflare.com/graphql/">
+          <p class="form-hint">로컬 환경의 백엔드 터널 URL (변경 시 n8n 재시작 필요)</p>
+        </div>
 
         <div class="form-group">
           <label>워크플로우 표시 설정</label>
