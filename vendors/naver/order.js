@@ -65,10 +65,10 @@ const SELECTORS = {
     optionSelectByIndex: (i) =>
       `select._combination_option:nth-of-type(${i + 1})`,
     optionItem: (value) => `option[value*="${value}"]`,
-    // 수량
-    quantityInput: "input._quantity",
-    quantityPlus: "a._plus",
-    quantityMinus: "a._minus",
+    // 수량 (data attribute 기반 - styled-components 클래스 변경 대응)
+    quantityInput: '[data-shp-area-id="optquantity"] input[type="number"]',
+    quantityPlus: '[data-shp-area-id="optquantity"] button:last-child',
+    quantityMinus: '[data-shp-area-id="optquantity"] button:first-child',
     // 버튼
     buyNowBtn: "a._naver_pay_btn, button._naver_pay_btn, a.npay_btn_pay",
     addToCartBtn: "a._basket, button._basket, a.npay_btn_cart",
