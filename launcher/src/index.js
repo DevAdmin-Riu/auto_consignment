@@ -62,7 +62,7 @@ function generateComposeFile(envKey) {
       - .:/home/node/vendor-automation
     environment:
       - TZ=Asia/Seoul
-      - WEBHOOK_URL=https://resolutive-naoma-unideographically.ngrok-free.dev/
+      - WEBHOOK_URL=https://settings-themselves-gulf-ink.trycloudflare.com/
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false
       - N8N_ALLOW_ENV_ACCESS=AUTH_TOKEN,GRAPHQL_URL,CONTENT_TYPE,MALL_URL
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false

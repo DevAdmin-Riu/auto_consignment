@@ -18,9 +18,9 @@ services:
       - N8N_ALLOW_ENV_ACCESS=AUTH_TOKEN,GRAPHQL_URL,CONTENT_TYPE,MALL_URL
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       # Allow external npm modules in Code node
-      - NODE_FUNCTION_ALLOW_EXTERNAL=xlsx,xlsx-js-style
+      - NODE_FUNCTION_ALLOW_EXTERNAL=xlsx,xlsx-js-style,exceljs,axios
       # GraphQL API (아래 중 하나 선택)
-      # - GRAPHQL_URL=https://resolutive-naoma-unideographically.ngrok-free.dev/graphql/ # 로컬
+      # - GRAPHQL_URL=https://settings-themselves-gulf-ink.trycloudflare.com/graphql/ # 로컬
       - GRAPHQL_URL=https://api.pojangboss.com/graphql/ # 프로덕션
       # Auth Token (로그인 후 개발자도구에서 복사)
       # 로컬
