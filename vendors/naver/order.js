@@ -493,25 +493,40 @@ async function setQuantity(page, quantity) {
 
   console.log(`[naver] 수량 설정: ${quantity}개`);
 
-  // 수량 입력 필드 찾기 (옵션 리스트 첫 번째 항목)
+  // 수량 입력 필드 찾기 (data attribute 기반 - styled-components 대응)
   const quantityInput = await page.$(
-    "ul.i_LQY8Lde9 > li:first-child input[type='number']",
+    '[data-shp-area-id="optquantity"] input[type="number"]',
   );
 
   if (quantityInput) {
     await quantityInput.click({ clickCount: 3 });
+    await delay(100);
     await quantityInput.type(String(quantity));
-    console.log("[naver] 수량 입력 완료");
+    await delay(200);
+    // Tab 두 번 눌러서 React 상태 반영 확정
+    await page.keyboard.press('Tab');
+    await delay(300);
+    await page.keyboard.press('Tab');
     await delay(500);
+    console.log("[naver] 수량 입력 완료 (Tab 확정)");
     return true;
   }
 
-  // 플러스 버튼으로 수량 증가
-  const plusBtn = await page.$("a._plus, button._plus, button.plus");
-  if (plusBtn) {
+  // 플러스 버튼으로 수량 증가 (blind 텍스트 기반)
+  const plusBtn = await page.evaluateHandle(() => {
+    const spans = document.querySelectorAll('span.blind');
+    for (const span of spans) {
+      if (span.textContent.includes('수량 추가')) {
+        return span.closest('button');
+      }
+    }
+    return null;
+  });
+
+  if (plusBtn && plusBtn.asElement()) {
     for (let i = 1; i < quantity; i++) {
       await plusBtn.click();
-      await delay(200);
+      await delay(300);
     }
     console.log(`[naver] 수량 증가 버튼 클릭 ${quantity - 1}회`);
     return true;
