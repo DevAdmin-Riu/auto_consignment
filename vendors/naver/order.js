@@ -892,12 +892,13 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
               console.log(`[naver] 주소 선택됨:`, addressSelected);
               await delay(1000);
 
-              // 상세 주소 입력
-              if (streetAddress2) {
+              // 상세 주소 입력 (없으면 받는이 이름 사용)
+              const detailText = (streetAddress2 || "").trim() || shippingAddress.firstName || "";
+              if (detailText) {
                 const detailInput = await popupPage.$("#address-detail");
                 if (detailInput) {
-                  await detailInput.type(streetAddress2, { delay: 30 });
-                  console.log(`[naver] 상세 주소 입력: ${streetAddress2}`);
+                  await detailInput.type(detailText, { delay: 30 });
+                  console.log(`[naver] 상세 주소 입력: ${detailText}`);
                 }
               }
 
