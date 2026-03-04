@@ -121,20 +121,78 @@ async function handleCustomsCode(page) {
     };
   }
 
-  // 1. 개인통관고유부호 입력 버튼 찾기 (텍스트 기반)
-  const customsBtn = await page.evaluateHandle(() => {
-    const buttons = document.querySelectorAll("button");
-    for (const btn of buttons) {
-      const text = (btn.textContent || "").trim();
-      if (text.includes("통관") && text.includes("입력")) {
-        return btn;
+  // 1. 개인통관고유부호 섹션 내 "입력" 버튼 찾기 (재시도 포함)
+  // 섹션 헤더 h3에 "통관" 텍스트가 있고, 버튼은 "입력"만 있는 구조
+  // ContentSection_article > SectionHeader_article(h3) + ContentWrapper_article(button)
+  let customsBtn = null;
+  for (let retry = 0; retry < 5; retry++) {
+    // 디버깅: 페이지에 통관 관련 요소가 있는지 확인
+    const debugInfo = await page.evaluate(() => {
+      const h3s = [...document.querySelectorAll("h3")].map(h => h.textContent?.trim());
+      const customsH3 = h3s.find(t => t && t.includes("통관"));
+      let sectionInfo = null;
+      if (customsH3) {
+        const h3El = [...document.querySelectorAll("h3")].find(h => (h.textContent || "").includes("통관"));
+        const csSection = h3El?.closest("div[class*='ContentSection']");
+        const parentClasses = [];
+        let p = h3El?.parentElement;
+        for (let i = 0; i < 5 && p; i++) {
+          parentClasses.push(p.className?.split(" ")[0] || p.tagName);
+          const btn = p.querySelector("button");
+          if (btn) {
+            sectionInfo = { level: i, class: p.className?.split(" ")[0], btnText: btn.textContent?.trim() };
+            break;
+          }
+          p = p.parentElement;
+        }
+        if (!sectionInfo) sectionInfo = { parentClasses, csSection: !!csSection };
       }
-    }
-    return null;
-  });
+      return { h3s: h3s.filter(Boolean), customsH3, sectionInfo };
+    });
+    console.log(`[naver] 통관 디버깅 (${retry + 1}/5):`, JSON.stringify(debugInfo));
 
-  const isValidBtn = await page.evaluate((el) => el instanceof HTMLElement, customsBtn);
-  if (!isValidBtn) {
+    customsBtn = await page.evaluateHandle(() => {
+      // 방법 1: "통관" h3 → ContentSection 래퍼 → 그 안의 button
+      const headings = document.querySelectorAll("h3");
+      for (const h3 of headings) {
+        if ((h3.textContent || "").includes("통관")) {
+          // ContentSection_article이 h3와 button을 모두 감싸는 최상위 래퍼
+          const section = h3.closest("div[class*='ContentSection']");
+          if (section) {
+            const btn = section.querySelector("button");
+            if (btn) return btn;
+          }
+          // 폴백: h3 기준으로 충분히 위로 올라가서 button 탐색
+          let parent = h3.parentElement;
+          for (let i = 0; i < 5 && parent; i++) {
+            const btn = parent.querySelector("button");
+            if (btn) return btn;
+            parent = parent.parentElement;
+          }
+        }
+      }
+      // 방법 2: 버튼 텍스트에 "통관" + "입력" 둘 다 포함
+      const buttons = document.querySelectorAll("button");
+      for (const btn of buttons) {
+        const text = (btn.textContent || "").trim();
+        if (text.includes("통관") && text.includes("입력")) {
+          return btn;
+        }
+      }
+      return null;
+    });
+
+    const isValid = await page.evaluate((el) => el instanceof HTMLElement, customsBtn);
+    if (isValid) {
+      console.log("[naver] 통관 버튼 찾기 성공");
+      break;
+    }
+    customsBtn = null;
+    console.log(`[naver] 통관 버튼 탐색 중... (${retry + 1}/5)`);
+    await delay(1000);
+  }
+
+  if (!customsBtn) {
     console.log("[naver] 통관고유부호 입력 버튼 없음 (해외직배송 상품 아님)");
     return { success: true, handled: false };
   }
@@ -164,12 +222,22 @@ async function handleCustomsCode(page) {
     await delay(2000);
   }
 
-  // 3. 통관부호 입력
-  const customsInputSelector =
-    "#content > div > div.CustomsModal_area-input__LQs4Z > div > div > div > input";
-  const customsInput = await targetPage.$(customsInputSelector);
+  // 3. 통관부호 입력 (input 필드 - 텍스트 기반 탐색)
+  const customsInput = await targetPage.evaluateHandle(() => {
+    // CSS 셀렉터 폴백
+    const cssInput = document.querySelector("#content input[type='text'], #content input:not([type])");
+    if (cssInput) return cssInput;
+    // 모든 input 중 통관 관련 섹션 내 input
+    const inputs = document.querySelectorAll("input");
+    for (const input of inputs) {
+      const section = input.closest("div[class*='CustomsModal'], div[class*='PersonalCustoms']");
+      if (section) return input;
+    }
+    return null;
+  });
 
-  if (customsInput) {
+  const hasCustomsInput = await targetPage.evaluate((el) => el instanceof HTMLElement, customsInput);
+  if (hasCustomsInput) {
     await customsInput.click({ clickCount: 3 });
     await customsInput.type(customsInfo.code, { delay: 30 });
     console.log(`[naver] 통관부호 입력: ${customsInfo.code}`);
@@ -179,73 +247,206 @@ async function handleCustomsCode(page) {
     return { success: false, reason: "customs_input_not_found", handled: true };
   }
 
-  // 4. 동의하고 입력하기 버튼 클릭
-  const agreeSubmitBtnSelector =
-    "#content > div > div.CustomsModal_area-button__T0iR3 > button";
-  const agreeSubmitBtn = await targetPage.$(agreeSubmitBtnSelector);
+  // 4. "동의하고 입력하기" 버튼 클릭 (정확한 텍스트 매칭)
+  const agreeClicked = await targetPage.evaluate(() => {
+    const buttons = document.querySelectorAll("button");
+    for (const btn of buttons) {
+      const text = (btn.textContent || "").trim();
+      if (text === "동의하고 입력하기") {
+        btn.click();
+        return text;
+      }
+    }
+    // 폴백: "입력하기" 포함
+    for (const btn of buttons) {
+      const text = (btn.textContent || "").trim();
+      if (text.includes("입력하기")) {
+        btn.click();
+        return text;
+      }
+    }
+    return null;
+  });
 
-  if (agreeSubmitBtn) {
-    await agreeSubmitBtn.click();
-    console.log("[naver] 동의하고 입력하기 버튼 클릭");
+  if (agreeClicked) {
+    console.log(`[naver] 동의하고 입력하기 버튼 클릭: "${agreeClicked}"`);
     await delay(2000);
   } else {
     console.log("[naver] 동의하고 입력하기 버튼을 찾을 수 없음");
     return { success: false, reason: "agree_button_not_found", handled: true };
   }
 
-  // 5. 이름/연락처 불일치 확인 - 수정 버튼 체크
-  const editSaveBtnSelector =
-    "#content > div > div.CheckInfo_article__TlJWF > div > button";
-  const editBtn = await targetPage.$(editSaveBtnSelector);
+  // 4-1. 개인정보 제3자 제공 동의 모달 처리 (#CENTER_MODAL > button "확인")
+  for (let i = 0; i < 5; i++) {
+    const modalClicked = await targetPage.evaluate(() => {
+      const modalBtn = document.querySelector("#CENTER_MODAL > button");
+      if (modalBtn) {
+        modalBtn.click();
+        return (modalBtn.textContent || "").trim();
+      }
+      return null;
+    });
+    if (modalClicked) {
+      console.log(`[naver] 개인정보 동의 모달 확인 클릭: "${modalClicked}"`);
+      await delay(2000);
+      break;
+    }
+    await delay(500);
+  }
 
-  if (editBtn) {
-    console.log("[naver] 이름/연락처 불일치 감지 - 수정 버튼 클릭");
-    await editBtn.click();
-    await delay(2000);
+  // 5. 관세청 정보 불일치 - CheckInfo 영역 내 "수정" 버튼 클릭
+  // evaluate 내부에서 scrollIntoView + click (evaluateHandle 외부 click은 에러 발생 가능)
+  let editClicked = false;
+  for (let i = 0; i < 5; i++) {
+    const result = await targetPage.evaluate(() => {
+      // 방법 1: CheckInfo 영역 내 수정 버튼
+      const checkInfoBtn = document.querySelector("div[class*='CheckInfo_area-button'] button");
+      if (checkInfoBtn && checkInfoBtn.textContent?.trim() === "수정") {
+        checkInfoBtn.scrollIntoView({ block: "center" });
+        checkInfoBtn.click();
+        return "수정";
+      }
+      // 방법 2: 텍스트 기반 폴백
+      const buttons = document.querySelectorAll("button");
+      for (const btn of buttons) {
+        if ((btn.textContent || "").trim() === "수정") {
+          btn.scrollIntoView({ block: "center" });
+          btn.click();
+          return "수정";
+        }
+      }
+      return null;
+    });
+    if (result) {
+      console.log("[naver] 관세청 정보 불일치 - 수정 버튼 클릭");
+      editClicked = true;
+      await delay(2000);
+      break;
+    }
+    await delay(500);
+  }
 
-    // 6. 이름/연락처 입력
-    const nameInputSelector =
-      "#content > div > div.CheckInfo_article__TlJWF > ul.CheckInfo_list-info__iV5jr.CheckInfo_type-modify__4qzbS > li:nth-child(1) > div > div > div > div > input";
-    const phoneInputSelector =
-      "#content > div > div.CheckInfo_article__TlJWF > ul.CheckInfo_list-info__iV5jr.CheckInfo_type-modify__4qzbS > li:nth-child(2) > div > div > div > div > input";
+  if (editClicked) {
+    // 6. 이름 변경 - CheckInfo 영역에서 "이름" 라벨 옆 input 찾기
+    if (customsInfo.name) {
+      const nameChanged = await targetPage.evaluate((newName) => {
+        // "이름" 라벨이 있는 li → 그 안의 input
+        const labels = document.querySelectorAll("div[class*='CheckInfo'] span[class*='CheckInfo_label']");
+        for (const label of labels) {
+          if ((label.textContent || "").trim() === "이름") {
+            const li = label.closest("li");
+            if (li) {
+              const input = li.querySelector("input[type='text']");
+              if (input && !input.disabled && !input.readOnly) {
+                // 삭제 버튼으로 기존 값 클리어
+                const delBtn = li.querySelector("button[class*='button-delete']");
+                if (delBtn) delBtn.click();
+                // nativeInputValueSetter로 값 설정
+                const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                nativeSetter.call(input, newName);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                return { old: input.defaultValue, new: newName };
+              }
+            }
+          }
+        }
+        return null;
+      }, customsInfo.name);
 
-    // 이름 입력 (트리플 클릭으로 전체 선택 후 입력)
-    const nameInput = await targetPage.$(nameInputSelector);
-    if (nameInput) {
-      await nameInput.click({ clickCount: 3 });
-      await delay(100);
-      await nameInput.type(customsInfo.name, { delay: 30 });
-      console.log(`[naver] 받는 이 변경: ${customsInfo.name}`);
+      if (nameChanged) {
+        console.log(`[naver] 받는 이 변경: ${customsInfo.name}`);
+      } else {
+        console.log("[naver] 이름 input 필드를 찾을 수 없음");
+      }
     }
 
-    // 연락처 입력
-    const phoneInput = await targetPage.$(phoneInputSelector);
-    if (phoneInput) {
-      await phoneInput.click({ clickCount: 3 });
-      await delay(100);
-      await phoneInput.type(customsInfo.phone, { delay: 30 });
-      console.log(`[naver] 연락처 변경: ${customsInfo.phone}`);
-    }
+    // 6-1. 연락처 변경 - "연락처" 라벨 옆 input[type='tel'] 찾기
+    if (customsInfo.phone) {
+      const phoneChanged = await targetPage.evaluate((newPhone) => {
+        const labels = document.querySelectorAll("div[class*='CheckInfo'] span[class*='CheckInfo_label']");
+        for (const label of labels) {
+          if ((label.textContent || "").trim() === "연락처") {
+            const li = label.closest("li");
+            if (li) {
+              const input = li.querySelector("input[type='tel']");
+              if (input && !input.disabled && !input.readOnly) {
+                const delBtn = li.querySelector("button[class*='button-delete']");
+                if (delBtn) delBtn.click();
+                const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                nativeSetter.call(input, newPhone);
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+                return true;
+              }
+            }
+          }
+        }
+        return null;
+      }, customsInfo.phone);
 
+      if (phoneChanged) {
+        console.log(`[naver] 연락처 변경: ${customsInfo.phone}`);
+      } else {
+        console.log("[naver] 연락처 input 필드를 찾을 수 없음");
+      }
+    }
     await delay(500);
 
-    // 저장 버튼 클릭 (수정 버튼이 저장 버튼으로 변경됨)
-    const saveBtn = await targetPage.$(editSaveBtnSelector);
-    if (saveBtn) {
-      await saveBtn.click();
-      console.log("[naver] 배송지 정보 저장");
+    // 6-1. 저장 버튼 클릭 (수정 → 저장으로 변경됨)
+    const saveClicked = await targetPage.evaluate(() => {
+      // CheckInfo 영역 내 저장 버튼
+      const checkInfoBtn = document.querySelector("div[class*='CheckInfo_area-button'] button");
+      if (checkInfoBtn) {
+        const text = (checkInfoBtn.textContent || "").trim();
+        if (text === "저장" || text === "완료") {
+          checkInfoBtn.scrollIntoView({ block: "center" });
+          checkInfoBtn.click();
+          return text;
+        }
+      }
+      // 텍스트 기반 폴백
+      const buttons = document.querySelectorAll("button");
+      for (const btn of buttons) {
+        const text = (btn.textContent || "").trim();
+        if (text === "저장" || text === "완료") {
+          btn.scrollIntoView({ block: "center" });
+          btn.click();
+          return text;
+        }
+      }
+      return null;
+    });
+    if (saveClicked) {
+      console.log(`[naver] 받는 분 정보 저장: "${saveClicked}"`);
       await delay(2000);
     }
+  }
 
-    // 최종 확인 버튼 클릭
-    const finalConfirmBtnSelector =
-      "#content > div > div.CustomsModal_area-button__T0iR3 > button";
-    const finalConfirmBtn = await targetPage.$(finalConfirmBtnSelector);
-    if (finalConfirmBtn) {
-      await finalConfirmBtn.click();
-      console.log("[naver] 통관 최종 확인 버튼 클릭");
-      await delay(2000);
+  // 7. 최종 "확인" 버튼 클릭 (CustomsModal 하단 녹색 확인 버튼)
+  const confirmClicked = await targetPage.evaluate(() => {
+    // 방법 1: CustomsModal 하단 확인 버튼
+    const modalBtn = document.querySelector("div[class*='CustomsModal_area-button'] button");
+    if (modalBtn) {
+      modalBtn.scrollIntoView({ block: "center" });
+      modalBtn.click();
+      return (modalBtn.textContent || "").trim();
     }
+    // 방법 2: primary 스타일 확인 버튼
+    const buttons = document.querySelectorAll("button");
+    for (const btn of buttons) {
+      const text = (btn.textContent || "").trim();
+      if (text === "확인" && btn.className?.includes("primary")) {
+        btn.scrollIntoView({ block: "center" });
+        btn.click();
+        return text;
+      }
+    }
+    return null;
+  });
+  if (confirmClicked) {
+    console.log(`[naver] 통관 최종 확인 버튼 클릭: "${confirmClicked}"`);
+    await delay(2000);
   }
 
   console.log("[naver] 통관고유부호 처리 완료");

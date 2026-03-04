@@ -130,6 +130,11 @@
           <p class="form-hint">위탁발주서 메일 수신 주소 (변경 시 n8n 재시작 필요)</p>
         </div>
         <div class="form-group">
+          <label for="input-smtp-password">SMTP 비밀번호 (Gmail 앱 비밀번호)</label>
+          <input type="password" id="input-smtp-password" placeholder="Google 앱 비밀번호 16자리">
+          <p class="form-hint">발주서 메일 발송용 Gmail 앱 비밀번호 (변경 시 n8n 재시작 필요)</p>
+        </div>
+        <div class="form-group">
           <label for="input-graphql-url">로컬 GraphQL URL</label>
           <input type="url" id="input-graphql-url" placeholder="https://xxx.trycloudflare.com/graphql/">
           <p class="form-hint">로컬 환경의 백엔드 터널 URL (변경 시 n8n 재시작 필요)</p>

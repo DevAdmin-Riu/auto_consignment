@@ -2378,9 +2378,10 @@ async function processPayment(page) {
     }
 
     console.log("[baemin] PIN 입력 완료!");
-    await delay(3000);
+    await delay(1000);
 
     // 9. 결제 완료 후 처리 - 팝업이 닫히고 원래 배민 페이지로 이동됨
+    const t0 = Date.now();
     console.log("[baemin] 9. 결제 완료 확인 (배민 페이지)...");
     let orderNumber = null;
 
@@ -2389,19 +2390,20 @@ async function processPayment(page) {
       try {
         const isOpen = naverPayPage && !naverPayPage.isClosed();
         if (!isOpen) {
-          console.log(`[baemin] 네이버페이 팝업 닫힘 확인 (${i + 1}회)`);
+          console.log(`[baemin] 네이버페이 팝업 닫힘 확인 (${i + 1}회) [${((Date.now()-t0)/1000).toFixed(1)}초]`);
           break;
         }
-        console.log(`[baemin] 네이버페이 팝업 닫힘 대기... (${i + 1}/10)`);
-        await delay(1000);
+        console.log(`[baemin] 네이버페이 팝업 닫힘 대기... (${i + 1}/10) [${((Date.now()-t0)/1000).toFixed(1)}초]`);
+        await delay(500);
       } catch (e) {
-        console.log(`[baemin] 팝업 닫힘 확인: ${e.message}`);
+        console.log(`[baemin] 팝업 닫힘 확인: ${e.message} [${((Date.now()-t0)/1000).toFixed(1)}초]`);
         break;
       }
     }
 
     // 배민 페이지로 포커스 전환 및 결제 완료 확인
-    await delay(2000);
+    await delay(500);
+    console.log(`[baemin] 팝업 닫힘 후 대기 완료 [${((Date.now()-t0)/1000).toFixed(1)}초]`);
 
     try {
       // 배민 페이지 URL 확인
@@ -2409,7 +2411,7 @@ async function processPayment(page) {
       console.log(`[baemin] 배민 페이지 URL: ${baeminUrl}`);
 
       // 10. "주문내역 상세보기" 버튼 대기 및 클릭 (배민 페이지)
-      console.log("[baemin] 10. 주문내역 상세보기 버튼 대기 (배민 페이지)...");
+      console.log(`[baemin] 10. 주문내역 상세보기 버튼 대기 (배민 페이지)... [${((Date.now()-t0)/1000).toFixed(1)}초]`);
 
       const orderDetailBtnSelector =
         "#root > div > section > div.sc-doGdGr.fdlYoH > div.sc-ctosZL.feYMnx > button.sc-ehvNnt.fxMHfA";
@@ -2418,6 +2420,7 @@ async function processPayment(page) {
       const orderDetailBtn = await waitFor(page, orderDetailBtnSelector, 30000);
 
       if (orderDetailBtn) {
+        console.log(`[baemin] 주문내역 상세보기 버튼 발견 [${((Date.now()-t0)/1000).toFixed(1)}초]`);
         await orderDetailBtn.click();
         console.log("[baemin] 주문내역 상세보기 버튼 클릭 완료");
         await delay(3000);
@@ -2444,7 +2447,7 @@ async function processPayment(page) {
       }
 
       // 11. 주문번호 추출 (배민 페이지)
-      console.log("[baemin] 11. 주문번호 추출...");
+      console.log(`[baemin] 11. 주문번호 추출... [${((Date.now()-t0)/1000).toFixed(1)}초]`);
 
       const orderNumberSelector =
         "#root > div > div.sc-kvVhHC.cDSays > div.sc-gLBXkV.Rsxkb > div.sc-jmxFWv.kJriCA > div:nth-child(2) > div.sc-kLrQKW.evIhGF > div > div.sc-iODgfC.taTVJ > div > div > span.sc-dMLRKe.crbOaE";

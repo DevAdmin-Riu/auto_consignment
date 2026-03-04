@@ -221,6 +221,13 @@ async function ensureDockerRunning() {
 
 async function startN8n() {
   sendLog("system", "[시스템] n8n 컨테이너 시작 중...");
+  // 최신 config로 compose 파일 갱신
+  const config = loadConfig();
+  try {
+    generateComposeFile(config.environment);
+  } catch (e) {
+    sendLog("system", `[시스템] compose 파일 갱신 실패: ${e.message}`);
+  }
   await ensureDockerRunning();
   await runCommand("docker", [
     "compose",
