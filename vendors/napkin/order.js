@@ -135,10 +135,16 @@ async function loginToNapkin(page, vendor) {
   // 1. 로그인 페이지 이동
   console.log("[napkin] 1. 로그인 페이지 이동...");
   await page.goto(vendor.loginUrl, {
-    waitUntil: "networkidle2",
+    waitUntil: "domcontentloaded",
     timeout: 30000,
   });
   await delay(1500); // 로그인 상태 확인을 위해 대기
+
+  // AlphaReview + review-overlay 팝업 즉시 제거 (로그인 전에 처리)
+  await page.evaluate(() => {
+    document.querySelectorAll("div[id^='app-saladlab-alphareview-onsite-box']").forEach(el => el.remove());
+    document.querySelectorAll("review-overlay-portal").forEach(el => el.remove());
+  });
 
   // 2. 이미 로그인 되어있는지 확인
   // 로그인 후 로그인 페이지로 이동하면 input이 보이지 않음
@@ -169,7 +175,7 @@ async function loginToNapkin(page, vendor) {
 
   // 3. 아이디 입력
   console.log("[napkin] 2. 아이디 입력...");
-  await idInput.click({ clickCount: 3 }); // 기존 값 선택 후 덮어쓰기
+  await page.evaluate((el) => { el.value = ''; el.focus(); el.click(); }, idInput);
   await delay(300);
   await idInput.type(vendor.userId, { delay: 50 });
 
@@ -179,17 +185,27 @@ async function loginToNapkin(page, vendor) {
   if (!pwInput) {
     return { success: false, message: "비밀번호 입력창을 찾을 수 없음" };
   }
-  await pwInput.click({ clickCount: 3 }); // 기존 값 선택 후 덮어쓰기
+  await page.evaluate((el) => { el.value = ''; el.focus(); el.click(); }, pwInput);
   await delay(300);
   await pwInput.type(vendor.password, { delay: 50 });
 
-  // 5. 로그인 버튼 클릭
+  // 5. 로그인 버튼 클릭 (evaluate 내부에서 직접 클릭 - 팝업 오버레이 무시)
   console.log("[napkin] 4. 로그인 버튼 클릭...");
-  const submitBtn = await page.$(SELECTORS.login.submitBtn);
-  if (submitBtn) {
-    await submitBtn.click();
-  } else {
-    // 버튼 못찾으면 엔터키로 시도
+  // 클릭 전 팝업 한번 더 제거
+  await page.evaluate(() => {
+    document.querySelectorAll("div[id^='app-saladlab-alphareview-onsite-box']").forEach(el => el.remove());
+    document.querySelectorAll("review-overlay-portal").forEach(el => el.remove());
+  });
+  const loginClicked = await page.evaluate((selector) => {
+    const btn = document.querySelector(selector);
+    if (btn) { btn.click(); return true; }
+    // 폴백: form submit
+    const form = document.querySelector("form[id^='member_form']");
+    if (form) { form.submit(); return true; }
+    return false;
+  }, SELECTORS.login.submitBtn);
+
+  if (!loginClicked) {
     await page.keyboard.press("Enter");
   }
 
@@ -197,11 +213,19 @@ async function loginToNapkin(page, vendor) {
 
   // 페이지 이동 대기
   await page
-    .waitForNavigation({ waitUntil: "networkidle2", timeout: 10000 })
+    .waitForNavigation({ waitUntil: "domcontentloaded", timeout: 10000 })
     .catch(() => {});
   await delay(1500);
 
-  console.log("[napkin] 로그인 완료!");
+  // 로그인 성공 여부 확인 (로그인 페이지에 여전히 있으면 실패)
+  const afterUrl = page.url();
+  const stillOnLogin = afterUrl.includes("/member/login");
+  if (stillOnLogin) {
+    console.log("[napkin] 로그인 실패 - 여전히 로그인 페이지");
+    return { success: false, message: "로그인 버튼 클릭 후에도 로그인 페이지에 머물러 있음 (팝업 방해 가능)" };
+  }
+
+  console.log("[napkin] 로그인 완료! URL:", afterUrl);
   return { success: true, message: "로그인 완료" };
 }
 
@@ -460,9 +484,7 @@ async function setQuantityAndGetPrice(
       );
       // 폴백: Puppeteer 방식
       try {
-        await quantityInput.click();
-        await delay(100);
-        await quantityInput.click({ clickCount: 3 });
+        await page.evaluate((el) => { el.value = ''; el.focus(); el.click(); }, quantityInput);
         await delay(200);
         await page.keyboard.type(String(quantity), { delay: 50 });
         await page.evaluate((el) => {
@@ -647,7 +669,7 @@ async function setQuantity(page, quantity) {
         `[napkin] 수량 입력 실패 (page.evaluate), Puppeteer 방식 시도: ${e.message}`,
       );
       try {
-        await quantityInput.click({ clickCount: 3 });
+        await page.evaluate((el) => { el.value = ''; el.focus(); el.click(); }, quantityInput);
         await delay(200);
         await quantityInput.type(String(quantity), { delay: 50 });
         await delay(300);
@@ -789,19 +811,18 @@ async function processNapkinOrder(
       });
     }
 
-    // 2. 리뷰 오버레이 DOM 제거 + MutationObserver (페이지 이동해도 유지)
-    await page.evaluateOnNewDocument(() => {
-      const kill = () => document.querySelectorAll("review-overlay-portal").forEach(el => el.remove());
+    // 2. AlphaReview + review-overlay 팝업 자동 제거 (결제 전에 중단)
+    const killPopups = `
+      const kill = () => {
+        document.querySelectorAll("div[id^='app-saladlab-alphareview-onsite-box']").forEach(el => el.remove());
+        document.querySelectorAll("review-overlay-portal").forEach(el => el.remove());
+      };
       kill();
-      new MutationObserver(kill).observe(document.documentElement, { childList: true, subtree: true });
-    });
-    // 현재 페이지에도 즉시 적용
-    await page.evaluate(() => {
-      const kill = () => document.querySelectorAll("review-overlay-portal").forEach(el => el.remove());
-      kill();
-      new MutationObserver(kill).observe(document.documentElement, { childList: true, subtree: true });
-    });
-    console.log("[napkin] 리뷰 오버레이 DOM 제거 + MutationObserver 적용됨");
+      window.__napkinPopupKiller = setInterval(kill, 500);
+    `;
+    await page.evaluateOnNewDocument(killPopups);
+    await page.evaluate(killPopups);
+    console.log("[napkin] AlphaReview 팝업 자동 제거 적용됨 (setInterval)");
 
     // 3. 장바구니 비우기
     await clearCart(page);
@@ -1079,7 +1100,19 @@ async function processNapkinOrder(
 
       // 6. 배송지 직접입력 버튼 클릭
       console.log("[napkin] 주문서 페이지 로딩 대기 (2초)...");
-      await delay(2000); // 주문서 페이지 전환 후 대기
+      // 주문서 페이지 완전 로딩 대기 (탭 빙글빙글 끝날 때까지)
+      await page.waitForFunction(() => document.readyState === 'complete', { timeout: 30000 }).catch(() => {});
+      await delay(1000);
+      console.log("[napkin] 주문서 페이지 로딩 완료");
+
+      // 주문서 페이지에서는 팝업 킬러 중단 (일반배송 등 정상 UI 보호)
+      await page.evaluate(() => {
+        if (window.__napkinPopupKiller) {
+          clearInterval(window.__napkinPopupKiller);
+          window.__napkinPopupKiller = null;
+        }
+      });
+
       console.log("[napkin] 배송지 직접입력 버튼 클릭...");
       const newAddressBtn = await waitFor(
         page,
@@ -1104,13 +1137,16 @@ async function processNapkinOrder(
           shippingAddress.name || shippingAddress.recipientName || "";
         if (receiverName) {
           console.log(`[napkin] 받는사람: ${receiverName}`);
-          const nameInput = await page.$(SELECTORS.order.receiverName);
-          if (nameInput) {
-            await nameInput.click({ clickCount: 3 });
-            await delay(300); // 선택 대기 (늘림)
-            await page.keyboard.type(receiverName, { delay: 50 });
-            await delay(500); // 입력 완료 대기 (늘림)
-          }
+          await page.evaluate((selector, val) => {
+            const el = document.querySelector(selector);
+            if (el) {
+              const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+              setter.call(el, val);
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+          }, SELECTORS.order.receiverName, receiverName);
+          await delay(500);
         }
 
         // 7-2. 주소 검색 버튼 클릭
@@ -1154,7 +1190,7 @@ async function processNapkinOrder(
                 SELECTORS.order.daumAddressInput,
               );
               if (addressInput) {
-                await addressInput.click();
+                await frame.evaluate((el) => { el.focus(); el.click(); }, addressInput);
                 await addressInput.type(searchAddress, { delay: 50 });
                 await delay(300);
 
@@ -1163,7 +1199,7 @@ async function processNapkinOrder(
                   SELECTORS.order.daumSearchButton,
                 );
                 if (searchBtn) {
-                  await searchBtn.click();
+                  await frame.evaluate((el) => el.click(), searchBtn);
                 } else {
                   await frame.keyboard.press("Enter");
                 }
@@ -1209,10 +1245,13 @@ async function processNapkinOrder(
           await delay(700); // 주소 선택 후 대기 (늘림)
           const detailInput = await page.$(SELECTORS.order.addressDetail);
           if (detailInput) {
-            await detailInput.click({ clickCount: 3 });
-            await delay(300); // 선택 대기 (늘림)
-            await page.keyboard.type(detailAddress, { delay: 50 });
-            await delay(500); // 입력 완료 대기 (늘림)
+            await page.evaluate((el, val) => {
+              const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+              setter.call(el, val);
+              el.dispatchEvent(new Event('input', { bubbles: true }));
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+            }, detailInput, detailAddress);
+            await delay(500);
           }
         }
 
@@ -1268,7 +1307,8 @@ async function processNapkinOrder(
         console.log("[napkin] 배송지 정보 입력 완료");
       }
 
-      // 일반배송 선택 (새벽배송 대신)
+      // 일반배송 선택 (새벽배송 대신) - 배송지 렌더링 완료 대기
+      await delay(2000);
       console.log("[napkin] 일반배송 선택...");
       const normalDeliverySelector =
         "#chatis_dd_entrance_form_area > div > div.chatis_dd_modal_delivery_type_wrap > label.dawn_entrance_radio_wrap.dawn_entrance_inline_radio_wrap.chatis_dd_modal_type_radio_normal > input";
@@ -1278,7 +1318,11 @@ async function processNapkinOrder(
         3000,
       );
       if (normalDeliveryRadio) {
-        await normalDeliveryRadio.click();
+        await page.evaluate((el) => {
+          el.checked = true;
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+          el.dispatchEvent(new Event('click', { bubbles: true }));
+        }, normalDeliveryRadio);
         console.log("[napkin] ✅ 일반배송 선택 완료");
         await delay(500);
       } else {
@@ -1306,13 +1350,14 @@ async function processNapkinOrder(
         );
       }
 
+
       // 결제하기 (신한카드)
       console.log("[napkin] 결제하기 버튼 클릭...");
       await delay(1000);
 
       const payBtn = await waitFor(page, SELECTORS.order.payBtn, 5000);
       if (payBtn) {
-        await payBtn.click();
+        await page.evaluate((el) => el.click(), payBtn);
         console.log("[napkin] ✅ 결제하기 버튼 클릭 완료");
         await delay(3000);
 
