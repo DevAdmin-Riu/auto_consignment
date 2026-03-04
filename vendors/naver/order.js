@@ -967,158 +967,166 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
       const addressSearchBtnSelector =
         "#content > div > div.InputDeliveryAddress_article__W6zIG > div.LabelLineBasic_article__IC2hu > div > div > button";
       const addressSearchBtn = await popupPage.$(addressSearchBtnSelector);
-      if (addressSearchBtn) {
-        await addressSearchBtn.click();
-        console.log("[naver] 주소 검색 버튼 클릭");
-        await delay(2000); // React DOM 업데이트 대기
+      if (!addressSearchBtn) {
+        console.log("[naver] 주소 검색 버튼을 찾을 수 없음");
+        return { success: false, reason: "address_search_button_not_found" };
+      }
 
-        // 주소 검색 input
-        const searchInputSelector =
-          "#content > div > div.article > div > div > div > div.InputBoxSearch_section-input__PU\\+ri > div > div > input";
-        const searchInput = await popupPage.$(searchInputSelector);
-        if (searchInput) {
-          await searchInput.type(streetAddress1, { delay: 30 });
-          console.log(`[naver] 주소 검색어 입력: ${streetAddress1}`);
-          await delay(500);
+      await addressSearchBtn.click();
+      console.log("[naver] 주소 검색 버튼 클릭");
+      await delay(2000); // React DOM 업데이트 대기
 
-          // 검색 버튼 클릭
-          const searchBtnSelector =
-            "#content > div > div.article > div > div > div > div.InputBoxSearch_section-button__l0JLE > button";
-          const searchBtn = await popupPage.$(searchBtnSelector);
-          if (searchBtn) {
-            await searchBtn.click();
-            console.log("[naver] 주소 검색 버튼 클릭");
-            await delay(2000); // 검색 결과 대기
+      // 주소 검색 input
+      const searchInputSelector =
+        "#content > div > div.article > div > div > div > div.InputBoxSearch_section-input__PU\\+ri > div > div > input";
+      const searchInput = await popupPage.$(searchInputSelector);
+      if (!searchInput) {
+        console.log("[naver] 주소 검색 input을 찾을 수 없음");
+        return { success: false, reason: "address_search_input_not_found" };
+      }
 
-            // 주소 목록에서 주소 포함 여부 확인
-            const addressSelected = await popupPage.evaluate(
-              ({ targetPostalCode, targetAddress }) => {
-                const items = document.querySelectorAll(
-                  "ul.article li.AddressSearchList_item__1SQUD, li[class*='AddressSearchList_item']",
-                );
-                console.log(`[DEBUG] 주소 검색 결과: ${items.length}개`);
+      await searchInput.type(streetAddress1, { delay: 30 });
+      console.log(`[naver] 주소 검색어 입력: ${streetAddress1}`);
+      await delay(500);
 
-                for (const item of items) {
-                  // 도로명 주소
-                  const roadAddressEl = item.querySelector(
-                    "p.AddressSearchList_address__35JSF, p[class*='address']",
-                  );
-                  const roadAddress = roadAddressEl?.textContent?.trim() || "";
+      // 검색 버튼 클릭
+      const searchBtnSelector =
+        "#content > div > div.article > div > div > div > div.InputBoxSearch_section-button__l0JLE > button";
+      const searchBtn = await popupPage.$(searchBtnSelector);
+      if (!searchBtn) {
+        console.log("[naver] 주소 검색 실행 버튼을 찾을 수 없음");
+        return { success: false, reason: "address_search_exec_button_not_found" };
+      }
 
-                  // 지번/우편번호 (dd 요소들)
-                  const ddElements = item.querySelectorAll(
-                    "dd.AddressSearchList_value__pzlIB, dd[class*='value']",
-                  );
-                  const jibunAddress = ddElements[0]?.textContent?.trim() || "";
-                  const itemPostalCode =
-                    ddElements[1]?.textContent?.trim() || "";
+      await searchBtn.click();
+      console.log("[naver] 주소 검색 버튼 클릭");
+      await delay(2000); // 검색 결과 대기
 
-                  console.log(
-                    `[DEBUG] 비교: "${targetAddress}" in "${roadAddress}" or "${jibunAddress}"`,
-                  );
-                  console.log(
-                    `[DEBUG] 우편번호: ${itemPostalCode} vs ${targetPostalCode}`,
-                  );
+      // 주소 목록에서 주소 포함 여부 확인
+      const addressSelected = await popupPage.evaluate(
+        ({ targetPostalCode, targetAddress }) => {
+          const items = document.querySelectorAll(
+            "ul.article li.AddressSearchList_item__1SQUD, li[class*='AddressSearchList_item']",
+          );
+          console.log(`[DEBUG] 주소 검색 결과: ${items.length}개`);
 
-                  // targetAddress가 도로명/지번 주소에 포함되는지 확인
-                  const addressMatch =
-                    roadAddress.includes(targetAddress) ||
-                    jibunAddress.includes(targetAddress);
-                  const postalMatch = itemPostalCode === targetPostalCode;
+          for (const item of items) {
+            // 도로명 주소
+            const roadAddressEl = item.querySelector(
+              "p.AddressSearchList_address__35JSF, p[class*='address']",
+            );
+            const roadAddress = roadAddressEl?.textContent?.trim() || "";
 
-                  if (addressMatch && postalMatch) {
-                    console.log(`[DEBUG] 주소+우편번호 매칭 성공!`);
-                    const selectBtn = item.querySelector(
-                      "button.AddressSearchList_button-address__dddyA, button[class*='button-address']",
-                    );
-                    if (selectBtn) {
-                      selectBtn.click();
-                      return {
-                        found: true,
-                        method: "exact_match",
-                        address: roadAddress,
-                        postalCode: itemPostalCode,
-                      };
-                    }
-                  }
-                }
+            // 지번/우편번호 (dd 요소들)
+            const ddElements = item.querySelectorAll(
+              "dd.AddressSearchList_value__pzlIB, dd[class*='value']",
+            );
+            const jibunAddress = ddElements[0]?.textContent?.trim() || "";
+            const itemPostalCode =
+              ddElements[1]?.textContent?.trim() || "";
 
-                // 주소만 매칭 (우편번호 불일치)
-                for (const item of items) {
-                  const roadAddressEl = item.querySelector(
-                    "p.AddressSearchList_address__35JSF, p[class*='address']",
-                  );
-                  const roadAddress = roadAddressEl?.textContent?.trim() || "";
-                  const ddElements = item.querySelectorAll(
-                    "dd.AddressSearchList_value__pzlIB, dd[class*='value']",
-                  );
-                  const jibunAddress = ddElements[0]?.textContent?.trim() || "";
-
-                  if (
-                    roadAddress.includes(targetAddress) ||
-                    jibunAddress.includes(targetAddress)
-                  ) {
-                    console.log(`[DEBUG] 주소만 매칭 (우편번호 불일치)`);
-                    const selectBtn = item.querySelector(
-                      "button.AddressSearchList_button-address__dddyA, button[class*='button-address']",
-                    );
-                    if (selectBtn) {
-                      selectBtn.click();
-                      return {
-                        found: true,
-                        method: "address_only",
-                        address: roadAddress,
-                      };
-                    }
-                  }
-                }
-
-                // 매칭 실패 시 첫 번째 선택
-                if (items.length > 0) {
-                  const firstBtn = items[0].querySelector(
-                    "button[class*='button-address']",
-                  );
-                  if (firstBtn) {
-                    firstBtn.click();
-                    return { found: true, method: "first_item" };
-                  }
-                }
-
-                return { found: false };
-              },
-              { targetPostalCode: postalCode, targetAddress: streetAddress1 },
+            console.log(
+              `[DEBUG] 비교: "${targetAddress}" in "${roadAddress}" or "${jibunAddress}"`,
+            );
+            console.log(
+              `[DEBUG] 우편번호: ${itemPostalCode} vs ${targetPostalCode}`,
             );
 
-            if (addressSelected.found) {
-              console.log(`[naver] 주소 선택됨:`, addressSelected);
-              await delay(1000);
+            // targetAddress가 도로명/지번 주소에 포함되는지 확인
+            const addressMatch =
+              roadAddress.includes(targetAddress) ||
+              jibunAddress.includes(targetAddress);
+            const postalMatch = itemPostalCode === targetPostalCode;
 
-              // 상세 주소 입력 (없으면 받는이 이름 사용)
-              const detailText = (streetAddress2 || "").trim() || shippingAddress.firstName || "";
-              if (detailText) {
-                const detailInput = await popupPage.$("#address-detail");
-                if (detailInput) {
-                  await detailInput.type(detailText, { delay: 30 });
-                  console.log(`[naver] 상세 주소 입력: ${detailText}`);
-                }
+            if (addressMatch && postalMatch) {
+              console.log(`[DEBUG] 주소+우편번호 매칭 성공!`);
+              const selectBtn = item.querySelector(
+                "button.AddressSearchList_button-address__dddyA, button[class*='button-address']",
+              );
+              if (selectBtn) {
+                selectBtn.click();
+                return {
+                  found: true,
+                  method: "exact_match",
+                  address: roadAddress,
+                  postalCode: itemPostalCode,
+                };
               }
-
-              // 확인 버튼 클릭
-              const confirmBtnSelector =
-                "#content > div > div.ButtonRegister_article__W3rjR > button";
-              const confirmBtn = await popupPage.$(confirmBtnSelector);
-              if (confirmBtn) {
-                await confirmBtn.click();
-                console.log("[naver] 주소 확인 버튼 클릭");
-                await delay(1000);
-              }
-            } else {
-              console.log("[naver] 주소 검색 결과에서 매칭 실패");
             }
           }
+
+          // 주소만 매칭 (우편번호 불일치)
+          for (const item of items) {
+            const roadAddressEl = item.querySelector(
+              "p.AddressSearchList_address__35JSF, p[class*='address']",
+            );
+            const roadAddress = roadAddressEl?.textContent?.trim() || "";
+            const ddElements = item.querySelectorAll(
+              "dd.AddressSearchList_value__pzlIB, dd[class*='value']",
+            );
+            const jibunAddress = ddElements[0]?.textContent?.trim() || "";
+
+            if (
+              roadAddress.includes(targetAddress) ||
+              jibunAddress.includes(targetAddress)
+            ) {
+              console.log(`[DEBUG] 주소만 매칭 (우편번호 불일치)`);
+              const selectBtn = item.querySelector(
+                "button.AddressSearchList_button-address__dddyA, button[class*='button-address']",
+              );
+              if (selectBtn) {
+                selectBtn.click();
+                return {
+                  found: true,
+                  method: "address_only",
+                  address: roadAddress,
+                };
+              }
+            }
+          }
+
+          // 매칭 실패 시 첫 번째 선택
+          if (items.length > 0) {
+            const firstBtn = items[0].querySelector(
+              "button[class*='button-address']",
+            );
+            if (firstBtn) {
+              firstBtn.click();
+              return { found: true, method: "first_item" };
+            }
+          }
+
+          return { found: false };
+        },
+        { targetPostalCode: postalCode, targetAddress: streetAddress1 },
+      );
+
+      if (!addressSelected.found) {
+        console.log("[naver] 주소 검색 결과에서 매칭 실패");
+        return { success: false, reason: "address_match_failed" };
+      }
+
+      console.log(`[naver] 주소 선택됨:`, addressSelected);
+      await delay(1000);
+
+      // 상세 주소 입력 (없으면 받는이 이름 사용)
+      const detailText = (streetAddress2 || "").trim() || shippingAddress.firstName || "";
+      if (detailText) {
+        const detailInput = await popupPage.$("#address-detail");
+        if (detailInput) {
+          await detailInput.type(detailText, { delay: 30 });
+          console.log(`[naver] 상세 주소 입력: ${detailText}`);
         }
-      } else {
-        console.log("[naver] 주소 검색 버튼을 찾을 수 없음");
+      }
+
+      // 확인 버튼 클릭
+      const confirmBtnSelector =
+        "#content > div > div.ButtonRegister_article__W3rjR > button";
+      const confirmBtn = await popupPage.$(confirmBtnSelector);
+      if (confirmBtn) {
+        await confirmBtn.click();
+        console.log("[naver] 주소 확인 버튼 클릭");
+        await delay(1000);
       }
     }
 
@@ -1136,7 +1144,7 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
       const saveBtnStillExists = await popupPage.$(saveBtnSelector);
       if (saveBtnStillExists) {
         console.log(
-          "[naver] 저장 버튼 아직 존재 (동일 데이터) - 뒤로가기 버튼 클릭",
+          "[naver] 저장 버튼 아직 존재 (동일 주문자) - 뒤로가기 버튼 클릭",
         );
         const backBtnSelector =
           "#root > div > div.FlexibleLayout-module_row__P4p6X > header > div > div > button";
@@ -1154,6 +1162,7 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
       }
     } else {
       console.log("[naver] 저장 버튼을 찾을 수 없음");
+      return { success: false, reason: "save_button_not_found" };
     }
 
     return { success: true };
@@ -1303,14 +1312,43 @@ async function selectDeliveryAddress(page, shippingAddress) {
     );
     console.log("[naver] 첫 번째 주소 선택 후 수정 방식으로 진행...");
 
-    // 먼저 첫 번째 주소의 "수정" 버튼 클릭하여 주소 수정
-    const modifyResult = await modifyDeliveryAddress(
-      popupPage,
-      shippingAddress,
-    );
+    // 먼저 첫 번째 주소의 "수정" 버튼 클릭하여 주소 수정 (최대 3회 재시도)
+    let modifyResult = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      console.log(`[naver] 배송지 수정 시도 ${attempt}/3...`);
+      modifyResult = await modifyDeliveryAddress(
+        popupPage,
+        shippingAddress,
+      );
+
+      if (modifyResult.success) {
+        console.log(`[naver] 배송지 수정 성공 (시도 ${attempt}/3)`);
+        break;
+      }
+
+      console.log(`[naver] 배송지 수정 실패 (시도 ${attempt}/3): ${modifyResult.reason}`);
+      if (attempt < 3) {
+        console.log("[naver] 재시도를 위해 대기 중...");
+        await delay(2000);
+
+        // 뒤로가기 버튼으로 배송지 목록으로 복귀 시도
+        try {
+          const backBtnSelector =
+            "#root > div > div.FlexibleLayout-module_row__P4p6X > header > div > div > button";
+          const backBtn = await popupPage.$(backBtnSelector);
+          if (backBtn) {
+            await backBtn.click();
+            console.log("[naver] 뒤로가기 버튼 클릭 - 배송지 목록으로 복귀 후 재시도");
+            await delay(2000);
+          }
+        } catch (e) {
+          console.log("[naver] 뒤로가기 실패:", e.message);
+        }
+      }
+    }
 
     if (!modifyResult.success) {
-      console.log(`[naver] 배송지 수정 실패: ${modifyResult.reason}`);
+      console.log(`[naver] 배송지 수정 3회 모두 실패: ${modifyResult.reason}`);
       return { success: false, reason: modifyResult.reason };
     }
 
