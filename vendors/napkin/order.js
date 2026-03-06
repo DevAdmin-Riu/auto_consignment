@@ -821,7 +821,11 @@ async function processNapkinOrder(
       window.__napkinPopupKiller = setInterval(kill, 500);
     `;
     await page.evaluateOnNewDocument(killPopups);
-    await page.evaluate(killPopups);
+    await page.evaluate(`
+      if (!window.__napkinPopupKiller) {
+        ${killPopups}
+      }
+    `);
     console.log("[napkin] AlphaReview 팝업 자동 제거 적용됨 (setInterval)");
 
     // 3. 장바구니 비우기

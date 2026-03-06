@@ -498,8 +498,9 @@ async function selectSingleOption(page, option) {
         const rawText = item.textContent?.trim() || "";
         // 가격 부분 제거: "무지긴팔 (-3,500원)" → "무지긴팔"
         const text = rawText.replace(/\s*\([+-]?[\d,]+원\)\s*$/, "").trim();
-        // 정확히 일치하는 경우만 선택
-        if (text === targetValue) {
+        // 띄어쓰기 모두 제거 후 비교
+        const normalize = s => s.replace(/\s/g, '');
+        if (normalize(text) === normalize(targetValue)) {
           item.click();
           return rawText;
         }
