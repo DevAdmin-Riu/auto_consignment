@@ -702,15 +702,12 @@ async function setQuantity(page, quantity) {
 
   if (quantityInput) {
     await quantityInput.click({ clickCount: 3 });
-    await delay(100);
-    await quantityInput.type(String(quantity));
-    await delay(200);
-    // Tab 두 번 눌러서 React 상태 반영 확정
-    await page.keyboard.press('Tab');
+    await delay(300);
+    await page.keyboard.type(String(quantity), { delay: 50 });
     await delay(300);
     await page.keyboard.press('Tab');
     await delay(500);
-    console.log("[naver] 수량 입력 완료 (Tab 확정)");
+    console.log(`[naver] 수량 입력 완료: ${quantity}개`);
     return true;
   }
 
