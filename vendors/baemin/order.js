@@ -1577,16 +1577,15 @@ async function enterShippingAddress(page, shippingAddress) {
     await delay(500);
 
     if (phoneInput) {
-      // React 렌더링 대응: nativeInputValueSetter로 value 강제 변경 + input 이벤트 발생
-      await page.evaluate((selector, value) => {
-        const input = document.querySelector(selector);
-        if (!input) return;
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-        nativeInputValueSetter.call(input, value);
-        input.dispatchEvent(new Event('input', { bubbles: true }));
-        input.dispatchEvent(new Event('change', { bubbles: true }));
-      }, SELECTORS.recipientPhoneInput, phoneNumber);
-      await delay(300);
+      await phoneInput.click();
+      await delay(200);
+      await page.keyboard.down('Control');
+      await page.keyboard.press('a');
+      await page.keyboard.up('Control');
+      await delay(200);
+      await page.keyboard.press('Backspace');
+      await delay(200);
+      await page.keyboard.type(phoneNumber, { delay: 50 });
       console.log(`[baemin] 연락처: ${phoneNumber}`);
     } else {
       console.log("[baemin] 연락처 input 못찾음");
