@@ -52,7 +52,12 @@ function generateComposeFile(envKey) {
   const poEmail = config.poEmail || 'xdswwwj@riupack.com';
   const smtpPassword = config.smtpPassword || '';
 
-  const graphqlUrl = config.graphqlUrl || env.GRAPHQL_URL;
+  // 로컬 환경에서만 config.graphqlUrl 사용 (프로덕션은 항상 env.GRAPHQL_URL)
+  let graphqlUrl = envKey === "local" && config.graphqlUrl ? config.graphqlUrl : env.GRAPHQL_URL;
+  // /graphql/ 경로 자동 보정
+  if (graphqlUrl && !graphqlUrl.endsWith("/graphql/")) {
+    graphqlUrl = graphqlUrl.replace(/\/+$/, "") + "/graphql/";
+  }
 
   const content = `services:
   n8n:
@@ -563,11 +568,29 @@ async function pollExecutionStatus(workflowId, executionId) {
         return;
       }
       if (status === "error" || status === "crashed") {
-        const errMsg = exec?.data?.resultData?.error?.message || "알 수 없는 에러";
+        const errData = exec?.data?.resultData || {};
+        const errMsg = errData.error?.message || "알 수 없는 에러";
+        const lastNode = errData.lastNodeExecuted || "";
+        const runData = errData.runData || {};
+        // 실패한 노드의 상세 에러 수집
+        const nodeErrors = [];
+        for (const [nodeName, runs] of Object.entries(runData)) {
+          for (const run of runs) {
+            if (run.error) {
+              const desc = run.error.description ? ` - ${run.error.description}` : "";
+              nodeErrors.push(`[${nodeName}] ${run.error.message}${desc}`);
+            }
+          }
+        }
         sendLog(
           "system",
-          `[에러] 워크플로우 #${workflowId} 실행 실패: ${errMsg} [execution: ${executionId}]`
+          `[에러] 워크플로우 #${workflowId} 실행 실패 [execution: ${executionId}]`
         );
+        sendLog("system", `  원인: ${errMsg}`);
+        if (lastNode) sendLog("system", `  실패 노드: ${lastNode}`);
+        for (const ne of nodeErrors) {
+          sendLog("system", `  ${ne}`);
+        }
         return;
       }
       // status = "running" / "waiting" / "new" → 계속 폴링
