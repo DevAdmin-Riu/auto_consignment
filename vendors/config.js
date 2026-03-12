@@ -170,18 +170,18 @@ const VENDORS = {
     hideSender: true,
     automationType: "product_search",
   },
-  // 와우프레스
+  // 와우프레스 - 네이버페이 결제
   와우프레스: {
     key: "wowpress",
-    loginUrl: "https://www.wowpress.co.kr/member/login.html",
-    siteUrl: "https://www.wowpress.co.kr",
+    loginUrl: "https://wowpress.co.kr/cust/lgin/form",
+    siteUrl: "https://wowpress.co.kr",
     get userId() {
       return getEnv("WOWPRESS_USER_ID");
     },
     get password() {
       return getEnv("WOWPRESS_PASSWORD");
     },
-    paymentMethod: "card",
+    paymentMethod: "naver_pay",
     hideSender: true,
     automationType: "product_search",
   },
