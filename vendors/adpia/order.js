@@ -282,39 +282,39 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
     }
     console.log(`[adpia] 수량 입력: ${actualQuantity}`);
     // 기본 셀렉터 시도
-    let quantityInput = await waitFor(
+    // select#quantity 먼저 체크 (드롭다운 방식)
+    const quantitySelect = await waitFor(
       page,
-      SELECTORS.orderPage.quantityInput,
-      5000,
+      SELECTORS.orderPage.quantitySelect,
+      3000,
     );
-    // 기본 셀렉터 없으면 대체 셀렉터 시도 (RTN-112326 등)
-    if (!quantityInput) {
-      console.log("[adpia] 기본 수량 필드 없음, 대체 셀렉터 시도...");
-      quantityInput = await waitFor(
-        page,
-        SELECTORS.orderPage.quantityInputAlt,
-        5000,
+    if (quantitySelect) {
+      await page.select(
+        SELECTORS.orderPage.quantitySelect,
+        String(actualQuantity),
       );
-    }
-    if (quantityInput) {
-      await quantityInput.click({ clickCount: 3 });
-      await delay(500);
-      await quantityInput.type(String(actualQuantity), { delay: 100 });
+      console.log(`[adpia] 수량 select 선택: ${actualQuantity}`);
       await delay(1000);
     } else {
-      // input 필드 없으면 select#quantity 시도
-      console.log("[adpia] 수량 입력 필드 없음, select 방식 시도...");
-      const quantitySelect = await waitFor(
+      // input 방식 시도
+      let quantityInput = await waitFor(
         page,
-        SELECTORS.orderPage.quantitySelect,
+        SELECTORS.orderPage.quantityInput,
         5000,
       );
-      if (quantitySelect) {
-        await page.select(
-          SELECTORS.orderPage.quantitySelect,
-          String(actualQuantity),
+      // 기본 셀렉터 없으면 대체 셀렉터 시도 (RTN-112326 등)
+      if (!quantityInput) {
+        console.log("[adpia] 기본 수량 필드 없음, 대체 셀렉터 시도...");
+        quantityInput = await waitFor(
+          page,
+          SELECTORS.orderPage.quantityInputAlt,
+          5000,
         );
-        console.log(`[adpia] 수량 select 선택: ${actualQuantity}`);
+      }
+      if (quantityInput) {
+        await quantityInput.click({ clickCount: 3 });
+        await delay(500);
+        await quantityInput.type(String(actualQuantity), { delay: 100 });
         await delay(1000);
       } else {
         console.log("[adpia] 수량 입력/선택 필드를 찾을 수 없음");
