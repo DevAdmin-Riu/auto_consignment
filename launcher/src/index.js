@@ -41,6 +41,10 @@ function loadEnvironments() {
   return JSON.parse(fs.readFileSync(ENVIRONMENTS_FILE, "utf-8"));
 }
 
+function saveEnvironments(environments) {
+  fs.writeFileSync(ENVIRONMENTS_FILE, JSON.stringify(environments, null, 2), "utf-8");
+}
+
 // ==================== Docker Compose 파일 생성 ====================
 
 function generateComposeFile(envKey) {
@@ -52,8 +56,7 @@ function generateComposeFile(envKey) {
   const poEmail = config.poEmail || 'xdswwwj@riupack.com';
   const smtpPassword = config.smtpPassword || '';
 
-  // 로컬 환경에서만 config.graphqlUrl 사용 (프로덕션은 항상 env.GRAPHQL_URL)
-  let graphqlUrl = envKey === "local" && config.graphqlUrl ? config.graphqlUrl : env.GRAPHQL_URL;
+  let graphqlUrl = env.GRAPHQL_URL;
   // /graphql/ 경로 자동 보정
   if (graphqlUrl && !graphqlUrl.endsWith("/graphql/")) {
     graphqlUrl = graphqlUrl.replace(/\/+$/, "") + "/graphql/";
@@ -827,6 +830,18 @@ function setupIpcHandlers() {
 
   ipcMain.handle("switch-environment", async (_, envKey) => {
     try {
+      // 로컬 전환 시 GRAPHQL_URL 체크
+      if (envKey === "local") {
+        const environments = loadEnvironments();
+        const localUrl = environments.local?.GRAPHQL_URL || "";
+        if (!localUrl) {
+          sendLog("system", "[시스템] ⚠️ 로컬 GRAPHQL_URL이 설정되지 않았습니다. 설정에서 URL 입력 후 n8n을 재시작하세요.");
+          const config = loadConfig();
+          config.environment = envKey;
+          saveConfig(config);
+          return;
+        }
+      }
       const label = generateComposeFile(envKey);
       const config = loadConfig();
       config.environment = envKey;
@@ -874,6 +889,19 @@ function setupIpcHandlers() {
   // 설정
   ipcMain.handle("get-config", () => loadConfig());
   ipcMain.handle("save-config", (_, config) => {
+    // graphqlUrl 입력 시 environments.json 로컬 항목 업데이트
+    if (config.graphqlUrl) {
+      const environments = loadEnvironments();
+      let url = config.graphqlUrl.trim();
+      if (url && !url.endsWith("/graphql/")) {
+        url = url.replace(/\/+$/, "") + "/graphql/";
+      }
+      if (environments.local) {
+        environments.local.GRAPHQL_URL = url;
+        saveEnvironments(environments);
+        sendLog("system", `[시스템] 로컬 GRAPHQL_URL 업데이트: ${url}`);
+      }
+    }
     const current = loadConfig();
     Object.assign(current, config);
     saveConfig(current);
