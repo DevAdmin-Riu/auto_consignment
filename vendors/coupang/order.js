@@ -803,13 +803,12 @@ async function processCoupangOrder(
             (indicator) => !!indicator,
           );
 
-          // 주문번호 추출 시도
+          // 주문번호 추출 시도 (텍스트 기반 - 클래스명 변경에 안전)
           let orderNumber = null;
-          const orderNumEl = document.querySelector(
-            '[class*="order-number"], [class*="orderNumber"]',
-          );
-          if (orderNumEl) {
-            orderNumber = orderNumEl.textContent?.trim();
+          const bodyText = document.body.textContent || "";
+          const orderMatch = bodyText.match(/주문번호\s*(\d+)/);
+          if (orderMatch) {
+            orderNumber = orderMatch[1];
           }
 
           // 주문금액 추출 (배송비 제외한 순수 상품 금액)
@@ -880,38 +879,48 @@ async function processCoupangOrder(
             console.log(`[가격] 쿠팡 주문금액: ${pageState.orderAmount}원`);
           }
 
-          // 결제 완료 확인 버튼 클릭 → 주문번호 페이지로 이동
+          // 결제 완료 후 주문번호 추출 (무한 대기 - 버튼 클릭 + 페이지 이동 반복 시도)
           let finalOrderNumber = pageState.orderNumber;
           try {
-            await delay(1000);
-            const confirmBtn = await page.$(
-              "#__next > div.sc-445mix-0.bdbSye > div.sc-wh3cod-0.sNTur > button.sc-1vm0jpx-0.sc-1vm0jpx-2.sc-wh3cod-1.gWgVCb.iqKTcw.hmSagB",
-            );
-            if (confirmBtn) {
-              await confirmBtn.click();
-              console.log("[결제 완료] 확인 버튼 클릭");
-              await delay(3000);
+            console.log("[결제 완료] 주문번호 추출 시작 (무한 대기)...");
+            while (!finalOrderNumber) {
+              await delay(2000);
 
-              // 주문번호 추출
+              // 1. 현재 페이지에서 주문번호 텍스트 추출 시도
               const orderInfo = await page.evaluate(() => {
-                const orderSpan = document.querySelector(
-                  "#__next > div.sc-vv7pzb-0.kqeqyx.my-area-body > div.sc-vv7pzb-1.dHwqA-d.my-area-contents > div > div.sc-llyby5-0.cpmwZc > div.sc-llyby5-1.hEqipt > span.sc-llyby5-2.jtryGp",
-                );
-                if (orderSpan) {
-                  const text = orderSpan.textContent || "";
-                  const match = text.match(/(\d+)/);
-                  return match ? match[1] : text;
-                }
-                return null;
+                const bodyText = document.body.textContent || "";
+                const match = bodyText.match(/주문번호\s*(\d+)/);
+                return match ? match[1] : null;
               });
 
               if (orderInfo) {
                 finalOrderNumber = orderInfo;
                 console.log(`[결제 완료] 주문번호: ${finalOrderNumber}`);
+                break;
+              }
+
+              // 2. 클릭 가능한 버튼 찾기 (확인, 주문 상세 보기 등)
+              const clickedBtn = await page.evaluate(() => {
+                const buttons = document.querySelectorAll("button, a");
+                for (const btn of buttons) {
+                  const text = btn.textContent?.trim();
+                  if (text === "확인" || text === "주문 확인" || text.includes("주문 상세") || text.includes("주문상세")) {
+                    btn.click();
+                    return text;
+                  }
+                }
+                return null;
+              });
+
+              if (clickedBtn) {
+                console.log(`[결제 완료] "${clickedBtn}" 버튼 클릭`);
+                await delay(3000);
+              } else {
+                console.log(`[결제 완료] 주문번호 대기 중... URL: ${page.url().substring(0, 60)}`);
               }
             }
           } catch (e) {
-            console.log("[결제 완료] 확인 버튼/주문번호 처리 실패:", e.message);
+            console.log("[결제 완료] 주문번호 추출 실패:", e.message);
           }
 
           steps.push({
