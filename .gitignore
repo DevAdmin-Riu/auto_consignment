@@ -56,3 +56,6 @@ docker-compose-window.yml
 # 런처 로컬 설정 (민감정보 포함)
 launcher/launcher-config.json
 launcher/environments.json
+
+# 런처 빌드 결과물
+launcher/out/
