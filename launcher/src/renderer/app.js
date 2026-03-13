@@ -19,13 +19,150 @@ const VENDOR_LIST = [
 // ==================== 초기화 ====================
 
 document.addEventListener("DOMContentLoaded", async () => {
-  await initEnvironmentSelect();
-  await refreshStatus();
-  await loadWorkflows();
+  // 패키징 모드 셋업 체크
+  try {
+    const setupInfo = await window.api.checkSetup();
+    if (setupInfo.needsSetup) {
+      showSetupWizard(setupInfo);
+      return; // 셋업 완료 후 앱 초기화
+    }
+  } catch (e) {
+    // checkSetup 실패 시 (개발 모드 등) 무시하고 진행
+    console.log("Setup check skipped:", e.message);
+  }
+
+  initApp();
+});
+
+function initApp() {
+  initEnvironmentSelect();
+  refreshStatus();
+  loadWorkflows();
   setupEventListeners();
   startStatusPolling();
   setupLogListener();
-});
+}
+
+// ==================== 셋업 위자드 ====================
+
+async function showSetupWizard(setupInfo) {
+  const wizard = document.getElementById("setup-wizard");
+  const mainApp = document.getElementById("main-app");
+  wizard.style.display = "flex";
+  mainApp.style.display = "none";
+
+  await runPrerequisiteCheck(setupInfo.prerequisites);
+}
+
+async function runPrerequisiteCheck(prerequisites) {
+  const PREREQ_NAMES = { git: "Git", node: "Node.js", npm: "npm", docker: "Docker" };
+  const PREREQ_URLS = {
+    git: "https://git-scm.com/downloads",
+    node: "https://nodejs.org/ (LTS)",
+    docker: "https://www.docker.com/products/docker-desktop",
+  };
+
+  let allOk = true;
+  const missing = [];
+
+  for (const [key, ok] of Object.entries(prerequisites)) {
+    const el = document.getElementById(`check-${key}`);
+    if (!el) continue;
+    const icon = el.querySelector(".setup-icon");
+    if (ok) {
+      icon.textContent = "\u2705";
+      el.classList.add("ok");
+    } else {
+      icon.textContent = "\u274C";
+      el.classList.add("fail");
+      allOk = false;
+      if (PREREQ_URLS[key]) {
+        missing.push(`${PREREQ_NAMES[key]}: ${PREREQ_URLS[key]}`);
+      }
+    }
+  }
+
+  if (!allOk) {
+    const missingDiv = document.getElementById("setup-missing");
+    const missingList = document.getElementById("setup-missing-list");
+    missingDiv.style.display = "block";
+    missingList.innerHTML = missing.map((m) => `<li>${m}</li>`).join("");
+
+    document.getElementById("btn-setup-recheck").addEventListener("click", async () => {
+      // 리체크
+      const info = await window.api.checkSetup();
+      // 리셋 UI
+      for (const key of Object.keys(info.prerequisites)) {
+        const el = document.getElementById(`check-${key}`);
+        if (el) {
+          el.classList.remove("ok", "fail");
+          el.querySelector(".setup-icon").textContent = "\u23F3";
+        }
+      }
+      document.getElementById("setup-missing").style.display = "none";
+      await runPrerequisiteCheck(info.prerequisites);
+    });
+  } else {
+    // 모든 필수 프로그램 설치됨 → 설치 시작 버튼
+    document.getElementById("setup-ready").style.display = "block";
+
+    document.getElementById("btn-run-setup").addEventListener("click", async () => {
+      document.getElementById("setup-ready").style.display = "none";
+      await runSetup();
+    });
+  }
+}
+
+async function runSetup() {
+  const progressDiv = document.getElementById("setup-progress");
+  const progressText = document.getElementById("setup-progress-text");
+  const progressFill = document.getElementById("setup-progress-fill");
+  progressDiv.style.display = "block";
+
+  // 진행 상황 수신
+  let step = 0;
+  const totalSteps = 3; // clone, npm install, config
+  window.api.onSetupProgress((msg) => {
+    progressText.textContent = msg;
+    if (msg.includes("clone") || msg.includes("다운로드")) {
+      step = 1;
+    } else if (msg.includes("npm") || msg.includes("의존성")) {
+      step = 2;
+    } else if (msg.includes("설정") || msg.includes("완료")) {
+      step = 3;
+    }
+    progressFill.style.width = `${Math.min((step / totalSteps) * 100, 100)}%`;
+  });
+
+  try {
+    const result = await window.api.runSetup({});
+    progressDiv.style.display = "none";
+
+    if (result.success) {
+      document.getElementById("setup-done").style.display = "block";
+      document.getElementById("btn-setup-finish").addEventListener("click", () => {
+        document.getElementById("setup-wizard").style.display = "none";
+        document.getElementById("main-app").style.display = "flex";
+        initApp();
+      });
+    } else {
+      document.getElementById("setup-error").style.display = "block";
+      document.getElementById("setup-error-text").textContent = result.error;
+      document.getElementById("btn-setup-retry").addEventListener("click", async () => {
+        document.getElementById("setup-error").style.display = "none";
+        await runSetup();
+      });
+    }
+  } catch (err) {
+    progressDiv.style.display = "none";
+    document.getElementById("setup-error").style.display = "block";
+    document.getElementById("setup-error-text").textContent = err.message;
+    document.getElementById("btn-setup-retry").addEventListener("click", async () => {
+      document.getElementById("setup-error").style.display = "none";
+      await runSetup();
+    });
+  }
+}
 
 // ==================== 환경 선택 ====================
 

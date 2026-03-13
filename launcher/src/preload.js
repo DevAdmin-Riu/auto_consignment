@@ -39,4 +39,11 @@ contextBridge.exposeInMainWorld("api", {
   onWorkflowDone: (callback) => {
     ipcRenderer.on("workflow-done", (_, data) => callback(data));
   },
+
+  // 셋업
+  checkSetup: () => ipcRenderer.invoke("check-setup"),
+  runSetup: (options) => ipcRenderer.invoke("run-setup", options),
+  onSetupProgress: (callback) => {
+    ipcRenderer.on("setup-progress", (_, msg) => callback(msg));
+  },
 });
