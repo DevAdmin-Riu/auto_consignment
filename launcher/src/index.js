@@ -1,21 +1,33 @@
-const { app, BrowserWindow, ipcMain, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { spawn, exec } = require("child_process");
 const http = require("http");
 const https = require("https");
+const setup = require("./setup");
 
 // Handle creating/removing shortcuts on Windows when installing/uninstalling.
 if (require("electron-squirrel-startup")) {
   app.quit();
 }
 
-// 프로젝트 루트 디렉토리 (launcher/src/ → launcher/ → project root)
-const LAUNCHER_ROOT = path.resolve(__dirname, "..");
-const PROJECT_ROOT = path.resolve(LAUNCHER_ROOT, "..");
+// ==================== 경로 설정 (개발/패키징 모드 자동 감지) ====================
+
+const IS_PACKAGED = app.isPackaged;
+const LAUNCHER_ROOT = IS_PACKAGED
+  ? path.dirname(app.getPath("exe"))
+  : path.resolve(__dirname, "..");
+const PROJECT_ROOT = IS_PACKAGED
+  ? path.join(app.getPath("userData"), "project")
+  : path.resolve(LAUNCHER_ROOT, "..");
 const COMPOSE_FILE = path.join(PROJECT_ROOT, "docker-compose-window.yml");
-const ENVIRONMENTS_FILE = path.join(LAUNCHER_ROOT, "environments.json");
-const CONFIG_FILE = path.join(LAUNCHER_ROOT, "launcher-config.json");
+const ENVIRONMENTS_FILE = IS_PACKAGED
+  ? path.join(app.getPath("userData"), "environments.json")
+  : path.join(LAUNCHER_ROOT, "environments.json");
+const CONFIG_FILE = IS_PACKAGED
+  ? path.join(app.getPath("userData"), "launcher-config.json")
+  : path.join(LAUNCHER_ROOT, "launcher-config.json");
+const GITHUB_REPO = "https://github.com/riu-dohyun/riu-puppeteer.git";
 
 let mainWindow;
 let logProcesses = {};
@@ -906,6 +918,53 @@ function setupIpcHandlers() {
     Object.assign(current, config);
     saveConfig(current);
     return { success: true };
+  });
+
+  // ==================== 셋업 관련 IPC ====================
+
+  ipcMain.handle("check-setup", async () => {
+    const prerequisites = await setup.checkPrerequisites();
+    const projectReady = setup.isProjectSetUp(PROJECT_ROOT);
+    const npmReady = projectReady && setup.isNpmInstalled(PROJECT_ROOT);
+    return {
+      isPackaged: IS_PACKAGED,
+      prerequisites,
+      projectReady,
+      npmReady,
+      projectRoot: PROJECT_ROOT,
+      needsSetup: IS_PACKAGED && (!projectReady || !npmReady),
+    };
+  });
+
+  ipcMain.handle("run-setup", async (_, options) => {
+    try {
+      const onProgress = (msg) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("setup-progress", msg);
+        }
+      };
+
+      // 1. 프로젝트 클론
+      if (!setup.isProjectSetUp(PROJECT_ROOT)) {
+        onProgress("프로젝트 다운로드 중...");
+        await setup.cloneProject(PROJECT_ROOT, GITHUB_REPO, onProgress);
+      }
+
+      // 2. npm install
+      if (!setup.isNpmInstalled(PROJECT_ROOT)) {
+        onProgress("의존성 설치 중 (npm install)...");
+        await setup.npmInstall(PROJECT_ROOT, onProgress);
+      }
+
+      // 3. 기본 설정 파일 생성
+      onProgress("설정 파일 생성 중...");
+      setup.createDefaultConfigs(CONFIG_FILE, ENVIRONMENTS_FILE);
+
+      onProgress("셋업 완료!");
+      return { success: true };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
   });
 }
 

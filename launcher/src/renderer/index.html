@@ -7,7 +7,61 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="app">
+  <!-- 셋업 위자드 (첫 실행 시) -->
+  <div id="setup-wizard" class="setup-wizard" style="display:none">
+    <div class="setup-container">
+      <h1>포장보스 자동화 설정</h1>
+      <p class="setup-subtitle">첫 실행을 위한 환경을 구성합니다</p>
+
+      <div class="setup-checks" id="setup-checks">
+        <div class="setup-check" id="check-git">
+          <span class="setup-icon">⏳</span>
+          <span>Git</span>
+        </div>
+        <div class="setup-check" id="check-node">
+          <span class="setup-icon">⏳</span>
+          <span>Node.js</span>
+        </div>
+        <div class="setup-check" id="check-npm">
+          <span class="setup-icon">⏳</span>
+          <span>npm</span>
+        </div>
+        <div class="setup-check" id="check-docker">
+          <span class="setup-icon">⏳</span>
+          <span>Docker</span>
+        </div>
+      </div>
+
+      <div id="setup-missing" class="setup-missing" style="display:none">
+        <p>다음 프로그램을 먼저 설치해주세요:</p>
+        <ul id="setup-missing-list"></ul>
+        <button id="btn-setup-recheck" class="btn btn-primary">다시 확인</button>
+      </div>
+
+      <div id="setup-ready" style="display:none">
+        <button id="btn-run-setup" class="btn btn-primary btn-lg">설치 시작</button>
+      </div>
+
+      <div id="setup-progress" style="display:none">
+        <div class="setup-progress-bar">
+          <div class="setup-progress-fill" id="setup-progress-fill"></div>
+        </div>
+        <p id="setup-progress-text" class="setup-progress-text">준비 중...</p>
+      </div>
+
+      <div id="setup-done" style="display:none">
+        <p class="setup-done-text">설치가 완료되었습니다!</p>
+        <button id="btn-setup-finish" class="btn btn-primary btn-lg">시작하기</button>
+      </div>
+
+      <div id="setup-error" style="display:none">
+        <p class="setup-error-text" id="setup-error-text"></p>
+        <button id="btn-setup-retry" class="btn btn-primary">다시 시도</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="app" id="main-app">
     <!-- 헤더 -->
     <header class="header">
       <h1>포장보스 자동화</h1>

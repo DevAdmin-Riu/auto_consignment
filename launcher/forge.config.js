@@ -1,15 +1,16 @@
 module.exports = {
   packagerConfig: {
     asar: true,
-    name: "포장보스 자동화 관리자",
-    icon: "./assets/icon", // .ico (Windows), .icns (macOS), .png (Linux)
+    name: "PojangbossLauncher",
+    executableName: "PojangbossLauncher",
+    icon: "./assets/icon",
+    ignore: [
+      /^\/\.git/,
+      /^\/node_modules\/\.cache/,
+    ],
   },
   rebuildConfig: {},
   makers: [
-    {
-      name: "@electron-forge/maker-squirrel",
-      config: {},
-    },
     {
       name: "@electron-forge/maker-zip",
       platforms: ["win32"],
