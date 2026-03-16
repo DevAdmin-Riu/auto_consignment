@@ -899,7 +899,21 @@ function setupIpcHandlers() {
   ipcMain.handle("open-workflow", (_, id) => openWorkflowInEditor(id));
 
   // 설정
-  ipcMain.handle("get-config", () => loadConfig());
+  ipcMain.handle("get-config", () => {
+    const config = loadConfig();
+    // .env에서 PAYMENT_CARD_TYPE 읽어서 config에 없으면 추가
+    if (!config.paymentCardType) {
+      try {
+        const envPath = path.join(PROJECT_ROOT, ".env");
+        if (fs.existsSync(envPath)) {
+          const envContent = fs.readFileSync(envPath, "utf-8");
+          const match = envContent.match(/PAYMENT_CARD_TYPE=(\w+)/);
+          if (match) config.paymentCardType = match[1];
+        }
+      } catch (e) {}
+    }
+    return config;
+  });
   ipcMain.handle("save-config", (_, config) => {
     // graphqlUrl 입력 시 environments.json 로컬 항목 업데이트
     if (config.graphqlUrl) {
@@ -912,6 +926,22 @@ function setupIpcHandlers() {
         environments.local.GRAPHQL_URL = url;
         saveEnvironments(environments);
         sendLog("system", `[시스템] 로컬 GRAPHQL_URL 업데이트: ${url}`);
+      }
+    }
+    // paymentCardType → .env 파일의 PAYMENT_CARD_TYPE 업데이트
+    if (config.paymentCardType) {
+      const envPath = path.join(PROJECT_ROOT, ".env");
+      try {
+        let envContent = fs.existsSync(envPath) ? fs.readFileSync(envPath, "utf-8") : "";
+        if (envContent.includes("PAYMENT_CARD_TYPE=")) {
+          envContent = envContent.replace(/PAYMENT_CARD_TYPE=.*/g, `PAYMENT_CARD_TYPE=${config.paymentCardType}`);
+        } else {
+          envContent += `\nPAYMENT_CARD_TYPE=${config.paymentCardType}\n`;
+        }
+        fs.writeFileSync(envPath, envContent, "utf-8");
+        sendLog("system", `[시스템] 결제 카드 변경: ${config.paymentCardType === "bc" ? "BC카드" : "신한카드"}`);
+      } catch (e) {
+        sendLog("system", `[시스템] .env 업데이트 실패: ${e.message}`);
       }
     }
     const current = loadConfig();

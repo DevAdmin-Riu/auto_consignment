@@ -17,7 +17,7 @@
  *      - 장바구니 담기
  *    - 주문서 이동
  *    - 배송지 입력
- *    - 결제 (신한카드)
+ *    - 결제 (ISP/페이북)
  *    - saveOrderResults 호출 (상품별)
  *
  * 데이터 흐름:
@@ -33,7 +33,7 @@
  *
  * 특이사항:
  * - 디자인 파일 업로드 필수
- * - 신한카드 결제 (ISP 미사용)
+ * - ISP 결제: automateISPPaymentWithAlertHandler() 사용 (alert 처리 포함)
  * - 결제 성공 시 createPaymentLogs() 호출
  */
 
@@ -49,8 +49,9 @@ const {
   createPaymentLogs,
   calculateExpectedPaymentAmount,
 } = require("../../lib/graphql-client");
-// const { automateISPPayment } = require("../../lib/isp-payment"); // ISP 미사용 (신한카드)
+const { automateISPPayment } = require("../../lib/isp-payment");
 const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
+const { getEnv } = require("../config");
 const https = require("https");
 const http = require("http");
 
@@ -60,10 +61,107 @@ const TEMP_DIR = path.join(__dirname, "../../temp");
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// [ISP 주석처리] ISP/페이북 결제 래퍼 함수 (신한카드 전환으로 미사용)
-// async function automateISPPaymentWithAlertHandler(paymentPopup = null) {
-//   ... ISP 결제 자동화 코드 생략 ...
-// }
+/**
+ * ISP/페이북 결제 래퍼 함수 (adpia 전용)
+ * - 결제창에서 발생하는 alert를 처리하면서 공통 ISP 함수 호출
+ */
+async function automateISPPaymentWithAlertHandler(paymentPopup = null) {
+  // alert 핸들러 (대기 루프 중 발생하는 alert 처리)
+  const handledDialogs = new WeakSet();
+  const ispLoopAlertHandler = async (dialog) => {
+    if (handledDialogs.has(dialog)) return;
+    handledDialogs.add(dialog);
+
+    console.log("[ISP] Alert 발생:", dialog.type(), dialog.message());
+    try {
+      await dialog.accept();
+    } catch (e) {
+      if (!e.message.includes("already handled")) {
+        console.log("[ISP] dialog accept 에러:", e.message);
+      }
+    }
+  };
+
+  let browser = null;
+  const registeredPages = new Set();
+
+  const registerHandlerOnPage = (p) => {
+    if (!registeredPages.has(p)) {
+      p.on("dialog", ispLoopAlertHandler);
+      registeredPages.add(p);
+    }
+  };
+
+  const targetCreatedHandler = async (target) => {
+    if (target.type() === "page") {
+      try {
+        const newPage = await target.page();
+        if (newPage) registerHandlerOnPage(newPage);
+      } catch (e) {}
+    }
+  };
+
+  // 결제창이 있으면 alert 핸들러 등록
+  if (paymentPopup) {
+    try {
+      browser = paymentPopup.browser();
+      browser.on("targetcreated", targetCreatedHandler);
+
+      const allPages = await browser.pages();
+      for (const p of allPages) {
+        registerHandlerOnPage(p);
+      }
+
+      // alert/confirm 오버라이드
+      try {
+        await paymentPopup.evaluate(() => {
+          window.alert = (msg) => console.log("[ISP Override] alert:", msg);
+          window.confirm = (msg) => {
+            console.log("[ISP Override] confirm:", msg);
+            return true;
+          };
+        });
+      } catch (e) {}
+
+      // frame에도 오버라이드
+      try {
+        for (const frame of paymentPopup.frames()) {
+          try {
+            await frame.evaluate(() => {
+              window.alert = (msg) =>
+                console.log("[ISP Frame Override] alert:", msg);
+              window.confirm = (msg) => {
+                console.log("[ISP Frame Override] confirm:", msg);
+                return true;
+              };
+            });
+          } catch (e) {}
+        }
+      } catch (e) {}
+    } catch (e) {
+      paymentPopup.on("dialog", ispLoopAlertHandler);
+      registeredPages.add(paymentPopup);
+    }
+  }
+
+  try {
+    // 공통 ISP 결제 함수 호출
+    const result = await automateISPPayment();
+    return result;
+  } finally {
+    // 핸들러 제거
+    for (const p of registeredPages) {
+      try {
+        p.off("dialog", ispLoopAlertHandler);
+      } catch (e) {}
+    }
+    if (browser) {
+      try {
+        browser.off("targetcreated", targetCreatedHandler);
+      } catch (e) {}
+    }
+  }
+}
 
 // 셀렉터 상수
 const SELECTORS = {
@@ -149,7 +247,7 @@ const SELECTORS = {
     cardPayment: 'input[name="pay_method"][value="PYM20"]',
     // 카드사 선택
     cardType: "#LGD_CARDTYPE",
-    cardTypeValue: "41", // 신한
+    cardTypeValue: "31", // 비씨
     // 전체 동의 체크박스
     agreeAll: "#agree_buy_all",
     // 결제하기 버튼
@@ -281,7 +379,6 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       );
     }
     console.log(`[adpia] 수량 입력: ${actualQuantity}`);
-    // 기본 셀렉터 시도
     // select#quantity 먼저 체크 (드롭다운 방식)
     const quantitySelect = await waitFor(
       page,
@@ -322,7 +419,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
           ORDER_STEPS.OPTION_SELECTION,
           ERROR_CODES.ELEMENT_NOT_FOUND,
           "수량 선택 UI를 찾을 수 없음 (#holder_num, input.input30[isnumber], select#quantity 모두 없음)",
-          { productCode: product.productCode, purchaseOrderId },
+          { productCode: product.productCode, purchaseOrderId }
         );
       }
     }
@@ -431,12 +528,26 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
     for (let i = 0; i < 120; i++) {
       await delay(1000);
 
-      // 모달이 이미 떠있는지 확인 (빠른 업로드 완료 시)
+      // 모달이 이미 떠있는지 확인 (업로드 완료 시 "장바구니" 포함 모달)
       const hasModal = await page.$(SELECTORS.orderPage.modalConfirmBtn);
       if (hasModal) {
-        console.log("[adpia] 파일 업로드 완료 (모달 감지 - 빠른 업로드)");
-        modalFoundEarly = true;
-        break;
+        const modalText = await page.evaluate(() => {
+          const content = document.querySelector(".ajs-modal .ajs-content");
+          return content ? content.textContent?.trim() || "" : "";
+        });
+        if (modalText.includes("장바구니")) {
+          console.log("[adpia] 파일 업로드 완료 (장바구니 모달 감지)");
+          modalFoundEarly = true;
+          break;
+        } else {
+          console.log(`[adpia] 모달 감지되었으나 업로드 완료가 아님: "${modalText}" → 확인 후 계속 대기`);
+          // 업로드 완료가 아닌 모달은 닫고 계속 대기
+          await page.evaluate(() => {
+            const btn = document.querySelector(".ajs-modal button.ajs-button.btn_orange");
+            if (btn) btn.click();
+          });
+          await delay(1000);
+        }
       }
 
       const progress = await page.evaluate(() => {
@@ -1065,36 +1176,373 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
       shippingInfo.streetAddress1 || shippingInfo.address || "";
     await directAddressInput(page, shippingInfo, searchAddress);
 
+    /* 주소 검색 버튼 클릭 - 테스트용 주석처리
+    console.log("[adpia] 5. 주소 찾기 버튼 클릭...");
+    await delay(1000); // 주소 찾기 버튼 클릭 전 딜레이
+    const addressSearchBtn = await page.$(SELECTORS.order.addressSearchBtn);
+    if (addressSearchBtn) {
+      await addressSearchBtn.click();
+      await delay(3000); // Windows에서 iframe 로딩이 느릴 수 있음
+
+      // 6. 다음 주소 검색 iframe 찾기
+      console.log("[adpia] 6. 주소 검색 iframe 찾기...");
+      await delay(1000); // iframe 찾기 전 딜레이
+
+      // 방법 1: #__daum__layer_1 안의 iframe을 직접 찾기
+      let frame = null;
+      for (let i = 0; i < 30; i++) {
+        // 15초 대기 (30 * 500ms)
+        if (i % 5 === 0) {
+          console.log(`[adpia] iframe 검색 ${i + 1}회...`);
+        }
+
+        try {
+          // 페이지에서 다음 주소 레이어 iframe 요소를 찾기
+          const iframeElement = await page.$("#__daum__layer_1 iframe");
+          if (iframeElement) {
+            const iframeSrc = await page.$eval(
+              "#__daum__layer_1 iframe",
+              (el) => el.src,
+            );
+            console.log(
+              `[adpia] iframe 요소 발견, src: ${
+                iframeSrc?.substring(0, 50) || "about:blank"
+              }...`,
+            );
+
+            // iframe이 로드될 때까지 대기 (src가 about:blank가 아닐 때)
+            if (iframeSrc && iframeSrc !== "about:blank") {
+              frame = await iframeElement.contentFrame();
+              if (frame) {
+                console.log(`[adpia] 주소 검색 iframe 발견 (${i + 1}회)`);
+                break;
+              }
+            }
+          }
+        } catch (e) {
+          // 무시
+        }
+
+        // 방법 2: page.frames()에서 postcode URL로 찾기 (백업)
+        const allFrames = page.frames();
+        for (const f of allFrames) {
+          try {
+            const frameUrl = f.url();
+            if (
+              frameUrl.includes("postcode.map.daum.net") ||
+              frameUrl.includes("postcode.v2.map.daum.net")
+            ) {
+              console.log(
+                `[adpia] 다음 주소 iframe URL 발견: ${frameUrl.substring(
+                  0,
+                  80,
+                )}...`,
+              );
+              frame = f;
+              console.log(`[adpia] 주소 검색 iframe 발견 (${i + 1}회)`);
+              break;
+            }
+          } catch (e) {
+            // 무시
+          }
+        }
+        if (frame) break;
+        await delay(500);
+      }
+
+      if (frame) {
+        // iframe 내부 DOM 로딩 대기 (더 오래 대기)
+        console.log("[adpia] iframe 내부 DOM 로딩 대기...");
+        await delay(5000);
+
+        // 디버깅: frame URL 확인
+        try {
+          const frameUrl = frame.url();
+          console.log(`[adpia] frame URL: ${frameUrl}`);
+        } catch (e) {
+          console.log("[adpia] frame URL 확인 실패");
+        }
+
+        // 7. 주소 검색어 입력
+        const searchAddress =
+          shippingInfo.streetAddress1 || shippingInfo.address || "";
+        if (searchAddress) {
+          console.log(`[adpia] 7. 주소 검색어: ${searchAddress}`);
+          await delay(2000); // 주소 검색어 입력 전 딜레이 증가
+
+          let addressInput = null;
+          let addressSearchSuccess = false;
+
+          // 먼저 frame.$()로 직접 시도
+          console.log("[adpia] frame에서 #region_name 찾기 시도...");
+          try {
+            addressInput = await frame.$("#region_name");
+            console.log(
+              `[adpia] frame.$('#region_name') 결과: ${addressInput ? "찾음!" : "없음"}`,
+            );
+
+            if (addressInput) {
+              // input 클릭하고 값 입력
+              await addressInput.click();
+              await delay(300);
+              await addressInput.type(searchAddress, { delay: 50 });
+              console.log(`[adpia] ✅ 주소 입력 완료: ${searchAddress}`);
+              await delay(500);
+
+              // 검색 버튼 클릭
+              const searchBtn = await frame.$("button.btn_search");
+              console.log(`[adpia] 검색 버튼: ${searchBtn ? "찾음!" : "없음"}`);
+              if (searchBtn) {
+                await searchBtn.click();
+                console.log("[adpia] 검색 버튼 클릭");
+              } else {
+                await addressInput.press("Enter");
+                console.log("[adpia] Enter 키 입력");
+              }
+              await delay(3000);
+
+              // 검색 결과 선택
+              const resultItem = await frame.$("li.list_post_item .link_post");
+              console.log(
+                `[adpia] 검색 결과: ${resultItem ? "찾음!" : "없음"}`,
+              );
+              if (resultItem) {
+                await resultItem.click();
+                console.log("[adpia] ✅ 주소 선택 완료");
+                addressSearchSuccess = true;
+              }
+            }
+          } catch (frameError) {
+            console.log(
+              `[adpia] frame.$() 에러: ${frameError.message.substring(0, 50)}`,
+            );
+          }
+
+          // frame.$()가 실패하면 CDP 방식으로 fallback
+          if (!addressSearchSuccess) {
+            console.log("[adpia] CDP 방식으로 fallback...");
+
+            for (let attempt = 1; attempt <= 3; attempt++) {
+              console.log(`[adpia] 주소 검색 시도 ${attempt}/3...`);
+
+              try {
+                // CDP 세션 생성
+                const client = await page.target().createCDPSession();
+
+                // 모든 frame 정보 가져오기
+                const { frameTree } = await client.send("Page.getFrameTree");
+
+                // postcode iframe의 frameId 찾기
+                let postcodeFrameId = null;
+                const findPostcodeFrame = (node) => {
+                  if (node.frame?.url?.includes("postcode")) {
+                    postcodeFrameId = node.frame.id;
+                    console.log(
+                      `[adpia] postcode frame URL: ${node.frame.url.substring(0, 60)}...`,
+                    );
+                    return;
+                  }
+                  if (node.childFrames) {
+                    for (const child of node.childFrames) {
+                      findPostcodeFrame(child);
+                      if (postcodeFrameId) return;
+                    }
+                  }
+                };
+                findPostcodeFrame(frameTree);
+
+                if (!postcodeFrameId) {
+                  console.log("[adpia] postcode frame 못찾음, 다음 시도...");
+                  await client.detach();
+                  await delay(2000);
+                  continue;
+                }
+
+                console.log(`[adpia] postcode frameId: ${postcodeFrameId}`);
+
+                // 해당 frame에 isolated world 생성하여 JavaScript 실행
+                const { executionContextId } = await client.send(
+                  "Page.createIsolatedWorld",
+                  {
+                    frameId: postcodeFrameId,
+                    worldName: "addressSearch",
+                  },
+                );
+
+                console.log(
+                  `[adpia] executionContextId: ${executionContextId}`,
+                );
+
+                // 1단계: #region_name input 찾아서 값 입력
+                const inputResult = await client.send("Runtime.evaluate", {
+                  expression: `
+                  (function() {
+                    const input = document.querySelector('#region_name');
+                    if (input) {
+                      input.focus();
+                      input.value = '';
+                      input.value = "${searchAddress.replace(/"/g, '\\"')}";
+                      input.dispatchEvent(new Event('input', { bubbles: true }));
+                      input.dispatchEvent(new Event('change', { bubbles: true }));
+                      return { success: true, value: input.value };
+                    }
+                    // fallback
+                    const inputs = document.querySelectorAll('input');
+                    return { success: false, inputCount: inputs.length, firstInput: inputs[0]?.id };
+                  })()
+                `,
+                  contextId: executionContextId,
+                  returnByValue: true,
+                });
+
+                console.log(
+                  `[adpia] input 결과:`,
+                  JSON.stringify(inputResult.result?.value),
+                );
+
+                if (!inputResult.result?.value?.success) {
+                  console.log("[adpia] #region_name 못찾음");
+                  await client.detach();
+                  await delay(2000);
+                  continue;
+                }
+
+                console.log(`[adpia] ✅ 주소 입력 완료: ${searchAddress}`);
+                await delay(500);
+
+                // 2단계: 검색 버튼 클릭
+                const searchResult = await client.send("Runtime.evaluate", {
+                  expression: `
+                  (function() {
+                    const btn = document.querySelector('button.btn_search') || document.querySelector('#search_btn');
+                    if (btn) {
+                      btn.click();
+                      return { clicked: 'button', selector: btn.className || btn.id };
+                    }
+                    // form submit
+                    const form = document.querySelector('#region_name')?.closest('form');
+                    if (form) {
+                      form.submit();
+                      return { clicked: 'form' };
+                    }
+                    return { clicked: null };
+                  })()
+                `,
+                  contextId: executionContextId,
+                  returnByValue: true,
+                });
+
+                console.log(
+                  `[adpia] 검색 버튼:`,
+                  JSON.stringify(searchResult.result?.value),
+                );
+                await delay(3000); // 검색 결과 로딩 대기
+
+                // 3단계: 검색 결과 첫 번째 항목 클릭
+                const selectResult = await client.send("Runtime.evaluate", {
+                  expression: `
+                  (function() {
+                    // 결과 리스트 찾기
+                    const items = document.querySelectorAll('li.list_post_item');
+                    if (items.length > 0) {
+                      // 첫 번째 결과의 클릭 가능한 요소 찾기
+                      const link = items[0].querySelector('.link_post') || items[0].querySelector('a') || items[0];
+                      if (link && link.click) {
+                        link.click();
+                        return { selected: true, count: items.length };
+                      }
+                    }
+                    return { selected: false, count: items.length };
+                  })()
+                `,
+                  contextId: executionContextId,
+                  returnByValue: true,
+                });
+
+                console.log(
+                  `[adpia] 주소 선택:`,
+                  JSON.stringify(selectResult.result?.value),
+                );
+
+                await client.detach();
+
+                if (selectResult.result?.value?.selected) {
+                  addressSearchSuccess = true;
+                  console.log(`[adpia] ✅ 주소 검색 완료 (CDP 방식)`);
+                  break;
+                } else if (selectResult.result?.value?.count === 0) {
+                  console.log("[adpia] 검색 결과 없음, 다음 시도...");
+                }
+              } catch (e) {
+                console.log(`[adpia] CDP 방식 에러: ${e.message}`);
+              }
+
+              await delay(2000);
+            }
+          } // if (!addressSearchSuccess) 닫기
+
+          if (addressSearchSuccess) {
+            console.log("[adpia] 8. 주소 선택 완료");
+            await delay(1000);
+          } else {
+            console.log("[adpia] ⚠️ 주소 검색 실패, 직접 입력 시도...");
+            await directAddressInput(page, shippingInfo, searchAddress);
+          }
+        }
+      } else {
+        console.log("[adpia] 주소 검색 iframe 못찾음, 직접 입력 시도...");
+        const searchAddress =
+          shippingInfo.streetAddress1 || shippingInfo.address || "";
+        if (searchAddress) {
+          await directAddressInput(page, shippingInfo, searchAddress);
+        }
+      }
+    }
+    주소 검색 버튼 클릭 주석처리 끝 */
+
     // 9. 상세주소는 directAddressInput에서 처리됨
 
-    // 10. 배송 방법 선택 (선불택배) - 결제 선택 전에 해야 함 (안하면 결제 초기화됨)
-    console.log("[adpia] 10. 배송 방법 선택 (선불택배)...");
-    const deliveryMethod = await page.$(SELECTORS.order.deliveryMethod);
-    if (deliveryMethod) {
-      await page.select(
-        SELECTORS.order.deliveryMethod,
-        SELECTORS.order.deliveryMethodValue,
-      );
-      await delay(1500);
-    }
+    // 10~12. 배송방법 + 결제수단 선택 (서로 초기화시킬 수 있어서 재확인 필요)
+    const paymentCardType = getEnv("PAYMENT_CARD_TYPE") || "shinhan";
+    const cardTypeValue = paymentCardType === "bc" ? "31" : "41";
 
-    // 11. 결제수단 선택 - 신용카드
-    console.log("[adpia] 11. 신용카드 결제 선택...");
-    const cardPayment = await page.$(SELECTORS.order.cardPayment);
-    if (cardPayment) {
-      await cardPayment.click();
-      await delay(1000);
-    }
+    // 선불택배 선택 헬퍼
+    const selectDeliveryMethod = async () => {
+      console.log("[adpia] 배송 방법 선택 (선불택배)...");
+      const dm = await waitFor(page, SELECTORS.order.deliveryMethod, 10000);
+      if (dm) {
+        await page.select(SELECTORS.order.deliveryMethod, SELECTORS.order.deliveryMethodValue);
+        await delay(1500);
+      } else {
+        console.log("[adpia] ⚠️ 배송 방법 선택 요소 없음 (스킵)");
+      }
+    };
+    // 결제수단 선택 헬퍼
+    const selectPaymentMethod = async () => {
+      console.log(`[adpia] 결제수단 선택 (${paymentCardType === "bc" ? "BC카드" : "신한카드"})...`);
+      const cp = await waitFor(page, SELECTORS.order.cardPayment, 10000);
+      if (cp) { await cp.click(); await delay(1000); }
+      const ct = await waitFor(page, SELECTORS.order.cardType, 5000);
+      if (ct) {
+        await page.select(SELECTORS.order.cardType, cardTypeValue);
+        await delay(1500);
+      }
+    };
 
-    // 12. 카드사 선택 (신한)
-    console.log("[adpia] 12. 카드사 선택 (신한)...");
-    const cardType = await page.$(SELECTORS.order.cardType);
-    if (cardType) {
-      await page.select(
-        SELECTORS.order.cardType,
-        SELECTORS.order.cardTypeValue,
-      );
-      await delay(1000);
+    // 1차: 선불택배 → 결제수단
+    await selectDeliveryMethod();
+    await selectPaymentMethod();
+
+    // 선불택배 확인 → 풀렸으면 다시 선불택배 → 결제수단
+    const delivCheck = await page.$eval(
+      SELECTORS.order.deliveryMethod, (el) => el.value,
+    ).catch(() => null);
+    if (delivCheck !== SELECTORS.order.deliveryMethodValue) {
+      console.log(`[adpia] 선불택배 초기화 감지 (현재: ${delivCheck}) → 재설정`);
+      await selectDeliveryMethod();
+      await selectPaymentMethod();
+    } else {
+      console.log("[adpia] 선불택배 유지 확인 OK");
     }
 
     // 13. 전체 동의 체크박스 클릭
@@ -1118,26 +1566,32 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
     console.log("[adpia] 전체 동의 결과:", agreeResult);
     await delay(3000);
 
-    // 13-1. 결제금액 파싱 (결제 버튼 클릭 전)
-    let actualPaymentAmount = 0;
-    try {
-      const amountText = await page.$eval(
-        "#ordersForm > div.cart_menu > div > div.list02 > div.list_menu03 > div > p > span.t3.t6",
-        (el) => el.textContent?.trim() || "",
-      );
-      actualPaymentAmount =
-        parseInt(amountText.replace(/[^0-9]/g, ""), 10) || 0;
-      console.log(
-        `[adpia] 결제금액 파싱: ${amountText} → ${actualPaymentAmount}원`,
-      );
-    } catch (e) {
-      console.log(
-        "[adpia] 결제금액 파싱 실패 (결제 진행에 영향 없음):",
-        e.message,
-      );
-    }
+    // 14. 결제하기 버튼 클릭 전 - 현재 페이지 목록 저장
+    const payBrowser = page.browser();
+    const pagesBeforePay = await payBrowser.pages();
+    const pagesBeforePaySet = new Set(pagesBeforePay);
 
-    // 14. 결제하기 버튼 클릭
+    // 새 페이지 생성 시 즉시 dialog 핸들러 등록 (alert 놓치지 않도록)
+    let paymentPopup = null;
+    const paymentDialogHandler = async (dialog) => {
+      console.log("[adpia] 결제창 Dialog:", dialog.type(), dialog.message());
+      await dialog.accept();
+    };
+    const targetCreatedHandler = async (target) => {
+      if (target.type() === "page") {
+        const newPage = await target.page();
+        if (newPage && !pagesBeforePaySet.has(newPage)) {
+          const url = newPage.url();
+          if (!url.startsWith("devtools://")) {
+            console.log("[adpia] 새 결제창 감지:", url);
+            paymentPopup = newPage;
+            newPage.on("dialog", paymentDialogHandler);
+          }
+        }
+      }
+    };
+    payBrowser.on("targetcreated", targetCreatedHandler);
+
     console.log("[adpia] 14. 결제하기 버튼 클릭...");
     const payBtn = await page.$(SELECTORS.order.payBtn);
     if (payBtn) {
@@ -1154,124 +1608,274 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
       if (payConfirmBtn) {
         await payConfirmBtn.click();
         await delay(3000);
-      }
-    }
 
-    // 16. 토스페이먼츠 결제 프레임 찾기 (중첩 iframe 지원)
-    console.log("[adpia] 토스페이먼츠 결제창 대기...");
-    await delay(3000);
+        // ========== 카드타입별 결제 분기 ==========
+        if (paymentCardType === "shinhan") {
+          // ===== 신한카드: 토스페이먼츠 iframe 결제 =====
+          console.log("[adpia] 토스페이먼츠 결제창 대기 (신한카드)...");
 
-    let paymentFrame = null;
-    for (let i = 0; i < 20; i++) {
-      const allFrames = page.frames();
-      console.log(
-        `[adpia] 프레임 탐색 (${i + 1}/20): 총 ${allFrames.length}개 프레임`,
-      );
-
-      for (const f of allFrames) {
-        try {
-          const hasPaymentUI = await f.evaluate(() => {
-            const tabs = document.querySelectorAll('a[role="tab"]');
-            for (const tab of tabs) {
-              if (tab.textContent?.includes("다른결제")) return true;
+          let paymentFrame = null;
+          for (let i = 0; i < 20; i++) {
+            const allFrames = page.frames();
+            for (const f of allFrames) {
+              try {
+                const hasPaymentUI = await f.evaluate(() => {
+                  const tabs = document.querySelectorAll('a[role="tab"]');
+                  for (const tab of tabs) {
+                    if (tab.textContent?.includes("다른결제")) return true;
+                  }
+                  return !!document.querySelector("#cardNum1");
+                });
+                if (hasPaymentUI) {
+                  paymentFrame = f;
+                  console.log("[adpia] 결제 UI 프레임 발견");
+                  break;
+                }
+              } catch (e) {}
             }
-            // 카드번호 입력 필드가 있으면 이미 결제 화면
-            return !!document.querySelector("#cardNum1");
-          });
-          if (hasPaymentUI) {
-            paymentFrame = f;
-            console.log("[adpia] 결제 UI 프레임 발견 (다른결제/카드입력)");
-            break;
+            if (paymentFrame) break;
+            await delay(1000);
           }
-        } catch (e) {
-          // cross-origin 등 접근 불가 프레임 무시
-        }
-      }
-      if (paymentFrame) break;
 
-      // 프레임 이름/URL 디버깅
-      if (i === 0 || i === 4 || i === 9) {
-        for (const f of allFrames) {
+          if (!paymentFrame) {
+            payBrowser.off("targetcreated", targetCreatedHandler);
+            return {
+              success: false,
+              message: "토스페이먼츠 결제 프레임을 찾을 수 없음",
+            };
+          }
+
+          await delay(1000);
+          console.log("[adpia] 신한카드 결제 자동화 시작...");
+          const shinhanResult = await processShinhanCardPayment(paymentFrame, page);
+
+          if (shinhanResult.success) {
+            console.log("[adpia] ✅ 신한카드 결제 자동화 완료");
+          } else {
+            console.log("[adpia] ⚠️ 신한카드 결제 실패:", shinhanResult.error);
+            payBrowser.off("targetcreated", targetCreatedHandler);
+            return {
+              success: false,
+              message: `신한카드 결제 실패: ${shinhanResult.error}`,
+            };
+          }
+
+          // 결제 완료 대기
+          await delay(10000);
+          const currentUrl = page.url();
+          console.log("[adpia] 결제 후 URL:", currentUrl);
+
+          // 주문번호 추출
+          let vendorOrderNumber = null;
           try {
-            const name = f.name();
-            const url = f.url().substring(0, 80);
-            if (name || (url && url !== "about:blank")) {
-              console.log(`[adpia]   frame: name="${name}" url="${url}"`);
+            if (
+              currentUrl.includes("orderresult") ||
+              currentUrl.includes("order/result")
+            ) {
+              await page.waitForSelector(SELECTORS.order.orderNumber, {
+                timeout: 10000,
+              });
+              vendorOrderNumber = await page.$eval(
+                SELECTORS.order.orderNumber,
+                (el) => el.textContent?.trim(),
+              );
+              console.log("[adpia] ✅ 주문번호:", vendorOrderNumber);
+            } else {
+              await delay(3000);
+              const orderNumberEl = await page.$(SELECTORS.order.orderNumber);
+              if (orderNumberEl) {
+                vendorOrderNumber = await page.$eval(
+                  SELECTORS.order.orderNumber,
+                  (el) => el.textContent?.trim(),
+                );
+                console.log("[adpia] ✅ 주문번호:", vendorOrderNumber);
+              }
             }
-          } catch (e) {}
+          } catch (e) {
+            console.log("[adpia] 주문번호 추출 실패:", e.message);
+          }
+
+          payBrowser.off("targetcreated", targetCreatedHandler);
+          return {
+            success: !!vendorOrderNumber,
+            message: vendorOrderNumber ? "결제 완료" : "결제 완료 확인 필요",
+            vendorOrderNumber,
+          };
+        } else {
+          // ===== BC카드: ISP/페이북 결제 =====
+          console.log("[adpia] 16. BC카드 결제창 찾는 중...");
+          // 최대 20회 (약 60초) 대기하면서 팝업 탐색
+          for (let popupRetry = 0; popupRetry < 20 && !paymentPopup; popupRetry++) {
+            const pagesAfterPay = await payBrowser.pages();
+            for (const p of pagesAfterPay) {
+              if (!pagesBeforePaySet.has(p)) {
+                const url = p.url();
+                if (!url.startsWith("devtools://")) {
+                  paymentPopup = p;
+                  console.log("[adpia] 결제창 찾음:", url);
+                  paymentPopup.on("dialog", paymentDialogHandler);
+                  break;
+                }
+              }
+            }
+            if (!paymentPopup) {
+              console.log(`[adpia] BC카드 결제창 대기 중... (${(popupRetry + 1) * 3}/60초)`);
+              await delay(3000);
+            }
+          }
+
+          if (paymentPopup) {
+            await delay(2000);
+
+            // 17. 기타결제 버튼 클릭
+            console.log("[adpia] 17. 기타결제 버튼 클릭...");
+            const otherPaymentBtn = "#inapppay-dap1 > div.block2 > div.left > a";
+
+            try {
+              await paymentPopup.waitForSelector(otherPaymentBtn, {
+                timeout: 60000,
+              });
+              await paymentPopup.click(otherPaymentBtn);
+              console.log("[adpia] ✅ 기타결제 버튼 클릭 완료");
+              await delay(3000);
+
+              // 18. 인증서 등록/결제 버튼 클릭
+              console.log("[adpia] 18. 인증서 등록/결제 버튼 클릭...");
+              const certPaymentBtn =
+                "#inapppay-dap2 > div.block1 > div.left > a.pay-item-s.pay-ctf";
+
+              try {
+                await paymentPopup.waitForSelector(certPaymentBtn, {
+                  timeout: 60000,
+                });
+
+                // 19. ISP/페이북 네이티브 윈도우 자동화
+                const ispAlertHandler = async (dialog) => {
+                  console.log(
+                    "[adpia] ISP Alert 감지:",
+                    dialog.type(),
+                    dialog.message(),
+                  );
+                  try {
+                    await dialog.accept();
+                  } catch (e) {}
+                };
+                page.on("dialog", ispAlertHandler);
+                paymentPopup.on("dialog", ispAlertHandler);
+
+                try {
+                  await page.evaluate(() => {
+                    window.alert = (msg) => console.log("[Override] alert:", msg);
+                    window.confirm = (msg) => { console.log("[Override] confirm:", msg); return true; };
+                  });
+                } catch (e) {}
+                try {
+                  await paymentPopup.evaluate(() => {
+                    window.alert = (msg) => console.log("[Override] alert:", msg);
+                    window.confirm = (msg) => { console.log("[Override] confirm:", msg); return true; };
+                  });
+                } catch (e) {}
+
+                await paymentPopup.click(certPaymentBtn);
+                console.log("[adpia] ✅ 인증서 등록/결제 버튼 클릭 완료");
+                await delay(3000);
+
+                console.log("[adpia] ISP 네이티브 결제창 자동화 시작...");
+                const ispResult =
+                  await automateISPPaymentWithAlertHandler(paymentPopup);
+
+                page.off("dialog", ispAlertHandler);
+                paymentPopup.off("dialog", ispAlertHandler);
+
+                if (ispResult.success) {
+                  console.log("[adpia] ✅ ISP 결제 자동화 완료");
+
+                  // 결제 완료 대기
+                  for (let i = 0; i < 60; i++) {
+                    await delay(1000);
+                    try {
+                      if (paymentPopup.isClosed()) {
+                        console.log("[adpia] 결제창 닫힘 확인");
+                        break;
+                      }
+                    } catch (e) {
+                      break;
+                    }
+                    if (i % 10 === 0) {
+                      console.log(`[adpia] 결제 완료 대기 중... ${i}초`);
+                    }
+                  }
+
+                  await delay(3000);
+                  const currentUrl = page.url();
+                  console.log("[adpia] 결제 후 URL:", currentUrl);
+
+                  let vendorOrderNumber = null;
+                  try {
+                    if (
+                      currentUrl.includes("orderresult") ||
+                      currentUrl.includes("order/result")
+                    ) {
+                      await page.waitForSelector(SELECTORS.order.orderNumber, {
+                        timeout: 10000,
+                      });
+                      vendorOrderNumber = await page.$eval(
+                        SELECTORS.order.orderNumber,
+                        (el) => el.textContent?.trim(),
+                      );
+                      console.log("[adpia] ✅ 주문번호:", vendorOrderNumber);
+                    } else {
+                      await delay(3000);
+                      const orderNumberEl = await page.$(SELECTORS.order.orderNumber);
+                      if (orderNumberEl) {
+                        vendorOrderNumber = await page.$eval(
+                          SELECTORS.order.orderNumber,
+                          (el) => el.textContent?.trim(),
+                        );
+                        console.log("[adpia] ✅ 주문번호:", vendorOrderNumber);
+                      }
+                    }
+                  } catch (e) {
+                    console.log("[adpia] 주문번호 추출 실패:", e.message);
+                  }
+
+                  payBrowser.off("targetcreated", targetCreatedHandler);
+                  return {
+                    success: true,
+                    message: "결제 완료",
+                    vendorOrderNumber,
+                  };
+                } else {
+                  console.log("[adpia] ⚠️ ISP 결제 실패:", ispResult.error);
+                  if (ispResult.error === "페이북 창을 찾을 수 없음") {
+                    payBrowser.off("targetcreated", targetCreatedHandler);
+                    return {
+                      success: false,
+                      ispWindowNotFound: true,
+                      message: "ISP 결제창을 찾을 수 없음",
+                    };
+                  }
+                }
+              } catch (certError) {
+                console.log("[adpia] ⚠️ 인증서 버튼 실패:", certError.message);
+              }
+            } catch (e) {
+              console.log("[adpia] ⚠️ 기타결제 버튼 실패:", e.message);
+            }
+          } else {
+            console.log("[adpia] ⚠️ BC카드 결제창 팝업을 찾을 수 없음");
+          }
+
+          await delay(5000);
         }
+        // ========== 카드타입별 결제 분기 끝 ==========
       }
-
-      await delay(1000);
     }
 
-    if (!paymentFrame) {
-      console.log("[adpia] 결제 프레임을 찾을 수 없음");
-      return {
-        success: false,
-        message: "결제 프레임을 찾을 수 없음 (20회 시도)",
-      };
-    }
+    payBrowser.off("targetcreated", targetCreatedHandler);
 
-    await delay(1000);
-
-    // 17. 신한카드 결제 자동화 (다른결제 → 카드번호 입력)
-    console.log("[adpia] 신한카드 결제 자동화 시작...");
-    const shinhanResult = await processShinhanCardPayment(paymentFrame, page);
-
-    if (shinhanResult.success) {
-      console.log("[adpia] ✅ 신한카드 결제 자동화 완료");
-    } else {
-      console.log("[adpia] ⚠️ 신한카드 결제 자동화 실패:", shinhanResult.error);
-      return {
-        success: false,
-        message: `신한카드 결제 실패: ${shinhanResult.error}`,
-      };
-    }
-
-    // 결제 완료 대기
-    await delay(10000);
-
-    // 메인 페이지 결제 완료 확인
-    const currentUrl = page.url();
-    console.log("[adpia] 결제 후 URL:", currentUrl);
-
-    // 주문번호 추출
-    console.log("[adpia] 주문번호 추출 시도...");
-    let vendorOrderNumber = null;
-    try {
-      if (
-        currentUrl.includes("orderresult") ||
-        currentUrl.includes("order/result")
-      ) {
-        await page.waitForSelector(SELECTORS.order.orderNumber, {
-          timeout: 10000,
-        });
-        vendorOrderNumber = await page.$eval(
-          SELECTORS.order.orderNumber,
-          (el) => el.textContent?.trim(),
-        );
-        console.log("[adpia] ✅ 주문번호:", vendorOrderNumber);
-      } else {
-        await delay(3000);
-        const orderNumberEl = await page.$(SELECTORS.order.orderNumber);
-        if (orderNumberEl) {
-          vendorOrderNumber = await page.$eval(
-            SELECTORS.order.orderNumber,
-            (el) => el.textContent?.trim(),
-          );
-          console.log("[adpia] ✅ 주문번호:", vendorOrderNumber);
-        }
-      }
-    } catch (e) {
-      console.log("[adpia] 주문번호 추출 실패:", e.message);
-    }
-
-    return {
-      success: !!vendorOrderNumber,
-      message: vendorOrderNumber ? "결제 완료" : "결제 완료 확인 필요",
-      vendorOrderNumber,
-    };
+    console.log("[adpia] 주문서 입력 완료");
+    return { success: true, message: "주문서 입력 완료" };
   } catch (error) {
     console.error("[adpia] 배송지 입력 실패:", error.message);
     return { success: false, message: error.message };
@@ -1292,7 +1896,7 @@ async function processAdpiaOrder(
 
   const errorCollector = createOrderErrorCollector("adpia");
   const shippingInfo = shippingAddress; // 기존 코드와 호환을 위해 alias
-  // const ispPassword = vendor.ispPassword || process.env.BC_ISP_PASSWORD || null; // ISP 미사용 (신한카드)
+  const ispPassword = vendor.ispPassword || process.env.BC_ISP_PASSWORD || null;
 
   const results = [];
   const downloadedFiles = []; // 다운로드한 파일 경로들
@@ -1565,13 +2169,48 @@ async function processAdpiaOrder(
           continue;
         }
 
-        // 2-6. 배송지 입력 + 결제 (신한카드)
+        // 2-6. 배송지 입력 + 결제 (ISP 결제창 미출현 시 최대 5회 재시도)
         if (shippingInfo) {
-          const shippingResult = await fillShippingInfo(
-            page,
-            shippingInfo,
-            null, // ispPassword 미사용 (신한카드)
-          );
+          const MAX_ISP_RETRY = 5;
+          let ispRetryCount = 0;
+          let shippingResult = null;
+
+          while (ispRetryCount <= MAX_ISP_RETRY) {
+            if (ispRetryCount > 0) {
+              console.log(
+                `\n[adpia] ========== ISP 결제 재시도 ${ispRetryCount}/${MAX_ISP_RETRY} ==========`,
+              );
+              console.log("[adpia] 장바구니로 이동하여 재주문...");
+              // 장바구니 → 주문서 이동
+              const retryOrderForm = await goToOrderForm(page);
+              if (!retryOrderForm.success) {
+                console.log("[adpia] 주문서 재이동 실패 - 재시도 중단");
+                shippingResult = {
+                  success: false,
+                  message: "주문서 재이동 실패",
+                };
+                break;
+              }
+            }
+
+            shippingResult = await fillShippingInfo(
+              page,
+              shippingInfo,
+              ispPassword,
+            );
+
+            if (shippingResult?.ispWindowNotFound) {
+              ispRetryCount++;
+              if (ispRetryCount <= MAX_ISP_RETRY) {
+                console.log(
+                  "[adpia] ISP 결제창 미출현 - 장바구니로 돌아가서 재시도...",
+                );
+                await delay(2000);
+                continue;
+              }
+            }
+            break;
+          }
 
           if (!shippingResult?.success) {
             console.log(
@@ -1699,24 +2338,17 @@ async function processAdpiaOrder(
         });
 
         // 결제 성공 시 결제 로그 저장
-        if (orderSuccess && actualPaymentAmount > 0) {
-          const expectedAmount = calculateExpectedPaymentAmount([product]);
-          try {
-            await createPaymentLogs(authToken, [
-              {
-                vendor: vendor.name,
-                paymentAmount: actualPaymentAmount,
-                expectedAmount,
-                purchaseOrderId: purchaseOrderId,
-                orderLineId: product.orderLineIds?.[0] || null,
-              },
-            ]);
-            console.log(
-              `[adpia] 결제 로그 저장: 실제=${actualPaymentAmount}원, 예상=${expectedAmount}원`,
-            );
-          } catch (e) {
-            console.log("[adpia] 결제 로그 저장 실패 (무시):", e.message);
-          }
+        if (orderSuccess && priceInfo.unitPrice > 0) {
+          const paymentAmount = priceInfo.unitPrice * (product.quantity || 1);
+          await createPaymentLogs(authToken, [
+            {
+              vendor: vendor.name,
+              paymentAmount: paymentAmount,
+              purchaseOrderId: purchaseOrderId,
+              orderLineId: product.orderLineIds?.[0] || null,
+            },
+          ]);
+          console.log(`[adpia] 결제 로그 저장: ${paymentAmount}원`);
         }
       } catch (error) {
         console.error(`[adpia] 상품 처리 에러:`, error.message);

@@ -47,7 +47,7 @@ const {
   createPaymentLogs,
   calculateExpectedPaymentAmount,
 } = require("../../lib/graphql-client");
-// const { automateISPPayment } = require("../../lib/isp-payment"); // ISP 미사용 (신한카드)
+const { automateISPPayment } = require("../../lib/isp-payment");
 const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
 const { getEnv } = require("../config");
 
@@ -1561,12 +1561,14 @@ async function placeOrder(page, shippingAddress) {
     });
     await new Promise((r) => setTimeout(r, 500));
 
-    // 11. 카드 종류 선택 (신한카드 - 41)
-    console.log("[swadpia] 카드 종류 선택 (신한)...");
+    // 11. 카드 종류 선택 (PAYMENT_CARD_TYPE에 따라 분기)
+    const paymentCardType = getEnv("PAYMENT_CARD_TYPE") || "shinhan";
+    const swadpiaCardValue = paymentCardType === "bc" ? "31" : "41";
+    console.log(`[swadpia] 카드 종류 선택 (${paymentCardType === "bc" ? "비씨" : "신한"})...`);
     await page.waitForSelector(SELECTORS.paymentPage.cardTypeSelect, {
       timeout: 60000,
     });
-    await page.select(SELECTORS.paymentPage.cardTypeSelect, "41");
+    await page.select(SELECTORS.paymentPage.cardTypeSelect, swadpiaCardValue);
     await new Promise((r) => setTimeout(r, 500));
 
     // 12. 전체 동의 버튼 클릭
@@ -1597,6 +1599,10 @@ async function placeOrder(page, shippingAddress) {
       );
     }
 
+    // 결제 버튼 클릭 전 페이지 목록 저장 (BC카드 팝업 감지용)
+    const payBrowserRef = page.browser();
+    const pagesBeforePaySet = new Set(await payBrowserRef.pages());
+
     // 13. 결제하기 버튼 클릭
     console.log("[swadpia] 결제하기 버튼 클릭...");
     await waitAndClick(page, SELECTORS.paymentPage.paySubmitBtn, {
@@ -1607,87 +1613,166 @@ async function placeOrder(page, shippingAddress) {
     console.log("[swadpia] ✅ 결제하기 버튼 클릭 완료");
     await new Promise((r) => setTimeout(r, 3000));
 
-    // 14. 토스페이먼츠 결제 프레임 찾기 (중첩 iframe 지원)
-    console.log("[swadpia] 토스페이먼츠 결제창 대기...");
-    await new Promise((r) => setTimeout(r, 3000));
+    // ========== 카드타입별 결제 분기 ==========
+    if (paymentCardType === "shinhan") {
+      // ===== 신한카드: 토스페이먼츠 iframe 결제 =====
+      console.log("[swadpia] 토스페이먼츠 결제창 대기 (신한카드)...");
+      await new Promise((r) => setTimeout(r, 3000));
 
-    let paymentFrame = null;
-    for (let i = 0; i < 20; i++) {
-      const allFrames = page.frames();
-      console.log(
-        `[swadpia] 프레임 탐색 (${i + 1}/20): 총 ${allFrames.length}개 프레임`,
-      );
-
-      for (const f of allFrames) {
-        try {
-          const hasPaymentUI = await f.evaluate(() => {
-            const tabs = document.querySelectorAll('a[role="tab"]');
-            for (const tab of tabs) {
-              if (tab.textContent?.includes("다른결제")) return true;
-            }
-            return !!document.querySelector("#cardNum1");
-          });
-          if (hasPaymentUI) {
-            paymentFrame = f;
-            console.log("[swadpia] 결제 UI 프레임 발견 (다른결제/카드입력)");
-            break;
-          }
-        } catch (e) {}
-      }
-      if (paymentFrame) break;
-
-      if (i === 0 || i === 4 || i === 9) {
+      let paymentFrame = null;
+      for (let i = 0; i < 20; i++) {
+        const allFrames = page.frames();
         for (const f of allFrames) {
           try {
-            const name = f.name();
-            const url = f.url().substring(0, 80);
-            if (name || (url && url !== "about:blank")) {
-              console.log(`[swadpia]   frame: name="${name}" url="${url}"`);
+            const hasPaymentUI = await f.evaluate(() => {
+              const tabs = document.querySelectorAll('a[role="tab"]');
+              for (const tab of tabs) {
+                if (tab.textContent?.includes("다른결제")) return true;
+              }
+              return !!document.querySelector("#cardNum1");
+            });
+            if (hasPaymentUI) {
+              paymentFrame = f;
+              console.log("[swadpia] 결제 UI 프레임 발견");
+              break;
             }
           } catch (e) {}
         }
+        if (paymentFrame) break;
+        await new Promise((r) => setTimeout(r, 1000));
+      }
+
+      if (!paymentFrame) {
+        page.off("dialog", globalDialogHandler);
+        return {
+          success: false,
+          paymentPopupNotFound: true,
+          error: "토스페이먼츠 결제 프레임을 찾을 수 없음",
+          orderPageUrl,
+          paymentPageUrl,
+        };
       }
 
       await new Promise((r) => setTimeout(r, 1000));
-    }
+      console.log("[swadpia] 신한카드 결제 자동화 시작...");
+      const shinhanResult = await processShinhanCardPayment(paymentFrame, page);
 
-    if (!paymentFrame) {
-      page.off("dialog", globalDialogHandler);
-      console.log("[swadpia] 결제 프레임을 찾을 수 없음");
-      return {
-        success: false,
-        paymentPopupNotFound: true,
-        error: "결제 프레임을 찾을 수 없음 (20회 시도)",
-        orderPageUrl,
-        paymentPageUrl,
-      };
-    }
+      if (shinhanResult.success) {
+        console.log("[swadpia] ✅ 신한카드 결제 자동화 완료");
+      } else {
+        console.log("[swadpia] ⚠️ 신한카드 결제 실패:", shinhanResult.error);
+        page.off("dialog", globalDialogHandler);
+        return {
+          success: false,
+          paymentPopupNotFound: true,
+          error: `신한카드 결제 실패: ${shinhanResult.error}`,
+          orderPageUrl,
+          paymentPageUrl,
+        };
+      }
 
-    await new Promise((r) => setTimeout(r, 1000));
-
-    // 15. 신한카드 결제 자동화 (다른결제 → 카드번호 입력)
-    console.log("[swadpia] 신한카드 결제 자동화 시작...");
-    const shinhanResult = await processShinhanCardPayment(paymentFrame, page);
-
-    if (shinhanResult.success) {
-      console.log("[swadpia] ✅ 신한카드 결제 자동화 완료");
+      await new Promise((r) => setTimeout(r, 10000));
     } else {
-      console.log(
-        "[swadpia] ⚠️ 신한카드 결제 자동화 실패:",
-        shinhanResult.error,
-      );
-      page.off("dialog", globalDialogHandler);
-      return {
-        success: false,
-        paymentPopupNotFound: true,
-        error: `신한카드 결제 실패: ${shinhanResult.error}`,
-        orderPageUrl,
-        paymentPageUrl,
-      };
-    }
+      // ===== BC카드: ISP/페이북 결제 (팝업) =====
+      console.log("[swadpia] BC카드 결제창 찾는 중...");
+      // pagesBeforePaySet은 결제 버튼 클릭 전에 저장해둔 것 사용
+      const pagesAfterPay = await payBrowserRef.pages();
+      let paymentPopup = null;
+      for (const p of pagesAfterPay) {
+        if (!pagesBeforePaySet.has(p)) {
+          const url = p.url();
+          if (!url.startsWith("devtools://")) {
+            paymentPopup = p;
+            console.log("[swadpia] 결제창 찾음:", url);
+            break;
+          }
+        }
+      }
 
-    // 결제 완료 대기
-    await new Promise((r) => setTimeout(r, 10000));
+      if (!paymentPopup) {
+        // 팝업이 아직 안 열렸을 수 있으므로 대기
+        for (let i = 0; i < 10; i++) {
+          await new Promise((r) => setTimeout(r, 1000));
+          const currentPages = await payBrowserRef.pages();
+          for (const p of currentPages) {
+            if (!pagesBeforePaySet.has(p)) {
+              const url = p.url();
+              if (!url.startsWith("devtools://")) {
+                paymentPopup = p;
+                console.log("[swadpia] 결제창 찾음:", url);
+                break;
+              }
+            }
+          }
+          if (paymentPopup) break;
+        }
+      }
+
+      if (!paymentPopup) {
+        page.off("dialog", globalDialogHandler);
+        return {
+          success: false,
+          paymentPopupNotFound: true,
+          error: "BC카드 결제창을 찾을 수 없음",
+          orderPageUrl,
+          paymentPageUrl,
+        };
+      }
+
+      const paymentDialogHandler = async (dialog) => {
+        console.log("[swadpia] 결제창 Dialog:", dialog.type(), dialog.message());
+        await dialog.accept();
+      };
+      paymentPopup.on("dialog", paymentDialogHandler);
+      await new Promise((r) => setTimeout(r, 2000));
+
+      // 기타결제 버튼 클릭
+      console.log("[swadpia] 기타결제 버튼 클릭...");
+      const otherPaymentBtn = "#inapppay-dap1 > div.block2 > div.left > a";
+      try {
+        await paymentPopup.waitForSelector(otherPaymentBtn, { timeout: 60000 });
+        await paymentPopup.click(otherPaymentBtn);
+        console.log("[swadpia] ✅ 기타결제 버튼 클릭 완료");
+        await new Promise((r) => setTimeout(r, 3000));
+
+        // 인증서 등록/결제 버튼 클릭
+        console.log("[swadpia] 인증서 등록/결제 버튼 클릭...");
+        const certPaymentBtn =
+          "#inapppay-dap2 > div.block1 > div.left > a.pay-item-s.pay-ctf";
+        try {
+          await paymentPopup.waitForSelector(certPaymentBtn, { timeout: 60000 });
+          await paymentPopup.click(certPaymentBtn);
+          console.log("[swadpia] ✅ 인증서 등록/결제 버튼 클릭 완료");
+          await new Promise((r) => setTimeout(r, 3000));
+
+          // ISP/페이북 네이티브 윈도우 자동화
+          console.log("[swadpia] ISP 네이티브 결제창 자동화 시작...");
+          const ispResult = await automateISPPayment();
+          if (ispResult.success) {
+            console.log("[swadpia] ✅ ISP 결제 자동화 완료");
+          } else {
+            console.log("[swadpia] ⚠️ ISP 결제 실패:", ispResult.error);
+            if (ispResult.error === "페이북 창을 찾을 수 없음") {
+              page.off("dialog", globalDialogHandler);
+              return {
+                success: false,
+                ispWindowNotFound: true,
+                error: "ISP 결제창을 찾을 수 없음",
+                orderPageUrl,
+                paymentPageUrl,
+              };
+            }
+          }
+        } catch (certError) {
+          console.log("[swadpia] ⚠️ 인증서 버튼 실패:", certError.message);
+        }
+      } catch (e) {
+        console.log("[swadpia] ⚠️ 기타결제 버튼 실패:", e.message);
+      }
+
+      await new Promise((r) => setTimeout(r, 10000));
+    }
+    // ========== 카드타입별 결제 분기 끝 ==========
 
     // 전역 dialog 핸들러 제거
     page.off("dialog", globalDialogHandler);

@@ -627,6 +627,11 @@ function setupEventListeners() {
     document.getElementById("input-po-email").value = config.poEmail || "";
     document.getElementById("input-smtp-password").value = config.smtpPassword || "";
     document.getElementById("input-graphql-url").value = config.graphqlUrl || "";
+    // 결제 카드 라디오 버튼
+    const cardType = config.paymentCardType || "shinhan";
+    document.querySelectorAll('input[name="paymentCardType"]').forEach(r => {
+      r.checked = r.value === cardType;
+    });
     document.getElementById("settings-modal").style.display = "flex";
     await loadWfConfig();
   });
@@ -697,6 +702,7 @@ function setupEventListeners() {
     const poEmail = document.getElementById("input-po-email").value.trim();
     const smtpPassword = document.getElementById("input-smtp-password").value;
     const graphqlUrl = document.getElementById("input-graphql-url").value.trim();
+    const paymentCardType = document.querySelector('input[name="paymentCardType"]:checked')?.value || "shinhan";
     const visibleWorkflows = getVisibleWorkflowsFromConfig();
     await window.api.saveConfig({
       n8nApiKey: apiKey,
@@ -705,6 +711,7 @@ function setupEventListeners() {
       poEmail: poEmail,
       smtpPassword: smtpPassword,
       graphqlUrl: graphqlUrl,
+      paymentCardType,
       visibleWorkflows,
     });
     document.getElementById("settings-modal").style.display = "none";

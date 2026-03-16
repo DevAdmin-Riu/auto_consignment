@@ -40,7 +40,7 @@ const {
   createPaymentLogs,
   calculateExpectedPaymentAmount,
 } = require("../../lib/graphql-client");
-// const { automateISPPayment } = require("../../lib/isp-payment"); // ISP 미사용 (신한카드)
+const { automateISPPayment } = require("../../lib/isp-payment");
 const {
   automateShinhanCardPayment,
   typeWithInterception,
@@ -1376,30 +1376,32 @@ async function processNapkinOrder(
             console.log("[napkin] 토스페이먼츠 iframe 진입");
             await delay(2000);
 
-            // 신한카드 찾아서 클릭 (텍스트 기반, 최대 30초 대기)
-            console.log("[napkin] 신한카드 찾는 중...");
+            // 카드 선택 (PAYMENT_CARD_TYPE에 따라 분기)
+            const paymentCardType = getEnv("PAYMENT_CARD_TYPE") || "shinhan";
+            const cardSearchText = paymentCardType === "bc" ? "비씨" : "신한";
+            console.log(`[napkin] ${cardSearchText}카드 찾는 중...`);
             let cardClicked = false;
             for (let retry = 0; retry < 30; retry++) {
-              cardClicked = await frame.evaluate(() => {
+              cardClicked = await frame.evaluate((searchText) => {
                 const links = document.querySelectorAll(
                   'a[data-focus-item="true"]',
                 );
                 for (const link of links) {
                   const text = link.textContent || "";
-                  if (text.includes("신한")) {
+                  if (text.includes(searchText)) {
                     link.click();
                     return true;
                   }
                 }
                 return false;
-              });
+              }, cardSearchText);
               if (cardClicked) break;
-              console.log(`[napkin] 신한카드 대기 중... (${retry + 1}/15)`);
+              console.log(`[napkin] ${cardSearchText}카드 대기 중... (${retry + 1}/30)`);
               await delay(1000);
             }
 
             if (cardClicked) {
-              console.log("[napkin] ✅ 신한카드 선택 완료");
+              console.log(`[napkin] ✅ ${cardSearchText}카드 선택 완료`);
               await delay(3000);
 
               // 필수 동의 버튼 클릭 (최대 10초 대기하면서 재시도)
@@ -1497,7 +1499,119 @@ async function processNapkinOrder(
               }
 
               if (nextClicked) {
-                // 신한카드: 토스페이먼츠 전자결제 iframe 찾기
+                if (paymentCardType === "bc") {
+                  // ===== BC카드: 두 번째 다음 → 결제 팝업 → ISP =====
+                  console.log("[napkin] 두 번째 다음 버튼 찾는 중...");
+                  let nextClicked2 = null;
+                  for (let retry = 0; retry < 10; retry++) {
+                    nextClicked2 = await frame.evaluate(() => {
+                      const buttons = document.querySelectorAll("button");
+                      for (const btn of buttons) {
+                        const text = (btn.textContent || "").trim();
+                        if (text === "다음" || text.includes("다음")) {
+                          btn.click();
+                          return true;
+                        }
+                      }
+                      const submitBtns = document.querySelectorAll('button[type="submit"]');
+                      for (const btn of submitBtns) { btn.click(); return true; }
+                      return null;
+                    });
+                    if (nextClicked2) {
+                      console.log(`[napkin] ✅ 두 번째 다음 버튼 클릭 (시도: ${retry + 1})`);
+                      await delay(3000);
+                      break;
+                    }
+                    console.log(`[napkin] 두 번째 다음 버튼 대기 중... (${retry + 1}/10)`);
+                    await delay(1000);
+                  }
+
+                  // BC카드 결제 팝업 찾기
+                  const browser = page.browser();
+                  const pagesBeforeNextSet = new Set(await browser.pages());
+                  let paymentPopup = null;
+
+                  const paymentDialogHandler = async (dialog) => {
+                    try {
+                      console.log("[napkin] 결제창 Dialog:", dialog.type(), dialog.message());
+                      await dialog.accept();
+                    } catch (e) {}
+                  };
+                  const targetCreatedHandler = async (target) => {
+                    if (target.type() === "page") {
+                      const newPage = await target.page();
+                      if (newPage && !pagesBeforeNextSet.has(newPage)) {
+                        const url = newPage.url();
+                        if (!url.startsWith("devtools://")) {
+                          paymentPopup = newPage;
+                          newPage.on("dialog", paymentDialogHandler);
+                        }
+                      }
+                    }
+                  };
+                  browser.on("targetcreated", targetCreatedHandler);
+
+                  console.log("[napkin] BC카드 결제창 대기...");
+                  for (let i = 0; i < 20; i++) {
+                    if (paymentPopup) break;
+                    const pagesAfter = await browser.pages();
+                    for (const p of pagesAfter) {
+                      if (!pagesBeforeNextSet.has(p)) {
+                        const url = p.url();
+                        if (!url.startsWith("devtools://")) {
+                          paymentPopup = p;
+                          paymentPopup.on("dialog", paymentDialogHandler);
+                          break;
+                        }
+                      }
+                    }
+                    if (paymentPopup) break;
+                    console.log(`[napkin] BC카드 결제창 대기 중... (${(i + 1) * 3}/60초)`);
+                    await delay(3000);
+                  }
+
+                  if (paymentPopup) {
+                    await delay(2000);
+
+                    // 기타결제 버튼 클릭
+                    console.log("[napkin] 기타결제 버튼 클릭...");
+                    const otherPaymentBtn = "#inapppay-dap1 > div.block2 > div.left > a";
+                    try {
+                      await paymentPopup.waitForSelector(otherPaymentBtn, { timeout: 60000 });
+                      await paymentPopup.click(otherPaymentBtn);
+                      console.log("[napkin] ✅ 기타결제 버튼 클릭 완료");
+                      await delay(3000);
+
+                      // 인증서 등록/결제 버튼 클릭
+                      const certPaymentBtn = "#inapppay-dap2 > div.block1 > div.left > a.pay-item-s.pay-ctf";
+                      try {
+                        await paymentPopup.waitForSelector(certPaymentBtn, { timeout: 60000 });
+                        await paymentPopup.click(certPaymentBtn);
+                        console.log("[napkin] ✅ 인증서 등록/결제 버튼 클릭 완료");
+                        await delay(3000);
+
+                        // ISP/페이북 자동화
+                        console.log("[napkin] ISP 네이티브 결제창 자동화 시작...");
+                        const ispResult = await automateISPPayment();
+                        if (ispResult.success) {
+                          console.log("[napkin] ✅ ISP 결제 자동화 완료");
+                          paymentCompleted = true;
+                        } else {
+                          console.log("[napkin] ⚠️ ISP 결제 실패:", ispResult.error);
+                        }
+                      } catch (certError) {
+                        console.log("[napkin] ⚠️ 인증서 버튼 실패:", certError.message);
+                      }
+                    } catch (e) {
+                      console.log("[napkin] ⚠️ 기타결제 버튼 실패:", e.message);
+                    }
+                  } else {
+                    console.log("[napkin] ⚠️ BC카드 결제창 팝업을 찾을 수 없음");
+                  }
+
+                  browser.off("targetcreated", targetCreatedHandler);
+                } else {
+                // ===== 신한카드: 토스페이먼츠 전자결제 iframe =====
                 console.log("[napkin] 토스페이먼츠 전자결제 iframe 대기...");
                 await delay(3000);
 
@@ -1866,8 +1980,9 @@ async function processNapkinOrder(
                   );
                 }
               }
+              } // end of else (신한카드 경로)
             } else {
-              console.log("[napkin] ⚠️ 신한카드를 찾을 수 없음");
+              console.log(`[napkin] ⚠️ ${cardSearchText}카드를 찾을 수 없음`);
             }
           } else {
             console.log("[napkin] ⚠️ iframe contentFrame 접근 실패");

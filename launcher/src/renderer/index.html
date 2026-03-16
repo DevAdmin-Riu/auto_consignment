@@ -195,6 +195,21 @@
         </div>
 
         <div class="form-group">
+          <label>결제 카드 선택</label>
+          <div class="radio-group" id="payment-card-type">
+            <label class="radio-label">
+              <input type="radio" name="paymentCardType" value="shinhan" checked>
+              <span>신한카드</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="paymentCardType" value="bc">
+              <span>BC카드 (ISP/페이북)</span>
+            </label>
+          </div>
+          <p class="form-hint">냅킨코리아, 성원애드피아, 애드피아몰 결제에 사용할 카드</p>
+        </div>
+
+        <div class="form-group">
           <label>워크플로우 표시 설정</label>
           <p class="form-hint">표시할 워크플로우를 선택하고 순서를 지정하세요</p>
           <button id="btn-load-workflows" class="btn btn-sm" style="margin-top:6px">n8n에서 불러오기</button>
