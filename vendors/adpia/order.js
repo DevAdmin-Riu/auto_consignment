@@ -52,6 +52,7 @@ const {
 const { automateISPPayment } = require("../../lib/isp-payment");
 const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
 const { getEnv } = require("../config");
+const { searchAddressWithKakao } = require("../../lib/address-verify");
 const https = require("https");
 const http = require("http");
 
@@ -1001,10 +1002,27 @@ async function directAddressInput(page, shippingInfo, searchAddress) {
   console.log("[adpia] directAddressInput: 주소 직접 입력 시작...");
 
   try {
+    // 카카오 주소 API로 도로명주소 변환
+    const originalAddress = searchAddress || shippingInfo.streetAddress1 || "";
+    let resolvedAddress = originalAddress;
+    let resolvedPostalCode = shippingInfo.postalCode || "";
+
+    if (originalAddress) {
+      const kakaoResult = await searchAddressWithKakao(originalAddress);
+      if (kakaoResult) {
+        // 도로명주소 우선 사용
+        if (kakaoResult.roadAddress) {
+          resolvedAddress = kakaoResult.roadAddress;
+          console.log(`[adpia] 카카오 도로명주소 변환: ${originalAddress} → ${resolvedAddress}`);
+        }
+      } else {
+        console.log(`[adpia] 카카오 API 결과 없음, 원본 주소 사용: ${originalAddress}`);
+      }
+    }
+
     // 우편번호 강제 입력 (#recv_post_no)
-    const postalCode = shippingInfo.postalCode || "";
-    if (postalCode) {
-      console.log(`[adpia] 우편번호 강제 입력: ${postalCode}`);
+    if (resolvedPostalCode) {
+      console.log(`[adpia] 우편번호 강제 입력: ${resolvedPostalCode}`);
       const result = await page.evaluate((val) => {
         const el = document.querySelector("#recv_post_no");
         if (el) {
@@ -1016,15 +1034,14 @@ async function directAddressInput(page, shippingInfo, searchAddress) {
           return { success: true, value: el.value };
         }
         return { success: false, error: "element not found" };
-      }, postalCode);
+      }, resolvedPostalCode);
       console.log(`[adpia] 우편번호 결과:`, result);
       await delay(300);
     }
 
-    // 기본주소 강제 입력 (#recv_addr_1)
-    const baseAddress = searchAddress || shippingInfo.streetAddress1 || "";
-    if (baseAddress) {
-      console.log(`[adpia] 기본주소 강제 입력: ${baseAddress}`);
+    // 기본주소 강제 입력 (#recv_addr_1) - 카카오 도로명주소 사용
+    if (resolvedAddress) {
+      console.log(`[adpia] 기본주소 강제 입력: ${resolvedAddress}`);
       const result = await page.evaluate((val) => {
         const el = document.querySelector("#recv_addr_1");
         if (el) {
@@ -1036,7 +1053,7 @@ async function directAddressInput(page, shippingInfo, searchAddress) {
           return { success: true, value: el.value };
         }
         return { success: false, error: "element not found" };
-      }, baseAddress);
+      }, resolvedAddress);
       console.log(`[adpia] 기본주소 결과:`, result);
       await delay(300);
     }
@@ -1507,19 +1524,41 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
     const paymentCardType = getEnv("PAYMENT_CARD_TYPE") || "shinhan";
     const cardTypeValue = paymentCardType === "bc" ? "31" : "41";
 
-    // 선불택배 선택 헬퍼 (재시도 포함)
+    // 선불택배 선택 헬퍼 (옵션 로드 대기 + 재시도)
     const selectDeliveryMethod = async () => {
+      const targetValue = SELECTORS.order.deliveryMethodValue;
+      const selector = SELECTORS.order.deliveryMethod;
+
+      // 옵션이 로드될 때까지 대기 (최대 15초)
+      console.log("[adpia] 배송방법 옵션 로드 대기...");
+      for (let wait = 0; wait < 15; wait++) {
+        const optionExists = await page.evaluate((sel, val) => {
+          const select = document.querySelector(sel);
+          if (!select) return { exists: false, options: [] };
+          const options = Array.from(select.options).map(o => ({ value: o.value, text: o.text }));
+          const found = options.some(o => o.value === val);
+          return { exists: found, optionCount: options.length, options: options.slice(0, 5) };
+        }, selector, targetValue).catch(() => ({ exists: false, options: [] }));
+
+        if (optionExists.exists) {
+          console.log(`[adpia] 선불택배 옵션 발견 (${wait + 1}초 대기, 총 ${optionExists.optionCount}개 옵션)`);
+          break;
+        }
+        if (wait % 3 === 0) {
+          console.log(`[adpia] 배송방법 옵션 대기 중... (${wait + 1}초, ${optionExists.optionCount || 0}개 옵션)`);
+        }
+        await delay(1000);
+      }
+
+      // 선택 시도 (3회)
       for (let attempt = 1; attempt <= 3; attempt++) {
         console.log(`[adpia] 배송 방법 선택 (선불택배) 시도 ${attempt}/3...`);
-        const dm = await waitFor(page, SELECTORS.order.deliveryMethod, 10000);
+        const dm = await waitFor(page, selector, 5000);
         if (dm) {
-          await page.select(SELECTORS.order.deliveryMethod, SELECTORS.order.deliveryMethodValue);
-          await delay(1500);
-          // 선택 확인
-          const selectedValue = await page.$eval(
-            SELECTORS.order.deliveryMethod, (el) => el.value,
-          ).catch(() => null);
-          if (selectedValue === SELECTORS.order.deliveryMethodValue) {
+          await page.select(selector, targetValue);
+          await delay(1000);
+          const selectedValue = await page.$eval(selector, (el) => el.value).catch(() => null);
+          if (selectedValue === targetValue) {
             console.log(`[adpia] 선불택배 선택 확인 완료 (시도 ${attempt}/3)`);
             return;
           }
@@ -1530,7 +1569,7 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
           await delay(2000);
         }
       }
-      console.log("[adpia] ⚠️ 선불택배 선택 3회 실패");
+      console.log("[adpia] ⚠️ 선불택배 선택 실패");
     };
     // 결제수단 선택 헬퍼
     const selectPaymentMethod = async () => {
