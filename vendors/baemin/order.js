@@ -1387,55 +1387,42 @@ async function enterShippingAddress(page, shippingAddress) {
         };
       }
 
-      // 모달 안에서 연필 SVG 찾기
-      const svgs = modalContainer.querySelectorAll("svg");
-      debugInfo.push(`SVGs in modal: ${svgs.length}`);
+      // 모달 안에서 첫번째 주소의 수정 버튼 찾기
 
-      for (const svg of svgs) {
-        const paths = svg.querySelectorAll("path");
-        for (const path of paths) {
-          const d = path.getAttribute("d") || "";
-          // 연필 아이콘 패턴들
-          if (
-            d.includes("21.71 6.29") ||
-            d.includes("M3 17.25") ||
-            d.includes("pencil") ||
-            d.includes("edit")
-          ) {
-            debugInfo.push(`Pencil SVG found: d=${d.substring(0, 30)}...`);
+      // 방법 1: 첫번째 주소 항목(li) 내 아이콘 버튼 (SVG 포함, 텍스트 없거나 짧은 버튼)
+      const addressItems = modalContainer.querySelectorAll("li");
+      debugInfo.push(`Address items (li): ${addressItems.length}`);
 
-            // 클릭 대상 요소를 찾아서 좌표 반환 (클릭은 Puppeteer가 함)
-            let clickTarget = svg;
+      if (addressItems.length > 0) {
+        const firstItem = addressItems[0];
+        // SVG를 포함하는 클릭 가능한 요소 찾기 (아이콘 버튼)
+        const svgsInItem = firstItem.querySelectorAll("svg");
+        debugInfo.push(`SVGs in first item: ${svgsInItem.length}`);
 
-            // 클릭 가능한 부모 찾기 (3단계까지)
-            let p = svg.parentElement;
-            for (let i = 0; i < 3 && p; i++) {
-              const tag = p.tagName.toLowerCase();
-              const role = p.getAttribute("role");
-              const cursor = window.getComputedStyle(p).cursor;
-              if (
-                tag === "button" ||
-                tag === "a" ||
-                role === "button" ||
-                cursor === "pointer"
-              ) {
-                clickTarget = p;
-                break;
-              }
-              p = p.parentElement;
+        for (const svg of svgsInItem) {
+          let clickTarget = svg;
+          let p = svg.parentElement;
+          for (let i = 0; i < 3 && p; i++) {
+            const tag = p.tagName.toLowerCase();
+            const role = p.getAttribute("role");
+            const cursor = window.getComputedStyle(p).cursor;
+            if (tag === "button" || tag === "a" || role === "button" || cursor === "pointer") {
+              clickTarget = p;
+              break;
             }
+            p = p.parentElement;
+          }
 
+          // 텍스트가 없거나 짧으면 아이콘 버튼 (수정 버튼)
+          const btnText = (clickTarget.textContent || "").trim();
+          if (btnText.length <= 3 || btnText.includes("수정") || btnText.includes("편집") || btnText.includes("edit")) {
             const rect = clickTarget.getBoundingClientRect();
             const tagInfo = `${clickTarget.tagName}${clickTarget.className ? "." + String(clickTarget.className).split(" ")[0].substring(0, 20) : ""}`;
-            debugInfo.push(
-              `Click target: ${tagInfo}, rect: ${JSON.stringify({ x: rect.x, y: rect.y, w: rect.width, h: rect.height })}`,
-            );
-
+            debugInfo.push(`Edit button found via SVG in li: ${tagInfo}, text="${btnText}"`);
             return {
               found: true,
-              method: "pencil-svg",
+              method: "svg-in-first-li",
               clickedEl: tagInfo,
-              // 요소 중앙 좌표 반환
               x: rect.x + rect.width / 2,
               y: rect.y + rect.height / 2,
               debug: debugInfo,
@@ -1444,22 +1431,77 @@ async function enterShippingAddress(page, shippingAddress) {
         }
       }
 
-      // 모든 SVG path 값 출력 (디버깅용)
-      const allPaths = [];
-      svgs.forEach((svg, i) => {
-        const path = svg.querySelector("path");
-        if (path) {
-          allPaths.push({
-            index: i,
-            d: (path.getAttribute("d") || "").substring(0, 40),
-          });
-        }
-      });
-      debugInfo.push(`All SVG paths: ${JSON.stringify(allPaths)}`);
+      // 방법 2: 모달 전체에서 SVG를 포함하는 아이콘 버튼 (폴백)
+      const svgs = modalContainer.querySelectorAll("svg");
+      debugInfo.push(`SVGs in modal: ${svgs.length}`);
 
+      for (const svg of svgs) {
+        let clickTarget = svg;
+        let p = svg.parentElement;
+        for (let i = 0; i < 3 && p; i++) {
+          const tag = p.tagName.toLowerCase();
+          const role = p.getAttribute("role");
+          const cursor = window.getComputedStyle(p).cursor;
+          if (tag === "button" || tag === "a" || role === "button" || cursor === "pointer") {
+            clickTarget = p;
+            break;
+          }
+          p = p.parentElement;
+        }
+
+        const btnText = (clickTarget.textContent || "").trim();
+        // 닫기(X) 버튼 제외, 텍스트 없거나 수정 관련 텍스트
+        if (btnText.length <= 3 && !btnText.includes("X") && !btnText.includes("×")) {
+          const rect = clickTarget.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) {
+            const tagInfo = `${clickTarget.tagName}${clickTarget.className ? "." + String(clickTarget.className).split(" ")[0].substring(0, 20) : ""}`;
+            debugInfo.push(`Edit button found via SVG fallback: ${tagInfo}, text="${btnText}"`);
+            return {
+              found: true,
+              method: "svg-icon-fallback",
+              clickedEl: tagInfo,
+              x: rect.x + rect.width / 2,
+              y: rect.y + rect.height / 2,
+              debug: debugInfo,
+            };
+          }
+        }
+      }
+
+      // 방법 3: SVG path d 값으로 연필 아이콘 찾기 (최후 폴백)
+      for (const svg of svgs) {
+        const paths = svg.querySelectorAll("path");
+        for (const pathEl of paths) {
+          const d = pathEl.getAttribute("d") || "";
+          if (d.includes("21.71 6.29") || d.includes("M3 17.25") || d.includes("pencil") || d.includes("edit")) {
+            let clickTarget = svg;
+            let p = svg.parentElement;
+            for (let i = 0; i < 3 && p; i++) {
+              const tag = p.tagName.toLowerCase();
+              if (tag === "button" || tag === "a" || p.getAttribute("role") === "button" || window.getComputedStyle(p).cursor === "pointer") {
+                clickTarget = p;
+                break;
+              }
+              p = p.parentElement;
+            }
+            const rect = clickTarget.getBoundingClientRect();
+            const tagInfo = `${clickTarget.tagName}${clickTarget.className ? "." + String(clickTarget.className).split(" ")[0].substring(0, 20) : ""}`;
+            return {
+              found: true,
+              method: "pencil-svg-path",
+              clickedEl: tagInfo,
+              x: rect.x + rect.width / 2,
+              y: rect.y + rect.height / 2,
+              debug: debugInfo,
+            };
+          }
+        }
+      }
+
+      debugInfo.push("All methods failed");
       return {
         found: false,
-        reason: "모달 내 연필 아이콘 없음",
+        reason: "모달 내 수정 버튼 없음",
         debug: debugInfo,
       };
     });
