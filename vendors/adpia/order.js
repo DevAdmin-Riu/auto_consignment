@@ -1503,19 +1503,34 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
     // 9. 상세주소는 directAddressInput에서 처리됨
 
     // 10~12. 배송방법 + 결제수단 선택 (서로 초기화시킬 수 있어서 재확인 필요)
+    await delay(2000); // 주소 입력 후 렌더링 대기
     const paymentCardType = getEnv("PAYMENT_CARD_TYPE") || "shinhan";
     const cardTypeValue = paymentCardType === "bc" ? "31" : "41";
 
-    // 선불택배 선택 헬퍼
+    // 선불택배 선택 헬퍼 (재시도 포함)
     const selectDeliveryMethod = async () => {
-      console.log("[adpia] 배송 방법 선택 (선불택배)...");
-      const dm = await waitFor(page, SELECTORS.order.deliveryMethod, 10000);
-      if (dm) {
-        await page.select(SELECTORS.order.deliveryMethod, SELECTORS.order.deliveryMethodValue);
-        await delay(1500);
-      } else {
-        console.log("[adpia] ⚠️ 배송 방법 선택 요소 없음 (스킵)");
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        console.log(`[adpia] 배송 방법 선택 (선불택배) 시도 ${attempt}/3...`);
+        const dm = await waitFor(page, SELECTORS.order.deliveryMethod, 10000);
+        if (dm) {
+          await page.select(SELECTORS.order.deliveryMethod, SELECTORS.order.deliveryMethodValue);
+          await delay(1500);
+          // 선택 확인
+          const selectedValue = await page.$eval(
+            SELECTORS.order.deliveryMethod, (el) => el.value,
+          ).catch(() => null);
+          if (selectedValue === SELECTORS.order.deliveryMethodValue) {
+            console.log(`[adpia] 선불택배 선택 확인 완료 (시도 ${attempt}/3)`);
+            return;
+          }
+          console.log(`[adpia] 선불택배 선택 안됨 (value: ${selectedValue}), 재시도...`);
+          await delay(2000);
+        } else {
+          console.log(`[adpia] ⚠️ 배송 방법 선택 요소 없음 (시도 ${attempt}/3)`);
+          await delay(2000);
+        }
       }
+      console.log("[adpia] ⚠️ 선불택배 선택 3회 실패");
     };
     // 결제수단 선택 헬퍼
     const selectPaymentMethod = async () => {

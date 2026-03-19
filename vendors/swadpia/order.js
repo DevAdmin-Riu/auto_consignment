@@ -1127,13 +1127,34 @@ async function placeOrder(page, shippingAddress) {
     });
     await new Promise((resolve) => setTimeout(resolve, 500));
 
-    // 4. 배송방법 선택 (선불택배 - DVM11)
+    // 4. 배송방법 선택 (선불택배 - DVM11) - 주소 입력 후 렌더링 대기
     console.log("[swadpia] 배송방법 선택 (선불택배)...");
-    await page.waitForSelector(SELECTORS.orderForm.deliveryMethod, {
-      timeout: 60000,
-    });
-    await page.select(SELECTORS.orderForm.deliveryMethod, "DVM11");
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await new Promise((resolve) => setTimeout(resolve, 2000)); // 주소 입력 후 렌더링 대기
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await page.waitForSelector(SELECTORS.orderForm.deliveryMethod, {
+          timeout: 10000,
+        });
+        await page.select(SELECTORS.orderForm.deliveryMethod, "DVM11");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+
+        // 선택 확인
+        const selectedValue = await page.$eval(
+          SELECTORS.orderForm.deliveryMethod,
+          (el) => el.value,
+        );
+        if (selectedValue === "DVM11") {
+          console.log(`[swadpia] 선불택배 선택 확인 완료 (시도 ${attempt}/3)`);
+          break;
+        }
+        console.log(`[swadpia] 선불택배 선택 안됨 (value: ${selectedValue}), 재시도 ${attempt}/3...`);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      } catch (e) {
+        console.log(`[swadpia] 배송방법 선택 에러 (시도 ${attempt}/3): ${e.message}`);
+        if (attempt === 3) throw e;
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
+    }
 
     // 5. 배송지명, 수령인 입력
     const recipientName = shippingAddress?.firstName || "";

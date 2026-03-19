@@ -1724,16 +1724,42 @@ async function enterShippingAddress(page, shippingAddress) {
 
       const addressClicked = await frame.evaluate((selector) => {
         const firstItem = document.querySelector(selector);
-        if (firstItem) {
-          const roadAddrBtn = firstItem.querySelector(".main_road .link_post");
-          if (roadAddrBtn) {
-            roadAddrBtn.click();
-            return { clicked: true, type: "road_button" };
-          }
-          firstItem.click();
-          return { clicked: true, type: "li" };
+        if (!firstItem) return { clicked: false };
+
+        // 1순위: 도로명 주소 링크 (.main_road .link_post 또는 .rel_road .link_post)
+        const roadAddrBtn = firstItem.querySelector(".main_road .link_post") ||
+                            firstItem.querySelector(".rel_road .link_post");
+        if (roadAddrBtn) {
+          roadAddrBtn.click();
+          return { clicked: true, type: "road_button", text: roadAddrBtn.textContent?.trim().substring(0, 50) };
         }
-        return { clicked: false };
+
+        // 2순위: 지번 주소 링크 (.main_jibun .link_post 또는 .main_address .link_post)
+        const jibunAddrBtn = firstItem.querySelector(".main_jibun .link_post") ||
+                             firstItem.querySelector(".main_address .link_post");
+        if (jibunAddrBtn) {
+          jibunAddrBtn.click();
+          return { clicked: true, type: "jibun_button", text: jibunAddrBtn.textContent?.trim().substring(0, 50) };
+        }
+
+        // 3순위: 주소 텍스트 버튼 (.txt_address .link_post)
+        const txtAddrBtn = firstItem.querySelector(".txt_address .link_post") ||
+                           firstItem.querySelector("button.link_post");
+        if (txtAddrBtn) {
+          txtAddrBtn.click();
+          return { clicked: true, type: "txt_addr_button", text: txtAddrBtn.textContent?.trim().substring(0, 50) };
+        }
+
+        // 4순위: 아무 클릭 가능한 링크/버튼
+        const clickable = firstItem.querySelector("a, button, [role='button']");
+        if (clickable) {
+          clickable.click();
+          return { clicked: true, type: "clickable", text: clickable.textContent?.trim().substring(0, 50) };
+        }
+
+        // 최후: li 자체 클릭 (잘 안 먹힘)
+        firstItem.click();
+        return { clicked: true, type: "li_fallback", text: firstItem.textContent?.trim().substring(0, 80) };
       }, SELECTORS.daumAddressItem);
 
       if (addressClicked.clicked) {
