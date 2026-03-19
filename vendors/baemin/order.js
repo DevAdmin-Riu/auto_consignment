@@ -1762,20 +1762,7 @@ async function enterShippingAddress(page, shippingAddress) {
           };
         }
 
-        // 3순위: 주소 텍스트 버튼 (.txt_address .link_post)
-        const txtAddrBtn =
-          firstItem.querySelector(".txt_address .link_post") ||
-          firstItem.querySelector("button.link_post");
-        if (txtAddrBtn) {
-          txtAddrBtn.click();
-          return {
-            clicked: true,
-            type: "txt_addr_button",
-            text: txtAddrBtn.textContent?.trim().substring(0, 50),
-          };
-        }
-
-        // 1~3순위 모두 실패
+        // 1~2순위 모두 실패
         return { clicked: false };
       }, SELECTORS.daumAddressItem);
 
