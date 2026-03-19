@@ -932,7 +932,8 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
         await popupPage.type("#receiver", receiverName, { delay: 30 });
         console.log(`[naver] 받는 이 입력: ${receiverName}`);
       } else {
-        console.log("[naver] #receiver 필드를 찾을 수 없음");
+        console.log("[naver] ❌ #receiver 필드를 찾을 수 없음");
+        return { success: false, reason: "receiver_input_not_found" };
       }
     }
 
@@ -961,7 +962,8 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
         await popupPage.type("#contact-1", cleanPhone, { delay: 30 });
         console.log(`[naver] 연락처 입력: ${cleanPhone}`);
       } else {
-        console.log("[naver] #contact-1 필드를 찾을 수 없음");
+        console.log("[naver] ❌ #contact-1 필드를 찾을 수 없음");
+        return { success: false, reason: "contact_input_not_found" };
       }
     }
 
@@ -989,7 +991,8 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
         await popupPage.type("#delivery-name", deliveryName, { delay: 30 });
         console.log(`[naver] 배송지 명 입력: ${deliveryName}`);
       } else {
-        console.log("[naver] #delivery-name 필드를 찾을 수 없음");
+        console.log("[naver] ❌ #delivery-name 필드를 찾을 수 없음");
+        return { success: false, reason: "delivery_name_input_not_found" };
       }
     }
 
@@ -1152,6 +1155,9 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
         if (detailInput) {
           await detailInput.type(detailText, { delay: 30 });
           console.log(`[naver] 상세 주소 입력: ${detailText}`);
+        } else {
+          console.log("[naver] ❌ 상세주소 input 못찾음");
+          return { success: false, reason: "detail_address_input_not_found" };
         }
       }
 
@@ -1163,6 +1169,9 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
         await confirmBtn.click();
         console.log("[naver] 주소 확인 버튼 클릭");
         await delay(1000);
+      } else {
+        console.log("[naver] ❌ 주소 확인 버튼 못찾음");
+        return { success: false, reason: "address_confirm_button_not_found" };
       }
     }
 
