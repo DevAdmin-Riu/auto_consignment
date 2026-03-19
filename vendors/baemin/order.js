@@ -680,9 +680,7 @@ async function selectOption(page, optionValue, quantity = 1) {
   });
 
   if (!hasOptionDropdown) {
-    console.log(
-      "[baemin] 옵션 드롭다운 없음 (옵션 없는 상품) - 수량만 설정",
-    );
+    console.log("[baemin] 옵션 드롭다운 없음 (옵션 없는 상품) - 수량만 설정");
     await setQuantity(page, quantity);
     return {
       success: true,
@@ -1095,8 +1093,7 @@ async function findDaumFrameViaCDP(page) {
           console.log(
             "[baemin] OOPIF CDP: #region_name 발견! CDP 프록시 프레임 반환",
           );
-
-          // CDP 기반 프록시 객체 반환 (frame과 동일한 인터페이스)
+          // CDP 프록시는 사용 후 enterShippingAddress에서 detach 처리됨
           return createCDPFrameProxy(cdpClient);
         } else {
           console.log("[baemin] OOPIF CDP: Daum 타겟에 #region_name 없음");
@@ -1387,109 +1384,55 @@ async function enterShippingAddress(page, shippingAddress) {
         };
       }
 
-      // 모달 안에서 첫번째 주소의 수정 버튼 찾기
-
-      // 방법 1: 첫번째 주소 항목(li) 내 아이콘 버튼 (SVG 포함, 텍스트 없거나 짧은 버튼)
-      const addressItems = modalContainer.querySelectorAll("li");
-      debugInfo.push(`Address items (li): ${addressItems.length}`);
-
-      if (addressItems.length > 0) {
-        const firstItem = addressItems[0];
-        // SVG를 포함하는 클릭 가능한 요소 찾기 (아이콘 버튼)
-        const svgsInItem = firstItem.querySelectorAll("svg");
-        debugInfo.push(`SVGs in first item: ${svgsInItem.length}`);
-
-        for (const svg of svgsInItem) {
-          let clickTarget = svg;
-          let p = svg.parentElement;
-          for (let i = 0; i < 3 && p; i++) {
-            const tag = p.tagName.toLowerCase();
-            const role = p.getAttribute("role");
-            const cursor = window.getComputedStyle(p).cursor;
-            if (tag === "button" || tag === "a" || role === "button" || cursor === "pointer") {
-              clickTarget = p;
-              break;
-            }
-            p = p.parentElement;
-          }
-
-          // 텍스트가 없거나 짧으면 아이콘 버튼 (수정 버튼)
-          const btnText = (clickTarget.textContent || "").trim();
-          if (btnText.length <= 3 || btnText.includes("수정") || btnText.includes("편집") || btnText.includes("edit")) {
-            const rect = clickTarget.getBoundingClientRect();
-            const tagInfo = `${clickTarget.tagName}${clickTarget.className ? "." + String(clickTarget.className).split(" ")[0].substring(0, 20) : ""}`;
-            debugInfo.push(`Edit button found via SVG in li: ${tagInfo}, text="${btnText}"`);
-            return {
-              found: true,
-              method: "svg-in-first-li",
-              clickedEl: tagInfo,
-              x: rect.x + rect.width / 2,
-              y: rect.y + rect.height / 2,
-              debug: debugInfo,
-            };
-          }
-        }
-      }
-
-      // 방법 2: 모달 전체에서 SVG를 포함하는 아이콘 버튼 (폴백)
+      // 모달 안에서 연필 SVG 찾기
       const svgs = modalContainer.querySelectorAll("svg");
       debugInfo.push(`SVGs in modal: ${svgs.length}`);
 
       for (const svg of svgs) {
-        let clickTarget = svg;
-        let p = svg.parentElement;
-        for (let i = 0; i < 3 && p; i++) {
-          const tag = p.tagName.toLowerCase();
-          const role = p.getAttribute("role");
-          const cursor = window.getComputedStyle(p).cursor;
-          if (tag === "button" || tag === "a" || role === "button" || cursor === "pointer") {
-            clickTarget = p;
-            break;
-          }
-          p = p.parentElement;
-        }
-
-        const btnText = (clickTarget.textContent || "").trim();
-        // 닫기(X) 버튼 제외, 텍스트 없거나 수정 관련 텍스트
-        if (btnText.length <= 3 && !btnText.includes("X") && !btnText.includes("×")) {
-          const rect = clickTarget.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0) {
-            const tagInfo = `${clickTarget.tagName}${clickTarget.className ? "." + String(clickTarget.className).split(" ")[0].substring(0, 20) : ""}`;
-            debugInfo.push(`Edit button found via SVG fallback: ${tagInfo}, text="${btnText}"`);
-            return {
-              found: true,
-              method: "svg-icon-fallback",
-              clickedEl: tagInfo,
-              x: rect.x + rect.width / 2,
-              y: rect.y + rect.height / 2,
-              debug: debugInfo,
-            };
-          }
-        }
-      }
-
-      // 방법 3: SVG path d 값으로 연필 아이콘 찾기 (최후 폴백)
-      for (const svg of svgs) {
         const paths = svg.querySelectorAll("path");
-        for (const pathEl of paths) {
-          const d = pathEl.getAttribute("d") || "";
-          if (d.includes("21.71 6.29") || d.includes("M3 17.25") || d.includes("pencil") || d.includes("edit")) {
+        for (const path of paths) {
+          const d = path.getAttribute("d") || "";
+          // 연필 아이콘 패턴들
+          if (
+            d.includes("21.71 6.29") ||
+            d.includes("M3 17.25") ||
+            d.includes("pencil") ||
+            d.includes("edit")
+          ) {
+            debugInfo.push(`Pencil SVG found: d=${d.substring(0, 30)}...`);
+
+            // 클릭 대상 요소를 찾아서 좌표 반환 (클릭은 Puppeteer가 함)
             let clickTarget = svg;
+
+            // 클릭 가능한 부모 찾기 (3단계까지)
             let p = svg.parentElement;
             for (let i = 0; i < 3 && p; i++) {
               const tag = p.tagName.toLowerCase();
-              if (tag === "button" || tag === "a" || p.getAttribute("role") === "button" || window.getComputedStyle(p).cursor === "pointer") {
+              const role = p.getAttribute("role");
+              const cursor = window.getComputedStyle(p).cursor;
+              if (
+                tag === "button" ||
+                tag === "a" ||
+                role === "button" ||
+                cursor === "pointer"
+              ) {
                 clickTarget = p;
                 break;
               }
               p = p.parentElement;
             }
+
             const rect = clickTarget.getBoundingClientRect();
             const tagInfo = `${clickTarget.tagName}${clickTarget.className ? "." + String(clickTarget.className).split(" ")[0].substring(0, 20) : ""}`;
+            debugInfo.push(
+              `Click target: ${tagInfo}, rect: ${JSON.stringify({ x: rect.x, y: rect.y, w: rect.width, h: rect.height })}`,
+            );
+
             return {
               found: true,
-              method: "pencil-svg-path",
+              method: "pencil-svg",
               clickedEl: tagInfo,
+              // 요소 중앙 좌표 반환
               x: rect.x + rect.width / 2,
               y: rect.y + rect.height / 2,
               debug: debugInfo,
@@ -1498,10 +1441,22 @@ async function enterShippingAddress(page, shippingAddress) {
         }
       }
 
-      debugInfo.push("All methods failed");
+      // 모든 SVG path 값 출력 (디버깅용)
+      const allPaths = [];
+      svgs.forEach((svg, i) => {
+        const path = svg.querySelector("path");
+        if (path) {
+          allPaths.push({
+            index: i,
+            d: (path.getAttribute("d") || "").substring(0, 40),
+          });
+        }
+      });
+      debugInfo.push(`All SVG paths: ${JSON.stringify(allPaths)}`);
+
       return {
         found: false,
-        reason: "모달 내 수정 버튼 없음",
+        reason: "모달 내 연필 아이콘 없음",
         debug: debugInfo,
       };
     });
@@ -1572,9 +1527,25 @@ async function enterShippingAddress(page, shippingAddress) {
 
     if (!formOpened) {
       console.log("[baemin] ❌ 수정 아이콘 클릭 후에도 폼이 안 열림");
-      return { success: false, message: "주소 수정 폼이 열리지 않음" };
+      // 디버깅: 현재 화면에 어떤 input들이 있는지 확인
+      const currentInputs = await page.evaluate(() => {
+        const inputs = document.querySelectorAll("input");
+        return Array.from(inputs)
+          .map((i) => ({
+            placeholder: i.placeholder,
+            type: i.type,
+            name: i.name,
+            id: i.id,
+          }))
+          .slice(0, 10);
+      });
+      console.log(
+        "[baemin] 현재 화면의 input들:",
+        JSON.stringify(currentInputs, null, 2),
+      );
+    } else {
+      console.log("[baemin] ✅ 주소 수정 폼 열림 확인");
     }
-    console.log("[baemin] ✅ 주소 수정 폼 열림 확인");
 
     // 3. 받으실 분 입력 (placeholder/autocomplete 기반 셀렉터)
     console.log("[baemin] 3. 받으실 분 입력...");
@@ -1591,9 +1562,15 @@ async function enterShippingAddress(page, shippingAddress) {
         await nameInput.type(recipientName, { delay: 50 });
         console.log(`[baemin] 받으실 분: ${recipientName}`);
       } else {
-        console.log("[baemin] 받으실 분 input 못찾음");
+        console.log("[baemin] ❌ 받으실 분 input 못찾음");
+        return { success: false, error: "받으실 분 input 못찾음" };
       }
       await delay(500);
+    }
+
+    if (!recipientName) {
+      console.log("[baemin] ❌ recipientName이 비어있음");
+      return { success: false, error: "recipientName이 비어있음" };
     }
 
     // 4. 연락처 입력 (고정값: 010-7749-7515)
@@ -1606,16 +1583,17 @@ async function enterShippingAddress(page, shippingAddress) {
     if (phoneInput) {
       await phoneInput.click();
       await delay(200);
-      await page.keyboard.down('Control');
-      await page.keyboard.press('a');
-      await page.keyboard.up('Control');
+      await page.keyboard.down("Control");
+      await page.keyboard.press("a");
+      await page.keyboard.up("Control");
       await delay(200);
-      await page.keyboard.press('Backspace');
+      await page.keyboard.press("Backspace");
       await delay(200);
       await page.keyboard.type(phoneNumber, { delay: 50 });
       console.log(`[baemin] 연락처: ${phoneNumber}`);
     } else {
-      console.log("[baemin] 연락처 input 못찾음");
+      console.log("[baemin] ❌ 연락처 input 못찾음");
+      return { success: false, error: "연락처 input 못찾음" };
     }
     await delay(500);
 
@@ -1739,7 +1717,13 @@ async function enterShippingAddress(page, shippingAddress) {
           console.log("[baemin] Enter 키로 검색");
         }
         await delay(1500);
+      } else {
+        console.log("[baemin] ❌ 주소 검색 input 못찾음");
+        return { success: false, error: "주소 검색 input 못찾음" };
       }
+    } else {
+      console.log("[baemin] ❌ 검색할 주소가 비어있음");
+      return { success: false, error: "검색할 주소(streetAddress1)가 비어있음" };
     }
 
     // 8. 주소 검색 결과 첫 번째 항목 클릭 (li.list_post_item)
@@ -1753,51 +1737,58 @@ async function enterShippingAddress(page, shippingAddress) {
         if (!firstItem) return { clicked: false };
 
         // 1순위: 도로명 주소 링크 (.main_road .link_post 또는 .rel_road .link_post)
-        const roadAddrBtn = firstItem.querySelector(".main_road .link_post") ||
-                            firstItem.querySelector(".rel_road .link_post");
+        const roadAddrBtn =
+          firstItem.querySelector(".main_road .link_post") ||
+          firstItem.querySelector(".rel_road .link_post");
         if (roadAddrBtn) {
           roadAddrBtn.click();
-          return { clicked: true, type: "road_button", text: roadAddrBtn.textContent?.trim().substring(0, 50) };
+          return {
+            clicked: true,
+            type: "road_button",
+            text: roadAddrBtn.textContent?.trim().substring(0, 50),
+          };
         }
 
         // 2순위: 지번 주소 링크 (.main_jibun .link_post 또는 .main_address .link_post)
-        const jibunAddrBtn = firstItem.querySelector(".main_jibun .link_post") ||
-                             firstItem.querySelector(".main_address .link_post");
+        const jibunAddrBtn =
+          firstItem.querySelector(".main_jibun .link_post") ||
+          firstItem.querySelector(".main_address .link_post");
         if (jibunAddrBtn) {
           jibunAddrBtn.click();
-          return { clicked: true, type: "jibun_button", text: jibunAddrBtn.textContent?.trim().substring(0, 50) };
+          return {
+            clicked: true,
+            type: "jibun_button",
+            text: jibunAddrBtn.textContent?.trim().substring(0, 50),
+          };
         }
 
         // 3순위: 주소 텍스트 버튼 (.txt_address .link_post)
-        const txtAddrBtn = firstItem.querySelector(".txt_address .link_post") ||
-                           firstItem.querySelector("button.link_post");
+        const txtAddrBtn =
+          firstItem.querySelector(".txt_address .link_post") ||
+          firstItem.querySelector("button.link_post");
         if (txtAddrBtn) {
           txtAddrBtn.click();
-          return { clicked: true, type: "txt_addr_button", text: txtAddrBtn.textContent?.trim().substring(0, 50) };
+          return {
+            clicked: true,
+            type: "txt_addr_button",
+            text: txtAddrBtn.textContent?.trim().substring(0, 50),
+          };
         }
 
-        // 4순위: 아무 클릭 가능한 링크/버튼
-        const clickable = firstItem.querySelector("a, button, [role='button']");
-        if (clickable) {
-          clickable.click();
-          return { clicked: true, type: "clickable", text: clickable.textContent?.trim().substring(0, 50) };
-        }
-
-        // 최후: li 자체 클릭 (잘 안 먹힘)
-        firstItem.click();
-        return { clicked: true, type: "li_fallback", text: firstItem.textContent?.trim().substring(0, 80) };
+        // 1~3순위 모두 실패
+        return { clicked: false };
       }, SELECTORS.daumAddressItem);
 
       if (addressClicked.clicked) {
-        console.log(`[baemin] 주소 선택 완료 (${addressClicked.type}): ${addressClicked.text || ""}`);
+        console.log(`[baemin] 주소 선택 완료 (${addressClicked.type})`);
         await delay(1500);
       } else {
-        console.log("[baemin] ❌ 주소 검색 결과 없음 - 주소 선택 실패");
-        return { success: false, message: "주소 검색 결과 없음" };
+        console.log("[baemin] ❌ 주소 검색 결과에서 클릭 가능한 주소 버튼 없음");
+        return { success: false, error: "주소 검색 결과에서 클릭 가능한 버튼 없음" };
       }
     } catch (e) {
       console.log("[baemin] ❌ 주소 선택 에러:", e.message);
-      return { success: false, message: `주소 선택 에러: ${e.message}` };
+      return { success: false, error: `주소 선택 에러: ${e.message}` };
     }
 
     // CDP 프록시 프레임 사용 후 세션 즉시 정리 (메인 페이지 세션 꼬임 방지)
@@ -1861,7 +1852,8 @@ async function enterShippingAddress(page, shippingAddress) {
         if (fallbackInput.found) {
           console.log(`[baemin] 상세주소 입력 완료 (폴백): ${detailAddress}`);
         } else {
-          console.log("[baemin] 상세주소 input 못찾음");
+          console.log("[baemin] ❌ 상세주소 input 못찾음");
+          return { success: false, error: "상세주소 input 못찾음" };
         }
       }
       await delay(500);
@@ -1871,7 +1863,9 @@ async function enterShippingAddress(page, shippingAddress) {
     console.log("[baemin] 10. 저장하기 버튼 클릭...");
 
     const saveClicked = await page.evaluate(() => {
-      const buttons = document.querySelectorAll("button");
+      // 배송지 변경 모달 내 버튼 탐색 (모달이 없으면 document 전체)
+      const modal = document.querySelector('[class*="modal"]') || document;
+      const buttons = modal.querySelectorAll("button");
       for (const btn of buttons) {
         const text = (btn.innerText || btn.textContent || "").trim();
         if (text === "저장하기" || text === "저장" || text === "완료") {
@@ -1887,15 +1881,22 @@ async function enterShippingAddress(page, shippingAddress) {
       await delay(1500);
     } else {
       console.log("[baemin] ❌ 저장하기 버튼 없음");
-      return { success: false, message: "저장하기 버튼 없음" };
+      return { success: false, error: "저장하기 버튼 없음" };
     }
 
     // 11. 배송지 검증 (카카오 주소 API로 도로명/지번 매칭 확인)
     console.log("[baemin] 11. 배송지 검증 시작...");
-    const verifyResult = await verifyShippingAddressOnPage(page, shippingAddress, "baemin");
+    const verifyResult = await verifyShippingAddressOnPage(
+      page,
+      shippingAddress,
+      "baemin",
+    );
     if (!verifyResult.success) {
       console.error(`[baemin] ❌ 배송지 검증 실패: ${verifyResult.message}`);
-      return { success: false, message: `배송지 검증 실패: ${verifyResult.message}` };
+      return {
+        success: false,
+        message: `배송지 검증 실패: ${verifyResult.message}`,
+      };
     }
     console.log("[baemin] ✅ 배송지 검증 통과");
 
@@ -2461,20 +2462,28 @@ async function processPayment(page) {
       try {
         const isOpen = naverPayPage && !naverPayPage.isClosed();
         if (!isOpen) {
-          console.log(`[baemin] 네이버페이 팝업 닫힘 확인 (${i + 1}회) [${((Date.now()-t0)/1000).toFixed(1)}초]`);
+          console.log(
+            `[baemin] 네이버페이 팝업 닫힘 확인 (${i + 1}회) [${((Date.now() - t0) / 1000).toFixed(1)}초]`,
+          );
           break;
         }
-        console.log(`[baemin] 네이버페이 팝업 닫힘 대기... (${i + 1}/10) [${((Date.now()-t0)/1000).toFixed(1)}초]`);
+        console.log(
+          `[baemin] 네이버페이 팝업 닫힘 대기... (${i + 1}/10) [${((Date.now() - t0) / 1000).toFixed(1)}초]`,
+        );
         await delay(500);
       } catch (e) {
-        console.log(`[baemin] 팝업 닫힘 확인: ${e.message} [${((Date.now()-t0)/1000).toFixed(1)}초]`);
+        console.log(
+          `[baemin] 팝업 닫힘 확인: ${e.message} [${((Date.now() - t0) / 1000).toFixed(1)}초]`,
+        );
         break;
       }
     }
 
     // 배민 페이지로 포커스 전환 및 결제 완료 확인
     await delay(500);
-    console.log(`[baemin] 팝업 닫힘 후 대기 완료 [${((Date.now()-t0)/1000).toFixed(1)}초]`);
+    console.log(
+      `[baemin] 팝업 닫힘 후 대기 완료 [${((Date.now() - t0) / 1000).toFixed(1)}초]`,
+    );
 
     try {
       // 배민 페이지 URL 확인
@@ -2482,7 +2491,9 @@ async function processPayment(page) {
       console.log(`[baemin] 배민 페이지 URL: ${baeminUrl}`);
 
       // 10. "주문내역 상세보기" 버튼 대기 및 클릭 (배민 페이지)
-      console.log(`[baemin] 10. 주문내역 상세보기 버튼 대기 (배민 페이지)... [${((Date.now()-t0)/1000).toFixed(1)}초]`);
+      console.log(
+        `[baemin] 10. 주문내역 상세보기 버튼 대기 (배민 페이지)... [${((Date.now() - t0) / 1000).toFixed(1)}초]`,
+      );
 
       const orderDetailBtnSelector =
         "#root > div > section > div.sc-doGdGr.fdlYoH > div.sc-ctosZL.feYMnx > button.sc-ehvNnt.fxMHfA";
@@ -2491,7 +2502,9 @@ async function processPayment(page) {
       const orderDetailBtn = await waitFor(page, orderDetailBtnSelector, 30000);
 
       if (orderDetailBtn) {
-        console.log(`[baemin] 주문내역 상세보기 버튼 발견 [${((Date.now()-t0)/1000).toFixed(1)}초]`);
+        console.log(
+          `[baemin] 주문내역 상세보기 버튼 발견 [${((Date.now() - t0) / 1000).toFixed(1)}초]`,
+        );
         await orderDetailBtn.click();
         console.log("[baemin] 주문내역 상세보기 버튼 클릭 완료");
         await delay(3000);
@@ -2518,7 +2531,9 @@ async function processPayment(page) {
       }
 
       // 11. 주문번호 추출 (배민 페이지)
-      console.log(`[baemin] 11. 주문번호 추출... [${((Date.now()-t0)/1000).toFixed(1)}초]`);
+      console.log(
+        `[baemin] 11. 주문번호 추출... [${((Date.now() - t0) / 1000).toFixed(1)}초]`,
+      );
 
       const orderNumberSelector =
         "#root > div > div.sc-kvVhHC.cDSays > div.sc-gLBXkV.Rsxkb > div.sc-jmxFWv.kJriCA > div:nth-child(2) > div.sc-kLrQKW.evIhGF > div > div.sc-iODgfC.taTVJ > div > div > span.sc-dMLRKe.crbOaE";
@@ -2731,8 +2746,8 @@ async function applyCouponAtCheckout(page, groupEstimatedTotal) {
       if (c.type === "fixed") return true;
       // D-4 이하: 항상 사용
       if (c.daysLeft <= 4) return true;
-      // D-4 초과: 주문 금액 4만원 이상일 때만
-      return groupEstimatedTotal >= 40000;
+      // D-4 초과: 주문 금액 5만원 이상일 때만
+      return groupEstimatedTotal >= 50000;
     });
 
     console.log(
@@ -3337,9 +3352,15 @@ async function processBaeminOrder(
           // 3-5.5. 결제 직전 배송지 재검증
           if (shippingAddress) {
             console.log("[baemin] 결제 전 배송지 재검증...");
-            const prePayVerify = await verifyShippingAddressOnPage(page, shippingAddress, "baemin");
+            const prePayVerify = await verifyShippingAddressOnPage(
+              page,
+              shippingAddress,
+              "baemin",
+            );
             if (!prePayVerify.success) {
-              console.log(`[baemin] ❌ 결제 전 배송지 검증 실패: ${prePayVerify.message}`);
+              console.log(
+                `[baemin] ❌ 결제 전 배송지 검증 실패: ${prePayVerify.message}`,
+              );
               lastPaymentMessage = `결제 전 배송지 검증 실패: ${prePayVerify.message}`;
               continue; // 재시도 → 배송지 입력부터 다시
             }
