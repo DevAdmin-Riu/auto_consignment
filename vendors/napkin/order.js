@@ -1355,6 +1355,42 @@ async function processNapkinOrder(
       }
 
 
+      // 결제 수단 선택 (카드 결제)
+      console.log("[napkin] 결제 수단 선택 (카드 결제)...");
+      const cardSelected = await page.evaluate(() => {
+        // 1순위: #addr_paymethod1 (value="card")
+        const cardRadio = document.querySelector('#addr_paymethod1');
+        if (cardRadio && cardRadio.value === 'card') {
+          cardRadio.checked = true;
+          cardRadio.dispatchEvent(new Event('change', { bubbles: true }));
+          cardRadio.click();
+          return { success: true, method: 'id', value: cardRadio.value };
+        }
+        // 2순위: name="addr_paymethod" value="card"
+        const byName = document.querySelector('input[name="addr_paymethod"][value="card"]');
+        if (byName) {
+          byName.checked = true;
+          byName.dispatchEvent(new Event('change', { bubbles: true }));
+          byName.click();
+          return { success: true, method: 'name', value: byName.value };
+        }
+        // 3순위: "카드 결제" 라벨 클릭
+        const labels = document.querySelectorAll('label');
+        for (const label of labels) {
+          if (label.textContent?.trim() === '카드 결제') {
+            label.click();
+            return { success: true, method: 'label', value: 'card' };
+          }
+        }
+        return { success: false };
+      });
+      if (cardSelected.success) {
+        console.log(`[napkin] ✅ 카드 결제 선택 완료 (${cardSelected.method})`);
+        await delay(1000);
+      } else {
+        console.log("[napkin] ⚠️ 카드 결제 선택 실패 - 결제 실패 가능");
+      }
+
       // 결제하기 (신한카드)
       console.log("[napkin] 결제하기 버튼 클릭...");
       await delay(1000);

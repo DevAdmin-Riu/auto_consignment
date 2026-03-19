@@ -12,6 +12,7 @@ services:
       - .:/home/node/vendor-automation
     environment:
       - TZ=Asia/Seoul
+      - GENERIC_TIMEZONE=Asia/Seoul
       # OAuth 콜백 URL (ngrok 사용 시)
       - WEBHOOK_URL=https://f3ae23d2780e.ngrok-free.app/
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false
