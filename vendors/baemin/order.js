@@ -2689,8 +2689,8 @@ async function applyCouponAtCheckout(page, groupEstimatedTotal) {
       if (c.type === "fixed") return true;
       // D-4 이하: 항상 사용
       if (c.daysLeft <= 4) return true;
-      // D-4 초과: 주문 금액 5만원 이상일 때만
-      return groupEstimatedTotal >= 50000;
+      // D-4 초과: 주문 금액 4만원 이상일 때만
+      return groupEstimatedTotal >= 40000;
     });
 
     console.log(
