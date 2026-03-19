@@ -40,6 +40,7 @@ const {
   createPaymentLogs,
   calculateExpectedPaymentAmount,
 } = require("../../lib/graphql-client");
+const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
 
 // ==================== 셀렉터 정의 ====================
 
@@ -1834,6 +1835,15 @@ async function enterShippingAddress(page, shippingAddress) {
       console.log("[baemin] 저장하기 버튼 없음");
     }
 
+    // 11. 배송지 검증 (카카오 주소 API로 도로명/지번 매칭 확인)
+    console.log("[baemin] 11. 배송지 검증 시작...");
+    const verifyResult = await verifyShippingAddressOnPage(page, shippingAddress, "baemin");
+    if (!verifyResult.success) {
+      console.error(`[baemin] ❌ 배송지 검증 실패: ${verifyResult.message}`);
+      return { success: false, message: `배송지 검증 실패: ${verifyResult.message}` };
+    }
+    console.log("[baemin] ✅ 배송지 검증 통과");
+
     console.log("[baemin] 배송지 입력 완료");
     return { success: true, message: "배송지 입력 완료" };
   } catch (error) {
@@ -3268,6 +3278,18 @@ async function processBaeminOrder(
             page,
             group.estimatedTotal,
           );
+
+          // 3-5.5. 결제 직전 배송지 재검증
+          if (shippingAddress) {
+            console.log("[baemin] 결제 전 배송지 재검증...");
+            const prePayVerify = await verifyShippingAddressOnPage(page, shippingAddress, "baemin");
+            if (!prePayVerify.success) {
+              console.log(`[baemin] ❌ 결제 전 배송지 검증 실패: ${prePayVerify.message}`);
+              lastPaymentMessage = `결제 전 배송지 검증 실패: ${prePayVerify.message}`;
+              continue; // 재시도 → 배송지 입력부터 다시
+            }
+            console.log("[baemin] ✅ 결제 전 배송지 검증 통과");
+          }
 
           // 3-6. 결제 처리 (네이버페이) - 그룹당 1회
           paymentResult = await processPayment(page);

@@ -40,6 +40,7 @@ const {
   calculateExpectedPaymentAmount,
 } = require("../../lib/graphql-client");
 const { getEnv } = require("../config");
+const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -2147,22 +2148,75 @@ async function processNaverOrder(
       steps.push({ step: "order_button", success: false });
     }
 
-    // 5. 배송지 선택 (배송지 정보가 있는 경우)
+    // 5. 배송지 선택 + 검증 (최대 3회 재시도)
     if (shippingAddress) {
-      console.log("[naver] 배송지 선택 시도...");
-      const addressResult = await selectDeliveryAddress(page, shippingAddress);
-      steps.push({
-        step: "address_selection",
-        success: addressResult.success,
-        reason: addressResult.reason,
-      });
+      const MAX_ADDRESS_ATTEMPTS = 3;
+      let addressVerified = false;
 
-      if (!addressResult.success) {
-        console.log("[naver] 배송지 선택 실패");
+      for (let addrAttempt = 1; addrAttempt <= MAX_ADDRESS_ATTEMPTS; addrAttempt++) {
+        console.log(`[naver] 배송지 선택 시도 ${addrAttempt}/${MAX_ADDRESS_ATTEMPTS}...`);
+        const addressResult = await selectDeliveryAddress(page, shippingAddress);
+        steps.push({
+          step: `address_selection_attempt_${addrAttempt}`,
+          success: addressResult.success,
+          reason: addressResult.reason,
+        });
+
+        if (!addressResult.success) {
+          console.log(`[naver] 배송지 선택 실패 (시도 ${addrAttempt}): ${addressResult.reason}`);
+          if (addrAttempt === MAX_ADDRESS_ATTEMPTS) {
+            errorCollector.addError(
+              ORDER_STEPS.ORDER_PLACEMENT,
+              ERROR_CODES.ELEMENT_NOT_FOUND,
+              `배송지 선택 ${MAX_ADDRESS_ATTEMPTS}회 실패: ${addressResult.reason}`,
+              { purchaseOrderId },
+            );
+            await saveOrderResults(authToken, {
+              purchaseOrderId,
+              products: addedProducts,
+              priceMismatches: [],
+              optionFailedProducts: [],
+              automationErrors: errorCollector.getErrors(),
+              poLineIds,
+              success: false,
+              vendor: "naver",
+            });
+            return res.json({
+              success: false,
+              message: `배송지 선택 실패: ${addressResult.reason}`,
+              steps,
+              addedProducts,
+              purchaseOrderId,
+              needManualAddressSelection: true,
+              automationErrors: errorCollector.getErrors(),
+            });
+          }
+          await delay(2000);
+          continue;
+        }
+
+        // 배송지 선택 후 검증 (카카오 주소 API)
+        console.log("[naver] 결제 전 배송지 검증...");
+        await delay(2000);
+        const verifyResult = await verifyShippingAddressOnPage(page, shippingAddress, "naver");
+        if (verifyResult.success) {
+          console.log("[naver] ✅ 배송지 검증 통과");
+          addressVerified = true;
+          break;
+        }
+
+        console.log(`[naver] ❌ 배송지 검증 실패 (시도 ${addrAttempt}): ${verifyResult.message}`);
+        if (addrAttempt < MAX_ADDRESS_ATTEMPTS) {
+          console.log("[naver] 배송지 재입력을 위해 재시도...");
+          await delay(2000);
+        }
+      }
+
+      if (!addressVerified) {
         errorCollector.addError(
           ORDER_STEPS.ORDER_PLACEMENT,
           ERROR_CODES.ELEMENT_NOT_FOUND,
-          `배송지 선택 실패: ${addressResult.reason}`,
+          `배송지 검증 ${MAX_ADDRESS_ATTEMPTS}회 실패`,
           { purchaseOrderId },
         );
         await saveOrderResults(authToken, {
@@ -2177,11 +2231,10 @@ async function processNaverOrder(
         });
         return res.json({
           success: false,
-          message: `배송지 선택 실패: ${addressResult.reason}`,
+          message: "배송지 검증 실패 (주소 불일치)",
           steps,
           addedProducts,
           purchaseOrderId,
-          needManualAddressSelection: true,
           automationErrors: errorCollector.getErrors(),
         });
       }
