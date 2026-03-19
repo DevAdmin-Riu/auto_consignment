@@ -1530,25 +1530,9 @@ async function enterShippingAddress(page, shippingAddress) {
 
     if (!formOpened) {
       console.log("[baemin] ❌ 수정 아이콘 클릭 후에도 폼이 안 열림");
-      // 디버깅: 현재 화면에 어떤 input들이 있는지 확인
-      const currentInputs = await page.evaluate(() => {
-        const inputs = document.querySelectorAll("input");
-        return Array.from(inputs)
-          .map((i) => ({
-            placeholder: i.placeholder,
-            type: i.type,
-            name: i.name,
-            id: i.id,
-          }))
-          .slice(0, 10);
-      });
-      console.log(
-        "[baemin] 현재 화면의 input들:",
-        JSON.stringify(currentInputs, null, 2),
-      );
-    } else {
-      console.log("[baemin] ✅ 주소 수정 폼 열림 확인");
+      return { success: false, message: "주소 수정 폼이 열리지 않음" };
     }
+    console.log("[baemin] ✅ 주소 수정 폼 열림 확인");
 
     // 3. 받으실 분 입력 (placeholder/autocomplete 기반 셀렉터)
     console.log("[baemin] 3. 받으실 분 입력...");
@@ -1763,13 +1747,15 @@ async function enterShippingAddress(page, shippingAddress) {
       }, SELECTORS.daumAddressItem);
 
       if (addressClicked.clicked) {
-        console.log(`[baemin] 주소 선택 완료 (${addressClicked.type})`);
+        console.log(`[baemin] 주소 선택 완료 (${addressClicked.type}): ${addressClicked.text || ""}`);
         await delay(1500);
       } else {
-        console.log("[baemin] 주소 검색 결과 없음");
+        console.log("[baemin] ❌ 주소 검색 결과 없음 - 주소 선택 실패");
+        return { success: false, message: "주소 검색 결과 없음" };
       }
     } catch (e) {
-      console.log("[baemin] 주소 선택 에러:", e.message);
+      console.log("[baemin] ❌ 주소 선택 에러:", e.message);
+      return { success: false, message: `주소 선택 에러: ${e.message}` };
     }
 
     // CDP 프록시 프레임 사용 후 세션 즉시 정리 (메인 페이지 세션 꼬임 방지)
@@ -1858,7 +1844,8 @@ async function enterShippingAddress(page, shippingAddress) {
       console.log(`[baemin] 저장하기 버튼 클릭 완료: "${saveClicked.text}"`);
       await delay(1500);
     } else {
-      console.log("[baemin] 저장하기 버튼 없음");
+      console.log("[baemin] ❌ 저장하기 버튼 없음");
+      return { success: false, message: "저장하기 버튼 없음" };
     }
 
     // 11. 배송지 검증 (카카오 주소 API로 도로명/지번 매칭 확인)
