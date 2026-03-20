@@ -1089,74 +1089,40 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
       }
       await delay(2000);
 
-      // 주소 목록에서 텍스트 기반 선택 (CSS 클래스 의존 제거)
+      // 주소 검색 결과 첫 번째 항목 선택 → 카카오 도로명/지번 매칭 검증
       const addressSelected = await popupPage.evaluate(
-        ({ kakaoRoad, kakaoJibun, targetPostalCode }) => {
-          // li 요소들 중 주소 텍스트를 포함한 항목 찾기
+        ({ kakaoRoad, kakaoJibun }) => {
           const allLis = document.querySelectorAll("li");
-          const candidates = [];
-
           for (const li of allLis) {
             const text = (li.textContent || "").trim();
-            // 우편번호나 주소 키워드가 포함된 li만 후보로
             if (text.length > 10 && (text.includes("로 ") || text.includes("길 ") || text.includes("동 ") || text.match(/\d{5}/))) {
-              candidates.push(li);
-            }
-          }
-
-          // 1순위: 카카오 도로명 + 우편번호 매칭
-          for (const li of candidates) {
-            const text = li.textContent || "";
-            if (kakaoRoad && text.includes(kakaoRoad) && (!targetPostalCode || text.includes(targetPostalCode))) {
               const btn = li.querySelector("button");
-              if (btn) { btn.click(); return { found: true, method: "kakao_road_exact", address: kakaoRoad }; }
+              if (btn) {
+                btn.click();
+                // 선택한 주소가 카카오 도로명 또는 지번 포함하는지 확인
+                const matched =
+                  (kakaoRoad && text.includes(kakaoRoad)) ||
+                  (kakaoJibun && text.includes(kakaoJibun));
+                return { found: true, matched, address: text.substring(0, 100) };
+              }
             }
           }
-
-          // 2순위: 카카오 지번 + 우편번호 매칭
-          for (const li of candidates) {
-            const text = li.textContent || "";
-            if (kakaoJibun && text.includes(kakaoJibun) && (!targetPostalCode || text.includes(targetPostalCode))) {
-              const btn = li.querySelector("button");
-              if (btn) { btn.click(); return { found: true, method: "kakao_jibun_exact", address: kakaoJibun }; }
-            }
-          }
-
-          // 3순위: 카카오 도로명만 매칭 (우편번호 무시)
-          for (const li of candidates) {
-            const text = li.textContent || "";
-            if (kakaoRoad && text.includes(kakaoRoad)) {
-              const btn = li.querySelector("button");
-              if (btn) { btn.click(); return { found: true, method: "kakao_road_only", address: kakaoRoad }; }
-            }
-          }
-
-          // 4순위: 카카오 지번만 매칭
-          for (const li of candidates) {
-            const text = li.textContent || "";
-            if (kakaoJibun && text.includes(kakaoJibun)) {
-              const btn = li.querySelector("button");
-              if (btn) { btn.click(); return { found: true, method: "kakao_jibun_only", address: kakaoJibun }; }
-            }
-          }
-
-          // 5순위: 매칭 실패 시 첫 번째 결과 선택 (더블체킹에서 최종 검증)
-          if (candidates.length > 0) {
-            const btn = candidates[0].querySelector("button");
-            if (btn) {
-              btn.click();
-              return { found: true, method: "first_item_fallback", address: candidates[0].textContent?.substring(0, 80) };
-            }
-          }
-
-          return { found: false, candidateCount: candidates.length };
+          return { found: false, matched: false };
         },
         {
           kakaoRoad: kakaoResult?.roadAddress || null,
           kakaoJibun: kakaoResult?.jibunAddress || null,
-          targetPostalCode: postalCode,
         },
       );
+
+      // 선택은 했지만 카카오 매칭 실패 → 에러
+      if (addressSelected.found && !addressSelected.matched && kakaoResult) {
+        console.error(`[naver] ❌ 선택된 주소가 카카오 결과와 불일치`);
+        console.error(`[naver]   선택된: ${addressSelected.address}`);
+        console.error(`[naver]   카카오 도로명: ${kakaoResult.roadAddress}`);
+        console.error(`[naver]   카카오 지번: ${kakaoResult.jibunAddress}`);
+        return { success: false, reason: "address_mismatch_after_select" };
+      }
 
       if (!addressSelected.found) {
         console.log(`[naver] 주소 검색 결과에서 매칭 실패 (후보 ${addressSelected.candidateCount}개)`);
