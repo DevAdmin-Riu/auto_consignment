@@ -1213,44 +1213,36 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
       await delay(300);
     }
 
-    // 9-1. 주소 검증 (카카오 API vs 화면 표시 주소) — 셀렉터 확인 후 활성화
-    // TODO: #recv_addr_1, #recv_zipcode 셀렉터 실제 사이트에서 확인 필요
-    /*
+    // 9-1. 주소 검증 (카카오 API vs #recv_addr_1)
     console.log("[adpia] 주소 검증 시작...");
     const addrToVerify = shippingInfo.streetAddress1 || shippingInfo.address || "";
     const kakaoVerifyResult = await searchAddressWithKakao(addrToVerify);
     if (!kakaoVerifyResult) {
       console.log("[adpia] 카카오 API 결과 없음 - 검증 스킵");
     } else {
-      const displayedAddr = await page.evaluate(() => {
-        const zipcode = document.querySelector("#recv_zipcode")?.value || "";
-        const addr1 = document.querySelector("#recv_addr_1")?.value || "";
-        const addr2 = document.querySelector("#recv_addr_2")?.value || "";
-        return { zipcode, addr1, addr2, full: `${addr1} ${addr2}`.trim() };
-      });
-      console.log("[adpia] 화면 주소:", JSON.stringify(displayedAddr));
+      const addr1 = await page.$eval("#recv_addr_1", (el) => el.value).catch(() => "");
+      console.log("[adpia] 화면 기본주소:", addr1);
 
-      const kakaoAddresses = [
+      const normalizedAddr1 = normalizeAddress(addr1);
+      const kakaoChecks = [
+        kakaoVerifyResult.roadAddress,
+        kakaoVerifyResult.jibunAddress,
         normalizeAddress(kakaoVerifyResult.roadAddress),
         normalizeAddress(kakaoVerifyResult.jibunAddress),
       ].filter(Boolean);
 
-      const normalizedDisplayed = normalizeAddress(displayedAddr.full);
-      const addressMatched = kakaoAddresses.some(
-        (kakaoAddr) => normalizedDisplayed.includes(kakaoAddr) || kakaoAddr.includes(normalizeAddress(displayedAddr.addr1))
-      );
+      const matched = kakaoChecks.some(k => addr1.includes(k) || normalizedAddr1.includes(k));
 
-      if (addressMatched) {
-        console.log("[adpia] 주소 검증 성공");
+      if (matched) {
+        console.log("[adpia] ✅ 주소 검증 성공");
       } else {
-        console.error("[adpia] 주소 검증 실패!");
+        console.error("[adpia] ❌ 주소 검증 실패!");
         console.error(`[adpia]   카카오 도로명: ${kakaoVerifyResult.roadAddress}`);
         console.error(`[adpia]   카카오 지번: ${kakaoVerifyResult.jibunAddress}`);
-        console.error(`[adpia]   화면 주소: ${displayedAddr.full}`);
-        return { success: false, message: `주소 검증 실패 - 카카오: ${kakaoVerifyResult.roadAddress}, 화면: ${displayedAddr.full}` };
+        console.error(`[adpia]   화면 주소: ${addr1}`);
+        return { success: false, message: `주소 검증 실패 - 카카오: ${kakaoVerifyResult.roadAddress}, 화면: ${addr1}` };
       }
     }
-    */
 
     // 10~12. 배송방법 + 결제수단 선택 (서로 초기화시킬 수 있어서 재확인 필요)
     await delay(2000); // 주소 입력 후 렌더링 대기

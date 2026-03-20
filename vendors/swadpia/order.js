@@ -1413,44 +1413,38 @@ async function placeOrder(page, shippingAddress) {
       });
     }
 
-    // 8-1. 주소 검증 (카카오 API vs 화면 표시 주소) — 셀렉터 확인 후 활성화
-    // TODO: #recv_addr_1, #recv_zipcode 셀렉터 실제 사이트에서 확인 필요
-    /*
+    // 8-1. 주소 검증 (카카오 API vs #recv_addr_1)
     console.log("[swadpia] 주소 검증 시작...");
     const addrToVerify = shippingAddress?.streetAddress1 || "";
     const kakaoVerifyResult = await searchAddressWithKakao(addrToVerify);
     if (!kakaoVerifyResult) {
       console.log("[swadpia] 카카오 API 결과 없음 - 검증 스킵");
     } else {
-      const displayedAddr = await page.evaluate(() => {
-        const addr1 = document.querySelector("#recv_addr_1")?.value || "";
-        const addr2 = document.querySelector("#recv_addr_2")?.value || "";
-        const zipcode = document.querySelector("#recv_zipcode")?.value || "";
-        return { zipcode, addr1, addr2, full: `${addr1} ${addr2}`.trim() };
-      });
-      console.log("[swadpia] 화면 주소:", JSON.stringify(displayedAddr));
+      const jibunAddr = await page.$eval("#recv_addr_1", (el) => el.value).catch(() => "");
+      const roadAddr = await page.$eval("#recv_addr_1_new", (el) => el.value).catch(() => "");
+      console.log("[swadpia] 화면 지번주소:", jibunAddr);
+      console.log("[swadpia] 화면 도로명주소:", roadAddr);
 
-      const kakaoAddresses = [
+      const displayAddrs = [jibunAddr, roadAddr, normalizeAddress(jibunAddr), normalizeAddress(roadAddr)].filter(Boolean);
+      const kakaoChecks = [
+        kakaoVerifyResult.roadAddress,
+        kakaoVerifyResult.jibunAddress,
         normalizeAddress(kakaoVerifyResult.roadAddress),
         normalizeAddress(kakaoVerifyResult.jibunAddress),
       ].filter(Boolean);
 
-      const normalizedDisplayed = normalizeAddress(displayedAddr.full);
-      const addressMatched = kakaoAddresses.some(
-        (kakaoAddr) => normalizedDisplayed.includes(kakaoAddr) || kakaoAddr.includes(normalizeAddress(displayedAddr.addr1))
-      );
+      const matched = kakaoChecks.some(k => displayAddrs.some(d => d.includes(k) || k.includes(d)));
 
-      if (addressMatched) {
-        console.log("[swadpia] 주소 검증 성공");
+      if (matched) {
+        console.log("[swadpia] ✅ 주소 검증 성공");
       } else {
-        console.error("[swadpia] 주소 검증 실패!");
+        console.error("[swadpia] ❌ 주소 검증 실패!");
         console.error(`[swadpia]   카카오 도로명: ${kakaoVerifyResult.roadAddress}`);
         console.error(`[swadpia]   카카오 지번: ${kakaoVerifyResult.jibunAddress}`);
-        console.error(`[swadpia]   화면 주소: ${displayedAddr.full}`);
-        throw new Error(`주소 검증 실패 - 카카오: ${kakaoVerifyResult.roadAddress}, 화면: ${displayedAddr.full}`);
+        console.error(`[swadpia]   화면 지번: ${jibunAddr}, 도로명: ${roadAddr}`);
+        throw new Error(`주소 검증 실패 - 카카오: ${kakaoVerifyResult.roadAddress}, 화면: ${jibunAddr} / ${roadAddr}`);
       }
     }
-    */
 
     console.log("[swadpia] 배송지 정보 입력 완료");
 
