@@ -1140,6 +1140,15 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
             }
           }
 
+          // 5순위: 매칭 실패 시 첫 번째 결과 선택 (더블체킹에서 최종 검증)
+          if (candidates.length > 0) {
+            const btn = candidates[0].querySelector("button");
+            if (btn) {
+              btn.click();
+              return { found: true, method: "first_item_fallback", address: candidates[0].textContent?.substring(0, 80) };
+            }
+          }
+
           return { found: false, candidateCount: candidates.length };
         },
         {
