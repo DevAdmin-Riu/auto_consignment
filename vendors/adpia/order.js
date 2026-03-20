@@ -1054,9 +1054,25 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
     // 3. 수령인, 배송지명 입력 (동일 값)
     let recipientName =
       shippingInfo.firstName || shippingInfo.receiverName || "";
-    if (recipientName.length > 20) {
-      console.log(`[adpia] 수령인 이름 20자 초과 (${recipientName.length}자) → 20자로 자름`);
-      recipientName = recipientName.substring(0, 20);
+    // 20byte 제한 (한글 2byte, 영문/숫자 1byte)
+    const getByteLength = (str) => {
+      let bytes = 0;
+      for (const ch of str) {
+        bytes += ch.charCodeAt(0) > 127 ? 2 : 1;
+      }
+      return bytes;
+    };
+    if (getByteLength(recipientName) > 20) {
+      let trimmed = "";
+      let bytes = 0;
+      for (const ch of recipientName) {
+        const charBytes = ch.charCodeAt(0) > 127 ? 2 : 1;
+        if (bytes + charBytes > 20) break;
+        trimmed += ch;
+        bytes += charBytes;
+      }
+      console.log(`[adpia] 수령인 이름 20byte 초과 (${getByteLength(recipientName)}byte) → ${bytes}byte로 자름: ${trimmed}`);
+      recipientName = trimmed;
     }
     if (recipientName) {
       console.log(`[adpia] 3. 수령인/배송지명 입력: ${recipientName}`);
