@@ -453,7 +453,7 @@ async function setQuantityAndGetPrice(
 
   const quantityInput = await waitFor(page, quantitySelector, 10000);
   if (!quantityInput) {
-    console.log(`[napkin] ⚠️ 수량 필드 못찾음: ${quantitySelector}`);
+    throw new Error(`수량 필드 못찾음: ${quantitySelector} (박스: ${boxIndex})`);
   }
 
   if (quantityInput && quantity > 1) {
@@ -694,11 +694,11 @@ async function setQuantity(page, quantity) {
       return { success: true };
     } catch (e) {
       console.log(`[napkin] 수량 버튼 클릭 실패: ${e.message}`);
+      return { success: false, message: `수량 버튼 클릭 실패: ${e.message}` };
     }
   }
 
-  console.log("[napkin] 수량 입력 불가, 기본값 사용");
-  return { success: true, skipped: true };
+  return { success: false, message: "수량 입력 불가: 수량 입력 필드와 수량 버튼 모두 찾을 수 없음" };
 }
 
 /**
@@ -937,7 +937,29 @@ async function processNapkinOrder(
 
         // 3-3. 수량 설정 (옵션이 없는 경우에만)
         if (!hasOptions) {
-          await setQuantity(page, actualQuantity);
+          const qtyResult = await setQuantity(page, actualQuantity);
+          if (!qtyResult.success) {
+            errorCollector.addError(
+              ORDER_STEPS.ADD_TO_CART,
+              null,
+              qtyResult.message,
+              {
+                purchaseOrderId,
+                purchaseOrderLineId: lineId,
+                productVariantVendorId: product.productVariantVendorId,
+              },
+            );
+            results.push({
+              lineId,
+              productName: product.productName,
+              productSku: product.productSku,
+              productVariantVendorId: product.productVariantVendorId,
+              purchaseOrderId: product.purchaseOrderId,
+              success: false,
+              message: qtyResult.message,
+            });
+            continue; // 다음 상품으로
+          }
         }
 
         // 3-4. 장바구니 담기

@@ -416,12 +416,10 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
         await delay(1000);
       } else {
         console.log("[adpia] 수량 입력/선택 필드를 찾을 수 없음");
-        errorCollector.addError(
-          ORDER_STEPS.OPTION_SELECTION,
-          ERROR_CODES.ELEMENT_NOT_FOUND,
-          "수량 선택 UI를 찾을 수 없음 (#holder_num, input.input30[isnumber], select#quantity 모두 없음)",
-          { productCode: product.productCode, purchaseOrderId }
-        );
+        return {
+          success: false,
+          message: "수량 선택 UI를 찾을 수 없음 (#holder_num, input.input30[isnumber], select#quantity 모두 없음)",
+        };
       }
     }
   }
@@ -436,6 +434,10 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       await delay(1000);
     } else {
       console.log("[adpia] 파일 입력 필드를 찾을 수 없음");
+      return {
+        success: false,
+        message: "파일 입력 필드를 찾을 수 없음",
+      };
     }
   }
 

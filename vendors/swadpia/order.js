@@ -716,10 +716,14 @@ async function addProductsToCart(page, products, downloadedFiles) {
             console.log("[swadpia] 파일 선택 완료");
             await new Promise((resolve) => setTimeout(resolve, 1000));
           } else {
-            console.log("[swadpia] iframe 내부 file input을 찾을 수 없음");
+            throw new Error(
+              `[swadpia] iframe 내부 file input을 찾을 수 없음 (상품: ${productCode})`,
+            );
           }
         } else {
-          console.log("[swadpia] iframe에 접근할 수 없음");
+          throw new Error(
+            `[swadpia] iframe에 접근할 수 없음 (상품: ${productCode})`,
+          );
         }
 
         // 8-1. 교정확인 후 인쇄 라디오 버튼 클릭

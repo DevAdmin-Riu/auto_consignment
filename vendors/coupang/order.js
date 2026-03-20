@@ -234,6 +234,11 @@ async function processCoupangOrder(
             }
           }
 
+          if (!qtySet) {
+            console.error("[coupang] ❌ 수량 설정 실패");
+            return { success: false, error: "수량 설정 실패" };
+          }
+
           await delay(1000);
           steps.push({
             step: `product_${productIndex + 1}_quantity`,
@@ -851,7 +856,7 @@ async function processCoupangOrder(
               }
             }
           } catch (e) {
-            console.log("주문금액 추출 실패:", e.message);
+            console.warn("[coupang] ⚠️ 주문금액 추출 실패 (비치명적):", e.message);
           }
 
           return {
@@ -920,7 +925,7 @@ async function processCoupangOrder(
               }
             }
           } catch (e) {
-            console.log("[결제 완료] 주문번호 추출 실패:", e.message);
+            console.warn("[coupang] ⚠️ [결제 완료] 주문번호 추출 실패 (재시도 중):", e.message);
           }
 
           steps.push({
