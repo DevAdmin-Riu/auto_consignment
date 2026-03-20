@@ -1052,8 +1052,12 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
     }
 
     // 3. 수령인, 배송지명 입력 (동일 값)
-    const recipientName =
+    let recipientName =
       shippingInfo.firstName || shippingInfo.receiverName || "";
+    if (recipientName.length > 20) {
+      console.log(`[adpia] 수령인 이름 20자 초과 (${recipientName.length}자) → 20자로 자름`);
+      recipientName = recipientName.substring(0, 20);
+    }
     if (recipientName) {
       console.log(`[adpia] 3. 수령인/배송지명 입력: ${recipientName}`);
 
