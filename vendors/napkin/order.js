@@ -47,6 +47,13 @@ const {
   processPhonePayment,
 } = require("../../lib/shinhan-payment");
 const { getEnv } = require("../config");
+const {
+  findDaumFrameViaCDP,
+  cleanupCDPFrame,
+  searchAddressInFrame,
+  selectAddressResult,
+} = require("../../lib/daum-address");
+const { searchAddressWithKakao } = require("../../lib/address-verify"); // eslint-disable-line
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1178,90 +1185,71 @@ async function processNapkinOrder(
         // 7-2. 주소 검색 버튼 클릭
         console.log("[napkin] 주소 검색 버튼 클릭...");
         const addressSearchBtn = await page.$(SELECTORS.order.addressSearchBtn);
-        if (addressSearchBtn) {
-          await page.evaluate((el) => el.click(), addressSearchBtn);
-          await delay(1500);
-
-          // 7-3. 다음 주소 검색 iframe 찾기
-          console.log("[napkin] 주소 검색 iframe 찾기...");
-          let frame = null;
-          for (let i = 0; i < 30; i++) {
-            const allFrames = page.frames();
-            for (const f of allFrames) {
-              try {
-                const hasInput = await f.$(SELECTORS.order.daumAddressInput);
-                if (hasInput) {
-                  frame = f;
-                  console.log(`[napkin] 주소 검색 iframe 발견 (${i + 1}회)`);
-                  break;
-                }
-              } catch (e) {
-                // 무시
-              }
-            }
-            if (frame) break;
-            await delay(500);
-          }
-
-          if (frame) {
-            // iframe 로딩 대기
-            await delay(1000);
-
-            // 7-4. 주소 검색어 입력
-            const searchAddress =
-              shippingAddress.streetAddress1 || shippingAddress.address || "";
-            if (searchAddress) {
-              console.log(`[napkin] 주소 검색어: ${searchAddress}`);
-              const addressInput = await frame.$(
-                SELECTORS.order.daumAddressInput,
-              );
-              if (addressInput) {
-                await frame.evaluate((el) => { el.focus(); el.click(); }, addressInput);
-                await addressInput.type(searchAddress, { delay: 50 });
-                await delay(300);
-
-                // 검색 버튼 클릭 또는 Enter
-                const searchBtn = await frame.$(
-                  SELECTORS.order.daumSearchButton,
-                );
-                if (searchBtn) {
-                  await frame.evaluate((el) => el.click(), searchBtn);
-                } else {
-                  await frame.keyboard.press("Enter");
-                }
-                await delay(1500);
-
-                // 7-5. 검색 결과 첫 번째 항목 클릭
-                console.log("[napkin] 주소 검색 결과 선택...");
-                try {
-                  await frame.waitForSelector(SELECTORS.order.daumAddressItem, {
-                    timeout: 5000,
-                  });
-                  await delay(500);
-                  await frame.evaluate((selector) => {
-                    const firstItem = document.querySelector(selector);
-                    if (firstItem) {
-                      const roadAddrBtn = firstItem.querySelector(
-                        ".main_road .link_post",
-                      );
-                      if (roadAddrBtn) {
-                        roadAddrBtn.click();
-                      } else {
-                        firstItem.click();
-                      }
-                    }
-                  }, SELECTORS.order.daumAddressItem);
-                  console.log("[napkin] 주소 선택 완료");
-                  await delay(1500);
-                } catch (e) {
-                  console.log("[napkin] 주소 검색 결과 없음:", e.message);
-                }
-              }
-            }
-          } else {
-            console.log("[napkin] 주소 검색 iframe 못찾음");
-          }
+        if (!addressSearchBtn) {
+          throw new Error("주소 검색 버튼을 찾을 수 없음");
         }
+        await page.evaluate((el) => el.click(), addressSearchBtn);
+        await delay(1500);
+
+        // 7-3. 카카오 API로 도로명 주소 정규화
+        const rawAddress = shippingAddress.streetAddress1 || shippingAddress.address || "";
+        const kakaoResult = await searchAddressWithKakao(rawAddress);
+        const searchAddress = kakaoResult?.roadAddress || rawAddress;
+        console.log(`[napkin] 카카오 정규화 주소: ${searchAddress} (원본: ${rawAddress})`);
+
+        // 7-4. 다음 주소 검색 iframe 찾기 (공통 모듈 + 일반 frame 폴백)
+        console.log("[napkin] 주소 검색 iframe 찾기...");
+        let frame = null;
+
+        // 일반 frame 접근 시도
+        for (let i = 0; i < 30; i++) {
+          const allFrames = page.frames();
+          for (const f of allFrames) {
+            try {
+              const hasInput = await f.$(SELECTORS.order.daumAddressInput);
+              if (hasInput) {
+                frame = f;
+                console.log(`[napkin] 주소 검색 iframe 발견 - 일반 frame (${i + 1}회)`);
+                break;
+              }
+            } catch (e) { /* 무시 */ }
+          }
+          if (frame) break;
+          await delay(500);
+        }
+
+        // 일반 접근 실패 시 CDP 방식 시도
+        if (!frame) {
+          console.log("[napkin] 일반 frame 접근 실패, CDP 방식 시도...");
+          frame = await findDaumFrameViaCDP(page, SELECTORS.order.daumAddressInput, "[napkin]");
+        }
+
+        if (!frame) {
+          throw new Error("주소 검색 iframe 못찾음");
+        }
+
+        await delay(1000);
+
+        // 7-5. 주소 검색어 입력 (공통 모듈)
+        if (!searchAddress) {
+          throw new Error("검색할 주소가 없음");
+        }
+        const searchResult = await searchAddressInFrame(frame, searchAddress, "[napkin]");
+        if (!searchResult.success) {
+          await cleanupCDPFrame(frame, "[napkin]");
+          throw new Error(`주소 검색 실패: ${searchResult.error}`);
+        }
+
+        // 7-6. 검색 결과 선택 (공통 모듈)
+        console.log("[napkin] 주소 검색 결과 선택...");
+        const selectResult = await selectAddressResult(frame, SELECTORS.order.daumAddressItem, "[napkin]");
+        if (!selectResult.success) {
+          await cleanupCDPFrame(frame, "[napkin]");
+          throw new Error(`주소 선택 실패: ${selectResult.error}`);
+        }
+        console.log("[napkin] ✅ 주소 선택 완료");
+        await cleanupCDPFrame(frame, "[napkin]");
+        await delay(1500);
 
         // 7-6. 상세주소 입력
         const rawDetail = (shippingAddress.streetAddress2 || shippingAddress.addressDetail || "").trim();
