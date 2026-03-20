@@ -996,156 +996,165 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
       }
     }
 
-    // 3. 주소 검색
+    // 3. 주소 검색 (카카오 API로 정규화된 도로명 주소 사용)
     const postalCode = shippingAddress.postalCode;
-    const streetAddress1 = shippingAddress.streetAddress1; // 검색용 주소
+    const streetAddress1 = shippingAddress.streetAddress1; // 원본 주소
     const streetAddress2 = shippingAddress.streetAddress2; // 상세 주소
 
     if (streetAddress1) {
-      // 주소 검색 버튼 클릭
-      const addressSearchBtnSelector =
-        "#content > div > div.InputDeliveryAddress_article__W6zIG > div.LabelLineBasic_article__IC2hu > div > div > button";
-      const addressSearchBtn = await popupPage.$(addressSearchBtnSelector);
-      if (!addressSearchBtn) {
+      // 카카오 API로 도로명 주소 정규화
+      const { searchAddressWithKakao } = require("../../lib/address-verify");
+      const kakaoResult = await searchAddressWithKakao(streetAddress1);
+      const searchQuery = kakaoResult?.roadAddress || streetAddress1;
+      console.log(`[naver] 카카오 정규화 주소: ${searchQuery} (원본: ${streetAddress1})`);
+
+      // 주소 검색 버튼 클릭 (텍스트 기반)
+      const addressSearchBtn = await popupPage.evaluateHandle(() => {
+        const buttons = document.querySelectorAll("button");
+        for (const btn of buttons) {
+          const text = (btn.textContent || "").trim();
+          if (text === "주소검색" || text === "주소 검색" || text.includes("검색")) {
+            // 주소 관련 섹션 내 버튼인지 확인
+            const parent = btn.closest("[class*='Address'], [class*='address'], [class*='Delivery']");
+            if (parent) return btn;
+          }
+        }
+        // 폴백: input 근처 버튼
+        const addrInput = document.querySelector("input[name='address'], input[placeholder*='주소']");
+        if (addrInput) {
+          const section = addrInput.closest("div");
+          if (section) {
+            const btn = section.querySelector("button");
+            if (btn) return btn;
+          }
+        }
+        return null;
+      });
+
+      if (!addressSearchBtn || !(await addressSearchBtn.asElement())) {
         console.log("[naver] 주소 검색 버튼을 찾을 수 없음");
         return { success: false, reason: "address_search_button_not_found" };
       }
 
       await addressSearchBtn.click();
       console.log("[naver] 주소 검색 버튼 클릭");
-      await delay(2000); // React DOM 업데이트 대기
+      await delay(2000);
 
-      // 주소 검색 input
-      const searchInputSelector =
-        "#content > div > div.article > div > div > div > div.InputBoxSearch_section-input__PU\\+ri > div > div > input";
-      const searchInput = await popupPage.$(searchInputSelector);
-      if (!searchInput) {
+      // 주소 검색 input (type=search 또는 placeholder 기반)
+      const searchInput = await popupPage.evaluateHandle(() => {
+        const inputs = document.querySelectorAll("input[type='search'], input[type='text']");
+        for (const input of inputs) {
+          const placeholder = (input.placeholder || "").toLowerCase();
+          if (placeholder.includes("주소") || placeholder.includes("도로명") || placeholder.includes("검색")) {
+            return input;
+          }
+        }
+        // 폴백: 검색 영역 내 input
+        const searchArea = document.querySelector("[class*='Search'], [class*='search']");
+        if (searchArea) {
+          const input = searchArea.querySelector("input");
+          if (input) return input;
+        }
+        return null;
+      });
+
+      if (!searchInput || !(await searchInput.asElement())) {
         console.log("[naver] 주소 검색 input을 찾을 수 없음");
         return { success: false, reason: "address_search_input_not_found" };
       }
 
-      await searchInput.type(streetAddress1, { delay: 30 });
-      console.log(`[naver] 주소 검색어 입력: ${streetAddress1}`);
+      await searchInput.type(searchQuery, { delay: 30 });
+      console.log(`[naver] 주소 검색어 입력: ${searchQuery}`);
       await delay(500);
 
-      // 검색 버튼 클릭
-      const searchBtnSelector =
-        "#content > div > div.article > div > div > div > div.InputBoxSearch_section-button__l0JLE > button";
-      const searchBtn = await popupPage.$(searchBtnSelector);
-      if (!searchBtn) {
-        console.log("[naver] 주소 검색 실행 버튼을 찾을 수 없음");
-        return { success: false, reason: "address_search_exec_button_not_found" };
+      // 검색 실행 버튼 (텍스트 기반)
+      const searchBtn = await popupPage.evaluateHandle(() => {
+        const buttons = document.querySelectorAll("button");
+        for (const btn of buttons) {
+          const text = (btn.textContent || "").trim();
+          if (text === "검색" || text === "조회") {
+            return btn;
+          }
+        }
+        return null;
+      });
+
+      if (!searchBtn || !(await searchBtn.asElement())) {
+        // Enter 키로 폴백
+        console.log("[naver] 검색 버튼 못찾음, Enter 키로 검색");
+        await popupPage.keyboard.press("Enter");
+      } else {
+        await searchBtn.click();
+        console.log("[naver] 주소 검색 버튼 클릭");
       }
+      await delay(2000);
 
-      await searchBtn.click();
-      console.log("[naver] 주소 검색 버튼 클릭");
-      await delay(2000); // 검색 결과 대기
-
-      // 주소 목록에서 주소 포함 여부 확인
+      // 주소 목록에서 텍스트 기반 선택 (CSS 클래스 의존 제거)
       const addressSelected = await popupPage.evaluate(
-        ({ targetPostalCode, targetAddress }) => {
-          const items = document.querySelectorAll(
-            "ul.article li.AddressSearchList_item__1SQUD, li[class*='AddressSearchList_item']",
-          );
-          console.log(`[DEBUG] 주소 검색 결과: ${items.length}개`);
+        ({ kakaoRoad, kakaoJibun, targetPostalCode }) => {
+          // li 요소들 중 주소 텍스트를 포함한 항목 찾기
+          const allLis = document.querySelectorAll("li");
+          const candidates = [];
 
-          for (const item of items) {
-            // 도로명 주소
-            const roadAddressEl = item.querySelector(
-              "p.AddressSearchList_address__35JSF, p[class*='address']",
-            );
-            const roadAddress = roadAddressEl?.textContent?.trim() || "";
-
-            // 지번/우편번호 (dd 요소들)
-            const ddElements = item.querySelectorAll(
-              "dd.AddressSearchList_value__pzlIB, dd[class*='value']",
-            );
-            const jibunAddress = ddElements[0]?.textContent?.trim() || "";
-            const itemPostalCode =
-              ddElements[1]?.textContent?.trim() || "";
-
-            console.log(
-              `[DEBUG] 비교: "${targetAddress}" in "${roadAddress}" or "${jibunAddress}"`,
-            );
-            console.log(
-              `[DEBUG] 우편번호: ${itemPostalCode} vs ${targetPostalCode}`,
-            );
-
-            // targetAddress가 도로명/지번 주소에 포함되는지 확인
-            const addressMatch =
-              roadAddress.includes(targetAddress) ||
-              jibunAddress.includes(targetAddress);
-            const postalMatch = itemPostalCode === targetPostalCode;
-
-            if (addressMatch && postalMatch) {
-              console.log(`[DEBUG] 주소+우편번호 매칭 성공!`);
-              const selectBtn = item.querySelector(
-                "button.AddressSearchList_button-address__dddyA, button[class*='button-address']",
-              );
-              if (selectBtn) {
-                selectBtn.click();
-                return {
-                  found: true,
-                  method: "exact_match",
-                  address: roadAddress,
-                  postalCode: itemPostalCode,
-                };
-              }
+          for (const li of allLis) {
+            const text = (li.textContent || "").trim();
+            // 우편번호나 주소 키워드가 포함된 li만 후보로
+            if (text.length > 10 && (text.includes("로 ") || text.includes("길 ") || text.includes("동 ") || text.match(/\d{5}/))) {
+              candidates.push(li);
             }
           }
 
-          // 주소만 매칭 (우편번호 불일치)
-          for (const item of items) {
-            const roadAddressEl = item.querySelector(
-              "p.AddressSearchList_address__35JSF, p[class*='address']",
-            );
-            const roadAddress = roadAddressEl?.textContent?.trim() || "";
-            const ddElements = item.querySelectorAll(
-              "dd.AddressSearchList_value__pzlIB, dd[class*='value']",
-            );
-            const jibunAddress = ddElements[0]?.textContent?.trim() || "";
-
-            if (
-              roadAddress.includes(targetAddress) ||
-              jibunAddress.includes(targetAddress)
-            ) {
-              console.log(`[DEBUG] 주소만 매칭 (우편번호 불일치)`);
-              const selectBtn = item.querySelector(
-                "button.AddressSearchList_button-address__dddyA, button[class*='button-address']",
-              );
-              if (selectBtn) {
-                selectBtn.click();
-                return {
-                  found: true,
-                  method: "address_only",
-                  address: roadAddress,
-                };
-              }
+          // 1순위: 카카오 도로명 + 우편번호 매칭
+          for (const li of candidates) {
+            const text = li.textContent || "";
+            if (kakaoRoad && text.includes(kakaoRoad) && (!targetPostalCode || text.includes(targetPostalCode))) {
+              const btn = li.querySelector("button");
+              if (btn) { btn.click(); return { found: true, method: "kakao_road_exact", address: kakaoRoad }; }
             }
           }
 
-          // 매칭 실패 시 첫 번째 선택
-          if (items.length > 0) {
-            const firstBtn = items[0].querySelector(
-              "button[class*='button-address']",
-            );
-            if (firstBtn) {
-              firstBtn.click();
-              return { found: true, method: "first_item" };
+          // 2순위: 카카오 지번 + 우편번호 매칭
+          for (const li of candidates) {
+            const text = li.textContent || "";
+            if (kakaoJibun && text.includes(kakaoJibun) && (!targetPostalCode || text.includes(targetPostalCode))) {
+              const btn = li.querySelector("button");
+              if (btn) { btn.click(); return { found: true, method: "kakao_jibun_exact", address: kakaoJibun }; }
             }
           }
 
-          return { found: false };
+          // 3순위: 카카오 도로명만 매칭 (우편번호 무시)
+          for (const li of candidates) {
+            const text = li.textContent || "";
+            if (kakaoRoad && text.includes(kakaoRoad)) {
+              const btn = li.querySelector("button");
+              if (btn) { btn.click(); return { found: true, method: "kakao_road_only", address: kakaoRoad }; }
+            }
+          }
+
+          // 4순위: 카카오 지번만 매칭
+          for (const li of candidates) {
+            const text = li.textContent || "";
+            if (kakaoJibun && text.includes(kakaoJibun)) {
+              const btn = li.querySelector("button");
+              if (btn) { btn.click(); return { found: true, method: "kakao_jibun_only", address: kakaoJibun }; }
+            }
+          }
+
+          return { found: false, candidateCount: candidates.length };
         },
-        { targetPostalCode: postalCode, targetAddress: streetAddress1 },
+        {
+          kakaoRoad: kakaoResult?.roadAddress || null,
+          kakaoJibun: kakaoResult?.jibunAddress || null,
+          targetPostalCode: postalCode,
+        },
       );
 
       if (!addressSelected.found) {
-        console.log("[naver] 주소 검색 결과에서 매칭 실패");
+        console.log(`[naver] 주소 검색 결과에서 매칭 실패 (후보 ${addressSelected.candidateCount}개)`);
         return { success: false, reason: "address_match_failed" };
       }
 
-      console.log(`[naver] 주소 선택됨:`, addressSelected);
+      console.log(`[naver] 주소 선택됨: ${addressSelected.method} - ${addressSelected.address}`);
       await delay(1000);
 
       // 상세 주소 입력 (없으면 받는이 이름 사용)
@@ -1161,11 +1170,19 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
         }
       }
 
-      // 확인 버튼 클릭
-      const confirmBtnSelector =
-        "#content > div > div.ButtonRegister_article__W3rjR > button";
-      const confirmBtn = await popupPage.$(confirmBtnSelector);
-      if (confirmBtn) {
+      // 확인/저장 버튼 클릭 (텍스트 기반)
+      const confirmBtn = await popupPage.evaluateHandle(() => {
+        const buttons = document.querySelectorAll("button");
+        for (const btn of buttons) {
+          const text = (btn.textContent || "").trim();
+          if (text === "확인" || text === "저장" || text === "등록") {
+            return btn;
+          }
+        }
+        return null;
+      });
+
+      if (confirmBtn && (await confirmBtn.asElement())) {
         await confirmBtn.click();
         console.log("[naver] 주소 확인 버튼 클릭");
         await delay(1000);
@@ -2245,9 +2262,29 @@ async function processNaverOrder(
           continue;
         }
 
-        // 배송지 선택 후 검증 (카카오 주소 API)
+        // 배송지 선택 후 검증 (span.blind "주소" 기반 + 카카오 API)
         console.log("[naver] 결제 전 배송지 검증...");
         await delay(2000);
+
+        // span.blind "주소" 텍스트로 화면 주소 추출
+        const displayedAddress = await page.evaluate(() => {
+          const blindSpans = document.querySelectorAll("span.blind");
+          for (const span of blindSpans) {
+            if (span.textContent.trim() === "주소") {
+              const parent = span.parentElement;
+              if (parent) {
+                const fullText = parent.textContent.replace("주소", "").trim();
+                return fullText;
+              }
+            }
+          }
+          return null;
+        });
+
+        if (displayedAddress) {
+          console.log(`[naver] 화면 배송지 (blind): ${displayedAddress}`);
+        }
+
         const verifyResult = await verifyShippingAddressOnPage(page, shippingAddress, "naver");
         if (verifyResult.success) {
           console.log("[naver] ✅ 배송지 검증 통과");
