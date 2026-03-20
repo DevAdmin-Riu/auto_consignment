@@ -1269,44 +1269,35 @@ async function processNapkinOrder(
           }
         }
 
-        // 7-6-1. 주소 검증 (카카오 API vs 화면 표시 주소) — 셀렉터 확인 후 활성화
-        // TODO: #raddr1, #rzipcode 셀렉터 실제 사이트에서 확인 필요
-        /*
+        // 7-6-1. 주소 검증 (카카오 API vs #raddr1)
         console.log("[napkin] 주소 검증 시작...");
-        const addrToVerify = rawAddress;
-        const kakaoVerifyResult = await searchAddressWithKakao(addrToVerify);
+        const kakaoVerifyResult = await searchAddressWithKakao(rawAddress);
         if (!kakaoVerifyResult) {
           console.log("[napkin] 카카오 API 결과 없음 - 검증 스킵");
         } else {
-          const displayedAddr = await page.evaluate(() => {
-            const addr1 = document.querySelector("#raddr1")?.value || "";
-            const addr2 = document.querySelector("#raddr2")?.value || "";
-            const zipcode = document.querySelector("#rzipcode")?.value || document.querySelector("#rzipcode1")?.value || "";
-            return { zipcode, addr1, addr2, full: `${addr1} ${addr2}`.trim() };
-          });
-          console.log("[napkin] 화면 주소:", JSON.stringify(displayedAddr));
+          const addr1 = await page.$eval("#raddr1", (el) => el.value).catch(() => "");
+          console.log("[napkin] 화면 기본주소:", addr1);
 
-          const kakaoAddresses = [
+          const normalizedAddr1 = normalizeAddress(addr1);
+          const kakaoChecks = [
+            kakaoVerifyResult.roadAddress,
+            kakaoVerifyResult.jibunAddress,
             normalizeAddress(kakaoVerifyResult.roadAddress),
             normalizeAddress(kakaoVerifyResult.jibunAddress),
           ].filter(Boolean);
 
-          const normalizedDisplayed = normalizeAddress(displayedAddr.full);
-          const addressMatched = kakaoAddresses.some(
-            (kakaoAddr) => normalizedDisplayed.includes(kakaoAddr) || kakaoAddr.includes(normalizeAddress(displayedAddr.addr1))
-          );
+          const matched = kakaoChecks.some(k => addr1.includes(k) || normalizedAddr1.includes(k));
 
-          if (addressMatched) {
-            console.log("[napkin] 주소 검증 성공");
+          if (matched) {
+            console.log("[napkin] ✅ 주소 검증 성공");
           } else {
-            console.error("[napkin] 주소 검증 실패!");
+            console.error("[napkin] ❌ 주소 검증 실패!");
             console.error(`[napkin]   카카오 도로명: ${kakaoVerifyResult.roadAddress}`);
             console.error(`[napkin]   카카오 지번: ${kakaoVerifyResult.jibunAddress}`);
-            console.error(`[napkin]   화면 주소: ${displayedAddr.full}`);
-            throw new Error(`주소 검증 실패 - 카카오: ${kakaoVerifyResult.roadAddress}, 화면: ${displayedAddr.full}`);
+            console.error(`[napkin]   화면 주소: ${addr1}`);
+            throw new Error(`주소 검증 실패 - 카카오: ${kakaoVerifyResult.roadAddress}, 화면: ${addr1}`);
           }
         }
-        */
 
         // 7-7. 휴대폰 번호 입력
         // 주소 변경 시 당일배송 여부 렌더링이 발생하므로
