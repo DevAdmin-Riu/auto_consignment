@@ -1444,7 +1444,7 @@ async function enterShippingAddress(page, shippingAddress) {
 
         if (frame) break;
 
-        console.log(`[baemin] iframe 콘텐츠 대기 중... (${i + 1}/15)`);
+        if ((i + 1) % 5 === 0) console.log(`[baemin] iframe 콘텐츠 대기 중... (${i + 1}/15)`);
       } catch (e) {
         console.log(`[baemin] 프레임 검색 실패 (${i + 1}/15): ${e.message}`);
       }

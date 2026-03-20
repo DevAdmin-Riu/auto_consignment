@@ -582,7 +582,9 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       });
 
       if (progress !== null) {
-        console.log(`[adpia] 업로드 진행률 (${i + 1}초): ${progress}%`);
+        if ((i + 1) % 10 === 0 || progress >= 90) {
+          console.log(`[adpia] 업로드 진행률 (${i + 1}초): ${progress}%`);
+        }
 
         // 최대 진행률 갱신
         if (progress > maxProgress) {
@@ -1309,7 +1311,7 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
           console.log(`[adpia] 선불택배 옵션 발견 (${wait + 1}초 대기, 총 ${optionExists.optionCount}개 옵션)`);
           break;
         }
-        if (wait % 3 === 0) {
+        if (wait % 5 === 0) {
           console.log(`[adpia] 배송방법 옵션 대기 중... (${wait + 1}초, ${optionExists.optionCount || 0}개 옵션)`);
         }
         await delay(1000);

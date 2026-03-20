@@ -1304,30 +1304,7 @@ async function selectDeliveryAddress(page, shippingAddress) {
     console.log("[naver] 팝업 창 열림, 팝업에서 주소 선택 진행...");
     await delay(3000); // 팝업 로딩 대기
 
-    // 스크린샷 저장 (디버깅용)
-    try {
-      await popupPage.screenshot({
-        path: "/tmp/naver_popup_debug.png",
-        fullPage: true,
-      });
-      console.log("[naver] 팝업 스크린샷 저장: /tmp/naver_popup_debug.png");
-    } catch (e) {
-      console.log("[naver] 스크린샷 실패:", e.message);
-    }
 
-    // 팝업 페이지에서 주소 리스트 확인
-    const popupDebug = await popupPage.evaluate(() => {
-      return {
-        url: window.location.href,
-        title: document.title,
-        bodyLength: document.body.innerHTML.length,
-        listItems: document.querySelectorAll("li").length,
-        addressItems: document.querySelectorAll(
-          "[class*='address'] li, [class*='Address'] li",
-        ).length,
-      };
-    });
-    console.log("[naver] 팝업 디버깅:", JSON.stringify(popupDebug, null, 2));
 
     // 팝업에서 주소 리스트 대기 (최대 10초)
     let addressListRendered = false;
@@ -1398,17 +1375,6 @@ async function selectDeliveryAddress(page, shippingAddress) {
 
     console.log("[naver] 배송지 수정 완료, 첫 번째 주소 선택 버튼 클릭...");
     await delay(2000);
-
-    // 디버깅: 저장 후 팝업 상태 스크린샷
-    try {
-      await popupPage.screenshot({
-        path: "/tmp/naver_after_save.png",
-        fullPage: true,
-      });
-      console.log("[naver] 저장 후 스크린샷 저장: /tmp/naver_after_save.png");
-    } catch (e) {
-      console.log("[naver] 스크린샷 실패:", e.message);
-    }
 
     // 팝업 상태 확인
     try {
