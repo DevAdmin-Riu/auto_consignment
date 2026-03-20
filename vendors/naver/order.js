@@ -1108,13 +1108,18 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
       // 선택 후 카카오 매칭 검증 (normalizeAddress로 "광역시/특별시" 등 제거 후 비교)
       if (addressSelected.found && kakaoResult) {
         const { normalizeAddress } = require("../../lib/address-verify");
-        const normalizedSelected = normalizeAddress(addressSelected.address);
-        const kakaoAddresses = [
+        const rawSelected = addressSelected.address;
+        const normalizedSelected = normalizeAddress(rawSelected);
+        const kakaoChecks = [
+          kakaoResult.roadAddress,
+          kakaoResult.jibunAddress,
           normalizeAddress(kakaoResult.roadAddress),
           normalizeAddress(kakaoResult.jibunAddress),
         ].filter(Boolean);
 
-        const matched = kakaoAddresses.some(addr => normalizedSelected.includes(addr));
+        const matched = kakaoChecks.some(addr =>
+          rawSelected.includes(addr) || normalizedSelected.includes(addr)
+        );
         if (matched) {
           console.log(`[naver] ✅ 선택된 주소 카카오 매칭 성공`);
         } else {
