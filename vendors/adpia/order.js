@@ -529,6 +529,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
     // 빠른 업로드 시 진행률 1%인데 모달이 떠있는 경우도 처리
     let maxProgress = 0;
     let modalFoundEarly = false;
+    let uploadRetryCount = 0;
     for (let i = 0; i < 120; i++) {
       await delay(1000);
 
@@ -543,9 +544,28 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
           console.log("[adpia] 파일 업로드 완료 (장바구니 모달 감지)");
           modalFoundEarly = true;
           break;
+        } else if (modalText.includes("실패")) {
+          // 업로드 실패 모달 → 닫고 장바구니 버튼 재클릭
+          uploadRetryCount++;
+          console.log(`[adpia] ❌ 파일 업로드 실패 (${uploadRetryCount}/3) - 장바구니 버튼 재클릭`);
+          await page.evaluate(() => {
+            const btn = document.querySelector(".ajs-modal button.ajs-button.btn_orange");
+            if (btn) btn.click();
+          });
+          await delay(2000);
+          if (uploadRetryCount >= 3) {
+            console.error("[adpia] 파일 업로드 3회 실패 - 중단");
+            return { success: false, message: "파일 업로드 3회 실패" };
+          }
+          // 장바구니 담기 버튼 다시 클릭
+          const retryBtn = await page.$(SELECTORS.orderPage.addToCartBtn);
+          if (retryBtn) {
+            await retryBtn.click();
+            console.log("[adpia] 장바구니 담기 버튼 재클릭");
+          }
+          await delay(3000);
         } else {
           console.log(`[adpia] 모달 감지되었으나 업로드 완료가 아님: "${modalText}" → 확인 후 계속 대기`);
-          // 업로드 완료가 아닌 모달은 닫고 계속 대기
           await page.evaluate(() => {
             const btn = document.querySelector(".ajs-modal button.ajs-button.btn_orange");
             if (btn) btn.click();
