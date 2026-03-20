@@ -1464,7 +1464,59 @@ async function selectDeliveryAddress(page, shippingAddress) {
     if (selectBtn) {
       await selectBtn.click();
       console.log("[naver] 첫 번째 주소 선택 버튼 클릭 완료");
-      await delay(2000);
+      await delay(3000);
+
+      // 배송지 입력 직후 카카오 API로 즉시 검증
+      console.log("[naver] 배송지 입력 직후 주소 검증...");
+      const { searchAddressWithKakao, normalizeAddress } = require("../../lib/address-verify");
+      const ourAddress = shippingAddress.streetAddress1 || "";
+      const kakaoResult = await searchAddressWithKakao(ourAddress);
+
+      if (kakaoResult) {
+        // span.blind "주소" 기반으로 화면 주소 읽기
+        const displayedAddress = await page.evaluate(() => {
+          const blindSpans = document.querySelectorAll("span.blind");
+          for (const span of blindSpans) {
+            if (span.textContent.trim() === "주소") {
+              const parent = span.parentElement;
+              if (parent) return parent.textContent.replace("주소", "").trim();
+            }
+          }
+          return null;
+        });
+
+        if (displayedAddress) {
+          const kakaoAddresses = [
+            kakaoResult.roadAddress,
+            kakaoResult.jibunAddress,
+            kakaoResult.roadAddressShort,
+            kakaoResult.jibunAddressShort,
+          ].filter(Boolean).map(a => normalizeAddress(a));
+
+          const normalizedDisplay = normalizeAddress(displayedAddress);
+          let matched = false;
+          for (const kakaoAddr of kakaoAddresses) {
+            if (normalizedDisplay.includes(kakaoAddr)) {
+              matched = true;
+              console.log(`[naver] ✅ 배송지 즉시 검증 통과: "${kakaoAddr}"`);
+              break;
+            }
+          }
+
+          if (!matched) {
+            console.error(`[naver] ❌ 배송지 즉시 검증 실패!`);
+            console.error(`[naver]   우리: ${ourAddress}`);
+            console.error(`[naver]   카카오 도로명: ${kakaoResult.roadAddress}`);
+            console.error(`[naver]   화면: ${displayedAddress}`);
+            return { success: false, reason: "address_verification_failed_after_input" };
+          }
+        } else {
+          console.log("[naver] 화면 주소 추출 실패 - 결제 전 검증에서 재확인");
+        }
+      } else {
+        console.log("[naver] 카카오 API 결과 없음 - 검증 스킵");
+      }
+
       return { success: true };
     }
 
