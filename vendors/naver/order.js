@@ -1090,38 +1090,40 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
       await delay(2000);
 
       // 주소 검색 결과 첫 번째 항목 선택 → 카카오 도로명/지번 매칭 검증
-      const addressSelected = await popupPage.evaluate(
-        ({ kakaoRoad, kakaoJibun }) => {
-          const allLis = document.querySelectorAll("li");
-          for (const li of allLis) {
-            const text = (li.textContent || "").trim();
-            if (text.length > 10 && (text.includes("로 ") || text.includes("길 ") || text.includes("동 ") || text.match(/\d{5}/))) {
-              const btn = li.querySelector("button");
-              if (btn) {
-                btn.click();
-                // 선택한 주소가 카카오 도로명 또는 지번 포함하는지 확인
-                const matched =
-                  (kakaoRoad && text.includes(kakaoRoad)) ||
-                  (kakaoJibun && text.includes(kakaoJibun));
-                return { found: true, matched, address: text.substring(0, 100) };
-              }
+      const addressSelected = await popupPage.evaluate(() => {
+        const allLis = document.querySelectorAll("li");
+        for (const li of allLis) {
+          const text = (li.textContent || "").trim();
+          if (text.length > 10 && (text.includes("로 ") || text.includes("길 ") || text.includes("동 ") || text.match(/\d{5}/))) {
+            const btn = li.querySelector("button");
+            if (btn) {
+              btn.click();
+              return { found: true, address: text.substring(0, 150) };
             }
           }
-          return { found: false, matched: false };
-        },
-        {
-          kakaoRoad: kakaoResult?.roadAddress || null,
-          kakaoJibun: kakaoResult?.jibunAddress || null,
-        },
-      );
+        }
+        return { found: false };
+      });
 
-      // 선택은 했지만 카카오 매칭 실패 → 에러
-      if (addressSelected.found && !addressSelected.matched && kakaoResult) {
-        console.error(`[naver] ❌ 선택된 주소가 카카오 결과와 불일치`);
-        console.error(`[naver]   선택된: ${addressSelected.address}`);
-        console.error(`[naver]   카카오 도로명: ${kakaoResult.roadAddress}`);
-        console.error(`[naver]   카카오 지번: ${kakaoResult.jibunAddress}`);
-        return { success: false, reason: "address_mismatch_after_select" };
+      // 선택 후 카카오 매칭 검증 (normalizeAddress로 "광역시/특별시" 등 제거 후 비교)
+      if (addressSelected.found && kakaoResult) {
+        const { normalizeAddress } = require("../../lib/address-verify");
+        const normalizedSelected = normalizeAddress(addressSelected.address);
+        const kakaoAddresses = [
+          normalizeAddress(kakaoResult.roadAddress),
+          normalizeAddress(kakaoResult.jibunAddress),
+        ].filter(Boolean);
+
+        const matched = kakaoAddresses.some(addr => normalizedSelected.includes(addr));
+        if (matched) {
+          console.log(`[naver] ✅ 선택된 주소 카카오 매칭 성공`);
+        } else {
+          console.error(`[naver] ❌ 선택된 주소가 카카오 결과와 불일치`);
+          console.error(`[naver]   선택된: ${addressSelected.address}`);
+          console.error(`[naver]   카카오 도로명: ${kakaoResult.roadAddress}`);
+          console.error(`[naver]   카카오 지번: ${kakaoResult.jibunAddress}`);
+          return { success: false, reason: "address_mismatch_after_select" };
+        }
       }
 
       if (!addressSelected.found) {
