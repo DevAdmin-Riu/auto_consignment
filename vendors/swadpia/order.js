@@ -50,6 +50,8 @@ const {
 const { automateISPPayment } = require("../../lib/isp-payment");
 const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
 const { getEnv } = require("../config");
+const { searchAddressInFrame, selectAddressResult } = require("../../lib/daum-address");
+const { searchAddressWithKakao } = require("../../lib/address-verify");
 
 // 임시 파일 저장 경로
 const TEMP_DIR = path.join(__dirname, "../../temp");
@@ -1283,95 +1285,46 @@ async function placeOrder(page, shippingAddress) {
     // 팝업을 못 찾았으면 현재 페이지 내 iframe 확인
     if (!popup) {
       console.log("[swadpia] 별도 팝업 창 없음 - 현재 페이지 내 iframe 확인");
-
-      // 현재 페이지 내에서 주소 검색 iframe/modal 찾기
       await new Promise((r) => setTimeout(r, 2000));
 
-      // 다음 우편번호 검색 iframe 찾기 (보통 postcode iframe으로 삽입됨)
+      // 카카오 API로 도로명 주소 정규화
+      const rawAddress = shippingAddress?.streetAddress1 || "";
+      if (!rawAddress) {
+        throw new Error("검색할 주소가 없음");
+      }
+      const kakaoResult = await searchAddressWithKakao(rawAddress);
+      const searchAddress = kakaoResult?.roadAddress || rawAddress;
+      console.log(`[swadpia] 카카오 정규화 주소: ${searchAddress} (원본: ${rawAddress})`);
+
+      // 다음 우편번호 검색 iframe 찾기
       const frames = page.frames();
-      console.log("[swadpia] 현재 페이지 프레임 수:", frames.length);
-
-      for (const frame of frames) {
+      let frame = null;
+      for (const f of frames) {
         try {
-          const frameUrl = frame.url();
-          if (frameUrl && frameUrl !== "about:blank") {
-            console.log("[swadpia] 프레임 URL:", frameUrl);
-          }
-          if (
-            frameUrl.includes("postcode") ||
-            frameUrl.includes("daum") ||
-            frameUrl.includes("post.daum")
-          ) {
-            console.log("[swadpia] Daum 우편번호 iframe 찾음");
-
-            // iframe 내에서 주소 검색
-            const streetAddress = shippingAddress?.streetAddress1 || "";
-            if (streetAddress) {
-              console.log("[swadpia] iframe 내 주소 검색:", streetAddress);
-
-              // 검색창 찾기 (다양한 셀렉터 시도)
-              const searchSelectors = [
-                SELECTORS.daumPostcode.searchInput,
-                "input.txt_search",
-                "input[type='text']",
-                "#search",
-                ".input_search",
-              ];
-
-              for (const selector of searchSelectors) {
-                try {
-                  await frame.waitForSelector(selector, { timeout: 3000 });
-                  await frame.click(selector);
-                  await frame.type(selector, streetAddress, { delay: 50 });
-                  console.log(
-                    "[swadpia] 주소 입력 완료 (셀렉터:",
-                    selector,
-                    ")",
-                  );
-
-                  // Enter 키 입력
-                  await frame.evaluate(() => {
-                    const input = document.querySelector("input[type='text']");
-                    if (input) {
-                      const event = new KeyboardEvent("keydown", {
-                        key: "Enter",
-                        keyCode: 13,
-                        bubbles: true,
-                      });
-                      input.dispatchEvent(event);
-                    }
-                  });
-                  await new Promise((r) => setTimeout(r, 2000));
-
-                  // 첫 번째 검색 결과 클릭 시도
-                  const resultSelectors = [
-                    ".list_post li:first-child",
-                    ".addr:first-child",
-                    "li.list_item:first-child",
-                    "tbody tr:first-child",
-                  ];
-
-                  for (const resultSelector of resultSelectors) {
-                    try {
-                      const result = await frame.$(resultSelector);
-                      if (result) {
-                        await result.click();
-                        console.log("[swadpia] 검색 결과 선택 완료");
-                        break;
-                      }
-                    } catch (e) {}
-                  }
-
-                  break; // 성공하면 루프 종료
-                } catch (e) {
-                  // 다음 셀렉터 시도
-                }
-              }
-            }
+          const frameUrl = f.url();
+          if (frameUrl.includes("postcode") || frameUrl.includes("daum") || frameUrl.includes("post.daum")) {
+            frame = f;
+            console.log("[swadpia] Daum 우편번호 iframe 찾음:", frameUrl);
             break;
           }
         } catch (e) {}
       }
+
+      if (!frame) {
+        throw new Error("주소 검색 iframe/팝업 못찾음");
+      }
+
+      // 공통 모듈로 주소 검색 + 선택
+      const searchResult = await searchAddressInFrame(frame, searchAddress, "[swadpia]");
+      if (!searchResult.success) {
+        throw new Error(`주소 검색 실패: ${searchResult.error}`);
+      }
+
+      const selectResult = await selectAddressResult(frame, "li.list_post_item", "[swadpia]");
+      if (!selectResult.success) {
+        throw new Error(`주소 선택 실패: ${selectResult.error}`);
+      }
+      console.log("[swadpia] ✅ 주소 선택 완료 (iframe)");
     } else {
       console.log("[swadpia] 주소 검색 창 열림");
 
@@ -1384,159 +1337,61 @@ async function placeOrder(page, shippingAddress) {
       }
 
       await new Promise((r) => setTimeout(r, 2000));
+      console.log("[swadpia] 팝업 URL:", popup.url());
 
-      // 현재 URL 확인
-      const popupUrl = popup.url();
-      console.log("[swadpia] 팝업 URL:", popupUrl);
+      // 카카오 API로 도로명 주소 정규화
+      const rawAddress = shippingAddress?.streetAddress1 || "";
+      if (!rawAddress) {
+        try { if (!popup.isClosed()) await popup.close(); } catch (e) {}
+        throw new Error("검색할 주소가 없음");
+      }
 
-      // 다음 우편번호 검색 창에서 주소 검색
-      const streetAddress = shippingAddress?.streetAddress1 || "";
-      const postalCode = shippingAddress?.postalCode || "";
+      const kakaoResult = await searchAddressWithKakao(rawAddress);
+      const searchAddress = kakaoResult?.roadAddress || rawAddress;
+      console.log(`[swadpia] 카카오 정규화 주소: ${searchAddress} (원본: ${rawAddress})`);
 
-      if (streetAddress) {
-        console.log(
-          "[swadpia] 주소 검색:",
-          streetAddress,
-          "우편번호:",
-          postalCode,
-        );
+      try {
+        // 팝업 내 다음 iframe 찾기
+        const frames = popup.frames();
+        console.log("[swadpia] 프레임 수:", frames.length);
 
-        try {
-          // iframe이 있는지 확인
-          const frames = popup.frames();
-          console.log("[swadpia] 프레임 수:", frames.length);
-
-          let targetFrame = popup; // 기본은 팝업 자체
-
-          // iframe 찾기 (Daum postcode는 보통 iframe 안에 있음)
-          if (frames.length > 1) {
-            for (const frame of frames) {
-              try {
-                const frameUrl = frame.url();
-                console.log("[swadpia] 프레임 URL:", frameUrl);
-                if (
-                  frameUrl.includes("postcode") ||
-                  frameUrl.includes("daum")
-                ) {
-                  targetFrame = frame;
-                  console.log("[swadpia] Daum 프레임 찾음");
-                  break;
-                }
-              } catch (e) {}
-            }
-          }
-
-          // 검색 입력창 대기
-          console.log("[swadpia] 검색창 대기 중...");
-          await targetFrame.waitForSelector(
-            SELECTORS.daumPostcode.searchInput,
-            {
-              timeout: 60000,
-            },
-          );
-          console.log("[swadpia] 검색창 찾음");
-
-          // 주소 입력
-          await targetFrame.click(SELECTORS.daumPostcode.searchInput);
-          await targetFrame.type(
-            SELECTORS.daumPostcode.searchInput,
-            streetAddress,
-            { delay: 50 },
-          );
-          console.log("[swadpia] 주소 입력 완료");
-
-          // Enter 키 입력
-          await popup.keyboard.press("Enter");
-          await new Promise((r) => setTimeout(r, 3000)); // 검색 결과 대기
-
-          // 검색 결과 리스트 대기
-          console.log("[swadpia] 검색 결과 대기 중...");
-          await targetFrame.waitForSelector(SELECTORS.daumPostcode.resultList, {
-            timeout: 60000,
-          });
-
-          // 검색 결과에서 우편번호/주소 매칭하여 선택
-          const selectedAddress = await targetFrame.evaluate(
-            (selectors, postalCode, streetAddress) => {
-              const items = document.querySelectorAll(selectors.resultItem);
-              console.log("검색 결과 수:", items.length);
-
-              for (const item of items) {
-                const zonecode = item.getAttribute("data-zonecode") || "";
-                const addr = item.getAttribute("data-addr") || "";
-
-                console.log("검색 결과:", zonecode, addr);
-
-                // 우편번호 매칭 (우선) 또는 주소 포함 여부
-                if (
-                  (postalCode && zonecode === postalCode) ||
-                  addr.includes(streetAddress)
-                ) {
-                  // 도로명 주소 버튼 클릭
-                  const roadBtn = item.querySelector(selectors.roadAddressBtn);
-                  if (roadBtn) {
-                    roadBtn.click();
-                    return { success: true, zonecode, addr };
-                  }
-                }
+        let targetFrame = popup;
+        if (frames.length > 1) {
+          for (const frame of frames) {
+            try {
+              const frameUrl = frame.url();
+              if (frameUrl.includes("postcode") || frameUrl.includes("daum")) {
+                targetFrame = frame;
+                console.log("[swadpia] Daum 프레임 찾음:", frameUrl);
+                break;
               }
-
-              // 매칭 안되면 첫 번째 결과 선택
-              if (items.length > 0) {
-                const firstItem = items[0];
-                const roadBtn = firstItem.querySelector(
-                  selectors.roadAddressBtn,
-                );
-                if (roadBtn) {
-                  roadBtn.click();
-                  return {
-                    success: true,
-                    zonecode: firstItem.getAttribute("data-zonecode"),
-                    addr: firstItem.getAttribute("data-addr"),
-                    fallback: true,
-                  };
-                }
-              }
-
-              return { success: false };
-            },
-            SELECTORS.daumPostcode,
-            postalCode,
-            streetAddress,
-          );
-
-          if (selectedAddress.success) {
-            console.log(
-              "[swadpia] 주소 선택 완료:",
-              selectedAddress.addr,
-              "(우편번호:",
-              selectedAddress.zonecode + ")",
-            );
-            if (selectedAddress.fallback) {
-              console.log("[swadpia] (매칭 실패로 첫 번째 결과 선택됨)");
-            }
-          } else {
-            console.log("[swadpia] 검색 결과에서 주소 선택 실패");
+            } catch (e) {}
           }
-
-          // 팝업 닫힘 대기
-          await new Promise((r) => setTimeout(r, 2000));
-
-          // 팝업 닫기 (혹시 안닫혔으면)
-          try {
-            if (!popup.isClosed()) {
-              await popup.close();
-            }
-          } catch (e) {}
-        } catch (popupError) {
-          console.error("[swadpia] 주소 검색 실패:", popupError.message);
-          // 팝업 닫기 시도
-          try {
-            if (!popup.isClosed()) {
-              await popup.close();
-            }
-          } catch (e) {}
         }
+
+        // 공통 모듈로 주소 검색
+        const searchResult = await searchAddressInFrame(targetFrame, searchAddress, "[swadpia]");
+        if (!searchResult.success) {
+          try { if (!popup.isClosed()) await popup.close(); } catch (e) {}
+          throw new Error(`주소 검색 실패: ${searchResult.error}`);
+        }
+
+        // 공통 모듈로 검색 결과 선택
+        const selectResult = await selectAddressResult(targetFrame, "li.list_post_item", "[swadpia]");
+        if (!selectResult.success) {
+          try { if (!popup.isClosed()) await popup.close(); } catch (e) {}
+          throw new Error(`주소 선택 실패: ${selectResult.error}`);
+        }
+
+        console.log("[swadpia] ✅ 주소 선택 완료");
+
+        // 팝업 닫힘 대기
+        await new Promise((r) => setTimeout(r, 2000));
+        try { if (!popup.isClosed()) await popup.close(); } catch (e) {}
+      } catch (popupError) {
+        console.error("[swadpia] 주소 검색 실패:", popupError.message);
+        try { if (!popup.isClosed()) await popup.close(); } catch (e) {}
+        throw popupError;
       }
     }
 
