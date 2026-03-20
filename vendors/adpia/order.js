@@ -1695,21 +1695,56 @@ async function processAdpiaOrder(
     // 0. 디자인 파일 미리 다운로드
     for (const product of products) {
       const designFileUrl = product.designFileUrl;
-      if (designFileUrl && product.productSku) {
-        try {
-          const filename = getStableFilename(designFileUrl, product.productSku);
-          console.log(`[adpia] 디자인 파일 준비: ${filename}`);
-          const filePath = await downloadFile(designFileUrl, filename);
-          downloadedFiles.push({
-            productSku: product.productSku,
-            filePath,
-          });
-        } catch (err) {
-          console.error(
-            `[adpia] 디자인 파일 다운로드 실패 (${product.productSku}):`,
-            err.message,
-          );
-        }
+      if (!designFileUrl) {
+        console.error(`[adpia] ❌ 디자인 파일 URL 없음: ${product.productSku}`);
+        errorCollector.addError(
+          ORDER_STEPS.ORDER_PLACEMENT,
+          ERROR_CODES.ELEMENT_NOT_FOUND,
+          `디자인 파일 URL 없음: ${product.productSku}`,
+          { purchaseOrderId, productSku: product.productSku },
+        );
+        await saveOrderResults(authToken, {
+          purchaseOrderId,
+          products: [],
+          priceMismatches: [],
+          optionFailedProducts: [],
+          automationErrors: errorCollector.getErrors(),
+          poLineIds,
+          success: false,
+          vendor: "adpia",
+        });
+        return { success: false, error: `디자인 파일 URL 없음: ${product.productSku}` };
+      }
+      try {
+        const filename = getStableFilename(designFileUrl, product.productSku);
+        console.log(`[adpia] 디자인 파일 준비: ${filename}`);
+        const filePath = await downloadFile(designFileUrl, filename);
+        downloadedFiles.push({
+          productSku: product.productSku,
+          filePath,
+        });
+      } catch (err) {
+        console.error(
+          `[adpia] ❌ 디자인 파일 다운로드 실패 (${product.productSku}):`,
+          err.message,
+        );
+        errorCollector.addError(
+          ORDER_STEPS.ORDER_PLACEMENT,
+          ERROR_CODES.ELEMENT_NOT_FOUND,
+          `디자인 파일 다운로드 실패: ${product.productSku} - ${err.message}`,
+          { purchaseOrderId, productSku: product.productSku },
+        );
+        await saveOrderResults(authToken, {
+          purchaseOrderId,
+          products: [],
+          priceMismatches: [],
+          optionFailedProducts: [],
+          automationErrors: errorCollector.getErrors(),
+          poLineIds,
+          success: false,
+          vendor: "adpia",
+        });
+        return { success: false, error: `디자인 파일 다운로드 실패: ${product.productSku}` };
       }
     }
     console.log("[adpia] 준비된 파일 수:", downloadedFiles.length);
