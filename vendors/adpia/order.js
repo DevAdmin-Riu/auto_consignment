@@ -416,7 +416,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
         await quantityInput.type(String(actualQuantity), { delay: 100 });
         await delay(1000);
       } else {
-        console.log("[adpia] 수량 입력/선택 필드를 찾을 수 없음");
+        console.log(`[adpia] 수량 입력/선택 필드를 찾을 수 없음 (상품코드: ${product.productSku})`);
         return {
           success: false,
           message: "수량 선택 UI를 찾을 수 없음 (#holder_num, input.input30[isnumber], select#quantity 모두 없음)",
@@ -434,7 +434,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       console.log("[adpia] 파일 선택 완료");
       await delay(1000);
     } else {
-      console.log("[adpia] 파일 입력 필드를 찾을 수 없음");
+      console.log(`[adpia] 파일 입력 필드를 찾을 수 없음 (상품코드: ${product.productSku}, 셀렉터: ${SELECTORS.orderPage.fileInput})`);
       return {
         success: false,
         message: "파일 입력 필드를 찾을 수 없음",
@@ -517,7 +517,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
     }
 
     if (!addToCartBtn) {
-      console.log("[adpia] 장바구니 담기 버튼을 찾을 수 없음");
+      console.log(`[adpia] 장바구니 담기 버튼을 찾을 수 없음 (상품코드: ${product.productSku}, URL: ${page.url()})`);
       return { success: false, message: "장바구니 담기 버튼을 찾을 수 없음" };
     }
 
@@ -636,7 +636,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
         modalText.includes("업로드에 실패") ||
         modalText.includes("업로드 실패")
       ) {
-        console.log("[adpia] ⚠️ 파일 업로드 실패 감지");
+        console.log(`[adpia] ⚠️ 파일 업로드 실패 감지 (파일: ${downloadedFile?.filePath || "unknown"}, 모달메시지: ${modalText})`);
         uploadFailed = true;
       }
 

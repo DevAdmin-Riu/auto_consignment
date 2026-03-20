@@ -84,7 +84,7 @@ async function processCoupangOrder(
       detail: clearResult,
     });
   } catch (e) {
-    console.log("장바구니 비우기 실패:", e.message);
+    console.log("[coupang] 장바구니 비우기 실패:", e.message);
     steps.push({ step: "clear_cart", success: false, error: e.message });
   }
 
@@ -207,12 +207,12 @@ async function processCoupangOrder(
                 await delay(200);
                 qtySet = true;
               } else {
-                console.log(`수량 버튼 클릭 실패 (${i}/${quantity - 1})`);
+                console.log(`[coupang] 수량 버튼 클릭 실패 (${i}/${quantity - 1}) - 상품: ${productName || productUrl}, 목표수량: ${quantity}`);
                 break;
               }
             }
           } catch (e) {
-            console.log("수량 설정 방법 1 실패:", e.message);
+            console.log("[coupang] 수량 설정 방법 1 실패:", e.message);
           }
 
           // 방법 2: input 값 직접 변경 + Enter키 (fallback)
@@ -231,12 +231,12 @@ async function processCoupangOrder(
                 qtySet = true;
               }
             } catch (e) {
-              console.log("수량 설정 방법 2 실패:", e.message);
+              console.log("[coupang] 수량 설정 방법 2 실패:", e.message);
             }
           }
 
           if (!qtySet) {
-            console.error("[coupang] ❌ 수량 설정 실패");
+            console.error(`[coupang] ❌ 수량 설정 실패 - 상품: ${productName || productUrl}, 목표수량: ${quantity}`);
             return { success: false, error: "수량 설정 실패" };
           }
 

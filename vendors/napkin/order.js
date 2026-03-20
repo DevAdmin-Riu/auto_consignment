@@ -500,7 +500,7 @@ async function setQuantityAndGetPrice(
         }, quantityInput);
         await delay(2000);
       } catch (e2) {
-        console.log(`[napkin] 수량 입력 완전 실패: ${e2.message}`);
+        console.log(`[napkin] 수량 입력 완전 실패 (박스: ${boxIndex}, 수량: ${quantity}): ${e2.message}`);
       }
     }
   }
@@ -586,7 +586,7 @@ async function selectOptions(
     10000,
   );
   if (!optionTab) {
-    console.log("[napkin] 옵션 탭 로딩 실패");
+    console.log(`[napkin] 옵션 탭 로딩 실패 - 옵션: ${JSON.stringify(openMallOptions)}`);
     return { success: false, message: "옵션 탭 로딩 실패" };
   }
   await delay(500);
@@ -700,7 +700,7 @@ async function setQuantity(page, quantity) {
       }
       return { success: true };
     } catch (e) {
-      console.log(`[napkin] 수량 버튼 클릭 실패: ${e.message}`);
+      console.log(`[napkin] 수량 버튼 클릭 실패 (목표수량: ${quantity}): ${e.message}`);
       return { success: false, message: `수량 버튼 클릭 실패: ${e.message}` };
     }
   }
@@ -1008,7 +1008,7 @@ async function processNapkinOrder(
           needsManagerVerification: product.needsManagerVerification || false,
         });
       } catch (productError) {
-        console.error(`[napkin] 상품 처리 에러:`, productError.message);
+        console.error(`[napkin] 상품 처리 에러 (SKU: ${product.productSku}, 상품명: ${product.productName}):`, productError.message);
         errorCollector.addError(
           ORDER_STEPS.ADD_TO_CART,
           null,

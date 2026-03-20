@@ -221,7 +221,7 @@ async function downloadCoupons(page) {
       console.log("[baemin] 쿠폰 모달 닫기 완료");
       await delay(500);
     } else {
-      console.log("[baemin] 쿠폰 모달 닫기 버튼 못 찾음");
+      console.log("[baemin] 쿠폰 모달 닫기 버튼 못 찾음 (현재 URL:", page.url(), ")");
     }
   } catch (e) {
     console.log("[baemin] 쿠폰 다운로드 실패 (무시):", e.message);
@@ -424,7 +424,7 @@ async function navigateToProduct(page, productUrl) {
       return { success: true, productName };
     }
 
-    console.log(`[baemin] 상품명 셀렉터 못찾음, 페이지는 로드됨`);
+    console.log(`[baemin] 상품명 셀렉터 못찾음 (셀렉터: ${SELECTORS.productName}, URL: ${productUrl}), 페이지는 로드됨`);
     return { success: true, productName: null };
   } catch (error) {
     console.error("[baemin] 상품 페이지 이동 실패:", error.message);
@@ -781,7 +781,7 @@ async function getProductPrice(page) {
     );
     return null;
   } catch (error) {
-    console.log(`[baemin] 가격 추출 에러: ${error.message}`);
+    console.log(`[baemin] 가격 추출 에러 (URL: ${page.url()}): ${error.message}`);
     return null;
   }
 }
@@ -809,7 +809,7 @@ async function setQuantity(page, quantity) {
     // + 버튼 존재 확인
     const plusButtons = await page.$$(SELECTORS.quantityPlusButton);
     if (plusButtons.length === 0) {
-      console.log("[baemin] 수량 + 버튼을 찾을 수 없음");
+      console.log(`[baemin] 수량 + 버튼을 찾을 수 없음 (목표 수량: ${quantity}, 셀렉터: ${SELECTORS.quantityPlusButton})`);
       return false;
     }
 
@@ -875,7 +875,7 @@ async function addToCart(page) {
     });
 
     if (!cartBtnClicked) {
-      console.log("[baemin] 장바구니 버튼을 찾을 수 없음");
+      console.log(`[baemin] 장바구니 버튼을 찾을 수 없음 (URL: ${page.url()})`);
       return false;
     }
 

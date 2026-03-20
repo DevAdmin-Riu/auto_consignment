@@ -322,7 +322,7 @@ async function clearCart(page) {
     console.log("[swadpia] 장바구니 비우기 완료");
     return true;
   } catch (error) {
-    console.error("[swadpia] 장바구니 비우기 실패:", error.message);
+    console.error(`[swadpia] 장바구니 비우기 실패 (URL: ${page.url()}):`, error.message);
     return false;
   }
 }
@@ -1273,7 +1273,7 @@ async function placeOrder(page, shippingAddress) {
 
     // 디버깅: 모든 페이지 URL 출력
     if (!popup) {
-      console.log("[swadpia] 새 팝업 못찾음. 모든 페이지:");
+      console.log(`[swadpia] 새 팝업 못찾음 (클릭한 셀렉터: ${SELECTORS.orderForm.addressSearchBtn}, before: ${pagesBefore.length}개, after: ${pagesAfter.length}개). 모든 페이지:`);
       for (const p of pagesAfter) {
         const url = p.url();
         if (!url.startsWith("devtools://")) {
