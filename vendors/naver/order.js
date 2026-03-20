@@ -607,7 +607,10 @@ async function selectOptions(page, openMallOptions, quantity = 1) {
       console.log(
         `[naver] 세트 ${s + 1} 옵션 선택 완료, 수량 설정: ${quantity}개`,
       );
-      await setQuantity(page, quantity);
+      const qtyOk = await setQuantity(page, quantity);
+      if (!qtyOk) {
+        return { success: false, reason: `세트 ${s + 1} 수량 설정 실패: 기대=${quantity}` };
+      }
       await delay(500);
     }
 
@@ -679,7 +682,10 @@ async function selectAdditionalOptions(
     // 추가상품은 prepend로 first-child에 생김 → 수량 설정
     if (quantity > 1) {
       console.log(`[naver] 추가상품 수량 설정: ${quantity}개`);
-      await setQuantity(page, quantity);
+      const qtyOk = await setQuantity(page, quantity);
+      if (!qtyOk) {
+        return { success: false, reason: `추가상품 수량 설정 실패: 기대=${quantity}` };
+      }
       await delay(500);
     }
   }
@@ -702,14 +708,33 @@ async function setQuantity(page, quantity) {
   );
 
   if (quantityInput) {
-    await quantityInput.click({ clickCount: 3 });
-    await delay(300);
-    await page.keyboard.type(String(quantity), { delay: 50 });
-    await delay(300);
-    await page.keyboard.press('Tab');
-    await delay(500);
-    console.log(`[naver] 수량 입력 완료: ${quantity}개`);
-    return true;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      await quantityInput.click({ clickCount: 3 });
+      await delay(300);
+      await page.keyboard.type(String(quantity), { delay: 50 });
+      await delay(300);
+      await page.keyboard.press('Tab');
+      await delay(500);
+
+      // 입력된 값 검증
+      const actualValue = await page.evaluate(
+        (sel) => {
+          const input = document.querySelector(sel);
+          return input ? Number(input.value) : null;
+        },
+        '[data-shp-area-id="optquantity"] input[type="number"]',
+      );
+
+      if (actualValue === quantity) {
+        console.log(`[naver] 수량 입력 완료: ${quantity}개 (검증 OK)`);
+        return true;
+      }
+
+      console.log(`[naver] ⚠️ 수량 불일치 (시도 ${attempt}/3): 입력=${quantity}, 실제=${actualValue}`);
+      await delay(500);
+    }
+    console.log(`[naver] ❌ 수량 설정 3회 실패: 기대=${quantity}`);
+    return false;
   }
 
   // 플러스 버튼으로 수량 증가 (blind 텍스트 기반)
@@ -728,8 +753,20 @@ async function setQuantity(page, quantity) {
       await plusBtn.click();
       await delay(300);
     }
-    console.log(`[naver] 수량 증가 버튼 클릭 ${quantity - 1}회`);
-    return true;
+    // 검증
+    const actualValue = await page.evaluate(
+      (sel) => {
+        const input = document.querySelector(sel);
+        return input ? Number(input.value) : null;
+      },
+      '[data-shp-area-id="optquantity"] input[type="number"]',
+    );
+    if (actualValue === quantity) {
+      console.log(`[naver] 수량 증가 버튼 ${quantity - 1}회 클릭 완료 (검증 OK: ${actualValue}개)`);
+      return true;
+    }
+    console.log(`[naver] ⚠️ 수량 불일치: 기대=${quantity}, 실제=${actualValue}`);
+    return false;
   }
 
   console.log("[naver] 수량 설정 실패, 기본 수량 사용");
@@ -895,7 +932,8 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
         await popupPage.type("#receiver", receiverName, { delay: 30 });
         console.log(`[naver] 받는 이 입력: ${receiverName}`);
       } else {
-        console.log("[naver] #receiver 필드를 찾을 수 없음");
+        console.log("[naver] ❌ #receiver 필드를 찾을 수 없음");
+        return { success: false, reason: "receiver_input_not_found" };
       }
     }
 
@@ -924,7 +962,8 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
         await popupPage.type("#contact-1", cleanPhone, { delay: 30 });
         console.log(`[naver] 연락처 입력: ${cleanPhone}`);
       } else {
-        console.log("[naver] #contact-1 필드를 찾을 수 없음");
+        console.log("[naver] ❌ #contact-1 필드를 찾을 수 없음");
+        return { success: false, reason: "contact_input_not_found" };
       }
     }
 
@@ -952,7 +991,8 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
         await popupPage.type("#delivery-name", deliveryName, { delay: 30 });
         console.log(`[naver] 배송지 명 입력: ${deliveryName}`);
       } else {
-        console.log("[naver] #delivery-name 필드를 찾을 수 없음");
+        console.log("[naver] ❌ #delivery-name 필드를 찾을 수 없음");
+        return { success: false, reason: "delivery_name_input_not_found" };
       }
     }
 
@@ -1115,6 +1155,9 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
         if (detailInput) {
           await detailInput.type(detailText, { delay: 30 });
           console.log(`[naver] 상세 주소 입력: ${detailText}`);
+        } else {
+          console.log("[naver] ❌ 상세주소 input 못찾음");
+          return { success: false, reason: "detail_address_input_not_found" };
         }
       }
 
@@ -1126,6 +1169,9 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
         await confirmBtn.click();
         console.log("[naver] 주소 확인 버튼 클릭");
         await delay(1000);
+      } else {
+        console.log("[naver] ❌ 주소 확인 버튼 못찾음");
+        return { success: false, reason: "address_confirm_button_not_found" };
       }
     }
 
@@ -1598,7 +1644,11 @@ async function processProduct(page, product) {
   // 4. 수량 설정 (옵션에서 수량 처리 안 한 경우에만)
   if (!optionResult.quantityHandled) {
     console.log(`[naver] 수량 설정: ${actualQuantity}개`);
-    await setQuantity(page, actualQuantity);
+    const qtyResult = await setQuantity(page, actualQuantity);
+    if (!qtyResult) {
+      console.log(`[naver] ❌ 수량 설정 실패 - 상품 스킵`);
+      return { success: false, error: `수량 설정 실패: 기대=${actualQuantity}` };
+    }
     await delay(500);
   } else {
     console.log(`[naver] 수량 설정 스킵 (그룹화 옵션에서 이미 처리됨)`);

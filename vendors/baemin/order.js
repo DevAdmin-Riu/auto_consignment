@@ -41,6 +41,7 @@ const {
   calculateExpectedPaymentAmount,
 } = require("../../lib/graphql-client");
 const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
+const { findDaumFrameViaCDP, cleanupCDPFrame, searchAddressInFrame, selectAddressResult } = require("../../lib/daum-address");
 
 // ==================== 셀렉터 정의 ====================
 
@@ -680,9 +681,7 @@ async function selectOption(page, optionValue, quantity = 1) {
   });
 
   if (!hasOptionDropdown) {
-    console.log(
-      "[baemin] 옵션 드롭다운 없음 (옵션 없는 상품) - 수량만 설정",
-    );
+    console.log("[baemin] 옵션 드롭다운 없음 (옵션 없는 상품) - 수량만 설정");
     await setQuantity(page, quantity);
     return {
       success: true,
@@ -1058,233 +1057,7 @@ async function clearCart(page) {
   }
 }
 
-/**
- * OOPIF CDP 방식으로 Daum 주소 검색 iframe 찾기
- * - browser.targets()로 Daum iframe을 별도 브라우저 타겟으로 찾음
- * - OOPIF(Out-of-Process iframe)는 메인 페이지와 다른 프로세스에서 실행됨
- * - page.frames()의 f.$()가 acquireContextId로 실패할 때 폴백으로 사용
- */
-async function findDaumFrameViaCDP(page) {
-  const browser = page.browser();
-  const targets = browser.targets();
-
-  console.log(`[baemin] OOPIF CDP: 전체 타겟 ${targets.length}개 탐색`);
-
-  // Daum postcode iframe 타겟 찾기
-  for (const target of targets) {
-    const targetUrl = target.url();
-    if (
-      targetUrl.includes("postcode") ||
-      targetUrl.includes("daum.net/search")
-    ) {
-      console.log(
-        `[baemin] OOPIF CDP: Daum 타겟 발견 - ${targetUrl.substring(0, 100)}`,
-      );
-
-      try {
-        const cdpClient = await target.createCDPSession();
-        await cdpClient.send("Runtime.enable");
-
-        // #region_name input 존재 확인
-        const checkResult = await cdpClient.send("Runtime.evaluate", {
-          expression: `!!document.querySelector('#region_name')`,
-          returnByValue: true,
-        });
-
-        if (checkResult.result?.value) {
-          console.log(
-            "[baemin] OOPIF CDP: #region_name 발견! CDP 프록시 프레임 반환",
-          );
-
-          // CDP 기반 프록시 객체 반환 (frame과 동일한 인터페이스)
-          return createCDPFrameProxy(cdpClient);
-        } else {
-          console.log("[baemin] OOPIF CDP: Daum 타겟에 #region_name 없음");
-          await cdpClient.detach();
-        }
-      } catch (e) {
-        console.log(`[baemin] OOPIF CDP: 타겟 접근 실패 - ${e.message}`);
-      }
-    }
-  }
-
-  // page.frames()에서 URL로 찾은 뒤 CDP 세션 시도
-  const allFrames = page.frames();
-  for (const f of allFrames) {
-    const url = f.url();
-    if (url.includes("postcode") || url.includes("daum")) {
-      console.log(
-        `[baemin] OOPIF CDP: page.frames() Daum 프레임 발견 - ${url.substring(0, 100)}`,
-      );
-      try {
-        // 프레임의 executionContextId를 CDP로 직접 획득
-        const cdpClient = await page.target().createCDPSession();
-        await cdpClient.send("Runtime.enable");
-
-        const { result: contexts } = await cdpClient.send("Runtime.evaluate", {
-          expression: "true",
-          returnByValue: true,
-        });
-
-        // 프레임에 직접 접근 시도
-        const hasInput = await f.$(SELECTORS.daumAddressInput);
-        if (hasInput) {
-          console.log("[baemin] OOPIF CDP: f.$() 재시도 성공!");
-          await cdpClient.detach();
-          return f;
-        }
-        await cdpClient.detach();
-      } catch (e) {
-        console.log(`[baemin] OOPIF CDP: 프레임 재시도 실패 - ${e.message}`);
-      }
-    }
-  }
-
-  console.log("[baemin] OOPIF CDP: Daum 프레임 찾기 실패");
-  return null;
-}
-
-/**
- * CDP 세션을 puppeteer Frame처럼 사용할 수 있는 프록시 객체 생성
- * - $(), evaluate(), waitForSelector(), keyboard.press() 등 지원
- */
-function createCDPFrameProxy(cdpClient) {
-  return {
-    // $(selector) - 엘리먼트 핸들 대신 CDP 기반 프록시 반환
-    async $(selector) {
-      const result = await cdpClient.send("Runtime.evaluate", {
-        expression: `document.querySelector('${selector.replace(/'/g, "\\'")}')`,
-        returnByValue: false,
-      });
-      if (
-        !result.result ||
-        result.result.type === "undefined" ||
-        result.result.subtype === "null"
-      ) {
-        return null;
-      }
-      const objectId = result.result.objectId;
-      return createCDPElementProxy(cdpClient, objectId, selector);
-    },
-
-    // evaluate(fn, ...args)
-    async evaluate(fn, ...args) {
-      const fnStr = fn.toString();
-      const argsStr = args.map((a) => JSON.stringify(a)).join(", ");
-      const expression = `(${fnStr})(${argsStr})`;
-      const result = await cdpClient.send("Runtime.evaluate", {
-        expression,
-        returnByValue: true,
-        awaitPromise: true,
-      });
-      if (result.exceptionDetails) {
-        throw new Error(result.exceptionDetails.text || "evaluate failed");
-      }
-      return result.result?.value;
-    },
-
-    // waitForSelector
-    async waitForSelector(selector, options = {}) {
-      const timeout = options.timeout || 5000;
-      const start = Date.now();
-      while (Date.now() - start < timeout) {
-        const el = await this.$(selector);
-        if (el) return el;
-        await delay(300);
-      }
-      throw new Error(`waitForSelector timeout: ${selector}`);
-    },
-
-    // keyboard 프록시
-    keyboard: {
-      async press(key) {
-        const keyMap = { Enter: 13, Tab: 9, Escape: 27 };
-        const keyCode = keyMap[key] || 0;
-        await cdpClient.send("Input.dispatchKeyEvent", {
-          type: "keyDown",
-          key,
-          code: `Key${key}`,
-          windowsVirtualKeyCode: keyCode,
-          nativeVirtualKeyCode: keyCode,
-        });
-        await delay(50);
-        await cdpClient.send("Input.dispatchKeyEvent", {
-          type: "keyUp",
-          key,
-          code: `Key${key}`,
-          windowsVirtualKeyCode: keyCode,
-          nativeVirtualKeyCode: keyCode,
-        });
-      },
-    },
-
-    _cdpClient: cdpClient,
-    _isCDPProxy: true,
-  };
-}
-
-/**
- * CDP 엘리먼트 프록시 - puppeteer ElementHandle처럼 사용
- */
-function createCDPElementProxy(cdpClient, objectId, selector) {
-  return {
-    async click() {
-      // 클릭 좌표 계산 후 Input.dispatchMouseEvent
-      const boxResult = await cdpClient.send("Runtime.callFunctionOn", {
-        objectId,
-        functionDeclaration: `function() {
-          const rect = this.getBoundingClientRect();
-          return { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 };
-        }`,
-        returnByValue: true,
-      });
-      const { x, y } = boxResult.result.value;
-      await cdpClient.send("Input.dispatchMouseEvent", {
-        type: "mousePressed",
-        x,
-        y,
-        button: "left",
-        clickCount: 1,
-      });
-      await delay(50);
-      await cdpClient.send("Input.dispatchMouseEvent", {
-        type: "mouseReleased",
-        x,
-        y,
-        button: "left",
-        clickCount: 1,
-      });
-    },
-
-    async type(text, options = {}) {
-      // 먼저 focus
-      await cdpClient.send("Runtime.callFunctionOn", {
-        objectId,
-        functionDeclaration: "function() { this.focus(); }",
-      });
-      await delay(100);
-
-      // 한 글자씩 입력
-      const charDelay = options.delay || 0;
-      for (const char of text) {
-        await cdpClient.send("Input.dispatchKeyEvent", {
-          type: "keyDown",
-          text: char,
-          unmodifiedText: char,
-          key: char,
-        });
-        await cdpClient.send("Input.dispatchKeyEvent", {
-          type: "keyUp",
-          key: char,
-        });
-        if (charDelay > 0) await delay(charDelay);
-      }
-    },
-
-    _objectId: objectId,
-    _selector: selector,
-  };
-}
+// findDaumFrameViaCDP, createCDPFrameProxy, createCDPElementProxy → lib/daum-address.js로 이동
 
 /**
  * 배송지 입력 (결제 페이지에서)
@@ -1565,9 +1338,15 @@ async function enterShippingAddress(page, shippingAddress) {
         await nameInput.type(recipientName, { delay: 50 });
         console.log(`[baemin] 받으실 분: ${recipientName}`);
       } else {
-        console.log("[baemin] 받으실 분 input 못찾음");
+        console.log("[baemin] ❌ 받으실 분 input 못찾음");
+        return { success: false, error: "받으실 분 input 못찾음" };
       }
       await delay(500);
+    }
+
+    if (!recipientName) {
+      console.log("[baemin] ❌ recipientName이 비어있음");
+      return { success: false, error: "recipientName이 비어있음" };
     }
 
     // 4. 연락처 입력 (고정값: 010-7749-7515)
@@ -1580,16 +1359,17 @@ async function enterShippingAddress(page, shippingAddress) {
     if (phoneInput) {
       await phoneInput.click();
       await delay(200);
-      await page.keyboard.down('Control');
-      await page.keyboard.press('a');
-      await page.keyboard.up('Control');
+      await page.keyboard.down("Control");
+      await page.keyboard.press("a");
+      await page.keyboard.up("Control");
       await delay(200);
-      await page.keyboard.press('Backspace');
+      await page.keyboard.press("Backspace");
       await delay(200);
       await page.keyboard.type(phoneNumber, { delay: 50 });
       console.log(`[baemin] 연락처: ${phoneNumber}`);
     } else {
-      console.log("[baemin] 연락처 input 못찾음");
+      console.log("[baemin] ❌ 연락처 input 못찾음");
+      return { success: false, error: "연락처 input 못찾음" };
     }
     await delay(500);
 
@@ -1676,7 +1456,7 @@ async function enterShippingAddress(page, shippingAddress) {
     if (!frame) {
       console.log("[baemin] 기본 방식 실패 → OOPIF CDP 폴백 시도...");
       try {
-        frame = await findDaumFrameViaCDP(page);
+        frame = await findDaumFrameViaCDP(page, "#region_name", "[baemin]");
       } catch (e) {
         console.log("[baemin] OOPIF CDP 폴백도 실패:", e.message);
       }
@@ -1696,93 +1476,22 @@ async function enterShippingAddress(page, shippingAddress) {
       shippingAddress.address ||
       shippingAddress.streetAddress ||
       "";
-    if (searchAddress) {
-      const addressInput = await frame.$(SELECTORS.daumAddressInput);
-      if (addressInput) {
-        await addressInput.click();
-        await addressInput.type(searchAddress, { delay: 50 });
-        console.log(`[baemin] 주소 검색어: ${searchAddress}`);
-        await delay(300);
-
-        const searchBtn = await frame.$(SELECTORS.daumSearchButton);
-        if (searchBtn) {
-          await searchBtn.click();
-          console.log("[baemin] 검색 버튼 클릭");
-        } else {
-          await frame.keyboard.press("Enter");
-          console.log("[baemin] Enter 키로 검색");
-        }
-        await delay(1500);
-      }
+    const searchResult = await searchAddressInFrame(
+      frame, searchAddress, SELECTORS.daumAddressInput, SELECTORS.daumSearchButton, "[baemin]"
+    );
+    if (!searchResult.success) {
+      return { success: false, error: searchResult.error };
     }
 
-    // 8. 주소 검색 결과 첫 번째 항목 클릭 (li.list_post_item)
+    // 8. 주소 검색 결과 첫 번째 항목 클릭 (도로명 > 지번)
     console.log("[baemin] 8. 주소 검색 결과 선택...");
-    try {
-      await frame.waitForSelector(SELECTORS.daumAddressItem, { timeout: 5000 });
-      await delay(500);
-
-      const addressClicked = await frame.evaluate((selector) => {
-        const firstItem = document.querySelector(selector);
-        if (!firstItem) return { clicked: false };
-
-        // 1순위: 도로명 주소 링크 (.main_road .link_post 또는 .rel_road .link_post)
-        const roadAddrBtn = firstItem.querySelector(".main_road .link_post") ||
-                            firstItem.querySelector(".rel_road .link_post");
-        if (roadAddrBtn) {
-          roadAddrBtn.click();
-          return { clicked: true, type: "road_button", text: roadAddrBtn.textContent?.trim().substring(0, 50) };
-        }
-
-        // 2순위: 지번 주소 링크 (.main_jibun .link_post 또는 .main_address .link_post)
-        const jibunAddrBtn = firstItem.querySelector(".main_jibun .link_post") ||
-                             firstItem.querySelector(".main_address .link_post");
-        if (jibunAddrBtn) {
-          jibunAddrBtn.click();
-          return { clicked: true, type: "jibun_button", text: jibunAddrBtn.textContent?.trim().substring(0, 50) };
-        }
-
-        // 3순위: 주소 텍스트 버튼 (.txt_address .link_post)
-        const txtAddrBtn = firstItem.querySelector(".txt_address .link_post") ||
-                           firstItem.querySelector("button.link_post");
-        if (txtAddrBtn) {
-          txtAddrBtn.click();
-          return { clicked: true, type: "txt_addr_button", text: txtAddrBtn.textContent?.trim().substring(0, 50) };
-        }
-
-        // 4순위: 아무 클릭 가능한 링크/버튼
-        const clickable = firstItem.querySelector("a, button, [role='button']");
-        if (clickable) {
-          clickable.click();
-          return { clicked: true, type: "clickable", text: clickable.textContent?.trim().substring(0, 50) };
-        }
-
-        // 최후: li 자체 클릭 (잘 안 먹힘)
-        firstItem.click();
-        return { clicked: true, type: "li_fallback", text: firstItem.textContent?.trim().substring(0, 80) };
-      }, SELECTORS.daumAddressItem);
-
-      if (addressClicked.clicked) {
-        console.log(`[baemin] 주소 선택 완료 (${addressClicked.type})`);
-        await delay(1500);
-      } else {
-        console.log("[baemin] 주소 검색 결과 없음");
-      }
-    } catch (e) {
-      console.log("[baemin] 주소 선택 에러:", e.message);
+    const selectResult = await selectAddressResult(frame, SELECTORS.daumAddressItem, "[baemin]");
+    if (!selectResult.success) {
+      return { success: false, error: selectResult.error };
     }
 
     // CDP 프록시 프레임 사용 후 세션 즉시 정리 (메인 페이지 세션 꼬임 방지)
-    if (frame?._isCDPProxy && frame._cdpClient) {
-      try {
-        await frame._cdpClient.detach();
-        console.log("[baemin] CDP 세션 정리 완료");
-      } catch (e) {
-        console.log("[baemin] CDP 세션 정리 실패 (이미 닫힘?):", e.message);
-      }
-      // 정리 후 참조 제거
-      frame._cdpClient = null;
-    }
+    await cleanupCDPFrame(frame, "[baemin]");
 
     // 9. 상세주소 입력 (placeholder 기반 셀렉터)
     console.log("[baemin] 9. 상세주소 입력...");
@@ -1833,7 +1542,8 @@ async function enterShippingAddress(page, shippingAddress) {
         if (fallbackInput.found) {
           console.log(`[baemin] 상세주소 입력 완료 (폴백): ${detailAddress}`);
         } else {
-          console.log("[baemin] 상세주소 input 못찾음");
+          console.log("[baemin] ❌ 상세주소 input 못찾음");
+          return { success: false, error: "상세주소 input 못찾음" };
         }
       }
       await delay(500);
@@ -1843,7 +1553,9 @@ async function enterShippingAddress(page, shippingAddress) {
     console.log("[baemin] 10. 저장하기 버튼 클릭...");
 
     const saveClicked = await page.evaluate(() => {
-      const buttons = document.querySelectorAll("button");
+      // 배송지 변경 모달 내 버튼 탐색 (모달이 없으면 document 전체)
+      const modal = document.querySelector('[class*="modal"]') || document;
+      const buttons = modal.querySelectorAll("button");
       for (const btn of buttons) {
         const text = (btn.innerText || btn.textContent || "").trim();
         if (text === "저장하기" || text === "저장" || text === "완료") {
@@ -1858,15 +1570,23 @@ async function enterShippingAddress(page, shippingAddress) {
       console.log(`[baemin] 저장하기 버튼 클릭 완료: "${saveClicked.text}"`);
       await delay(1500);
     } else {
-      console.log("[baemin] 저장하기 버튼 없음");
+      console.log("[baemin] ❌ 저장하기 버튼 없음");
+      return { success: false, error: "저장하기 버튼 없음" };
     }
 
     // 11. 배송지 검증 (카카오 주소 API로 도로명/지번 매칭 확인)
     console.log("[baemin] 11. 배송지 검증 시작...");
-    const verifyResult = await verifyShippingAddressOnPage(page, shippingAddress, "baemin");
+    const verifyResult = await verifyShippingAddressOnPage(
+      page,
+      shippingAddress,
+      "baemin",
+    );
     if (!verifyResult.success) {
       console.error(`[baemin] ❌ 배송지 검증 실패: ${verifyResult.message}`);
-      return { success: false, message: `배송지 검증 실패: ${verifyResult.message}` };
+      return {
+        success: false,
+        message: `배송지 검증 실패: ${verifyResult.message}`,
+      };
     }
     console.log("[baemin] ✅ 배송지 검증 통과");
 
@@ -2432,20 +2152,28 @@ async function processPayment(page) {
       try {
         const isOpen = naverPayPage && !naverPayPage.isClosed();
         if (!isOpen) {
-          console.log(`[baemin] 네이버페이 팝업 닫힘 확인 (${i + 1}회) [${((Date.now()-t0)/1000).toFixed(1)}초]`);
+          console.log(
+            `[baemin] 네이버페이 팝업 닫힘 확인 (${i + 1}회) [${((Date.now() - t0) / 1000).toFixed(1)}초]`,
+          );
           break;
         }
-        console.log(`[baemin] 네이버페이 팝업 닫힘 대기... (${i + 1}/10) [${((Date.now()-t0)/1000).toFixed(1)}초]`);
+        console.log(
+          `[baemin] 네이버페이 팝업 닫힘 대기... (${i + 1}/10) [${((Date.now() - t0) / 1000).toFixed(1)}초]`,
+        );
         await delay(500);
       } catch (e) {
-        console.log(`[baemin] 팝업 닫힘 확인: ${e.message} [${((Date.now()-t0)/1000).toFixed(1)}초]`);
+        console.log(
+          `[baemin] 팝업 닫힘 확인: ${e.message} [${((Date.now() - t0) / 1000).toFixed(1)}초]`,
+        );
         break;
       }
     }
 
     // 배민 페이지로 포커스 전환 및 결제 완료 확인
     await delay(500);
-    console.log(`[baemin] 팝업 닫힘 후 대기 완료 [${((Date.now()-t0)/1000).toFixed(1)}초]`);
+    console.log(
+      `[baemin] 팝업 닫힘 후 대기 완료 [${((Date.now() - t0) / 1000).toFixed(1)}초]`,
+    );
 
     try {
       // 배민 페이지 URL 확인
@@ -2453,7 +2181,9 @@ async function processPayment(page) {
       console.log(`[baemin] 배민 페이지 URL: ${baeminUrl}`);
 
       // 10. "주문내역 상세보기" 버튼 대기 및 클릭 (배민 페이지)
-      console.log(`[baemin] 10. 주문내역 상세보기 버튼 대기 (배민 페이지)... [${((Date.now()-t0)/1000).toFixed(1)}초]`);
+      console.log(
+        `[baemin] 10. 주문내역 상세보기 버튼 대기 (배민 페이지)... [${((Date.now() - t0) / 1000).toFixed(1)}초]`,
+      );
 
       const orderDetailBtnSelector =
         "#root > div > section > div.sc-doGdGr.fdlYoH > div.sc-ctosZL.feYMnx > button.sc-ehvNnt.fxMHfA";
@@ -2462,7 +2192,9 @@ async function processPayment(page) {
       const orderDetailBtn = await waitFor(page, orderDetailBtnSelector, 30000);
 
       if (orderDetailBtn) {
-        console.log(`[baemin] 주문내역 상세보기 버튼 발견 [${((Date.now()-t0)/1000).toFixed(1)}초]`);
+        console.log(
+          `[baemin] 주문내역 상세보기 버튼 발견 [${((Date.now() - t0) / 1000).toFixed(1)}초]`,
+        );
         await orderDetailBtn.click();
         console.log("[baemin] 주문내역 상세보기 버튼 클릭 완료");
         await delay(3000);
@@ -2489,7 +2221,9 @@ async function processPayment(page) {
       }
 
       // 11. 주문번호 추출 (배민 페이지)
-      console.log(`[baemin] 11. 주문번호 추출... [${((Date.now()-t0)/1000).toFixed(1)}초]`);
+      console.log(
+        `[baemin] 11. 주문번호 추출... [${((Date.now() - t0) / 1000).toFixed(1)}초]`,
+      );
 
       const orderNumberSelector =
         "#root > div > div.sc-kvVhHC.cDSays > div.sc-gLBXkV.Rsxkb > div.sc-jmxFWv.kJriCA > div:nth-child(2) > div.sc-kLrQKW.evIhGF > div > div.sc-iODgfC.taTVJ > div > div > span.sc-dMLRKe.crbOaE";
@@ -3308,9 +3042,15 @@ async function processBaeminOrder(
           // 3-5.5. 결제 직전 배송지 재검증
           if (shippingAddress) {
             console.log("[baemin] 결제 전 배송지 재검증...");
-            const prePayVerify = await verifyShippingAddressOnPage(page, shippingAddress, "baemin");
+            const prePayVerify = await verifyShippingAddressOnPage(
+              page,
+              shippingAddress,
+              "baemin",
+            );
             if (!prePayVerify.success) {
-              console.log(`[baemin] ❌ 결제 전 배송지 검증 실패: ${prePayVerify.message}`);
+              console.log(
+                `[baemin] ❌ 결제 전 배송지 검증 실패: ${prePayVerify.message}`,
+              );
               lastPaymentMessage = `결제 전 배송지 검증 실패: ${prePayVerify.message}`;
               continue; // 재시도 → 배송지 입력부터 다시
             }

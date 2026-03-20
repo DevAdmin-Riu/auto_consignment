@@ -52,7 +52,7 @@ const {
 const { automateISPPayment } = require("../../lib/isp-payment");
 const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
 const { getEnv } = require("../config");
-const { searchAddressWithKakao } = require("../../lib/address-verify");
+const { findDaumFrameViaCDP, cleanupCDPFrame, searchAddressInFrame, selectAddressResult } = require("../../lib/daum-address");
 const https = require("https");
 const http = require("http");
 
@@ -995,96 +995,7 @@ async function goToOrderForm(page) {
   }
 }
 
-/**
- * 주소 검색 iframe 실패 시 직접 입력
- */
-async function directAddressInput(page, shippingInfo, searchAddress) {
-  console.log("[adpia] directAddressInput: 주소 직접 입력 시작...");
-
-  try {
-    // 카카오 주소 API로 도로명주소 변환
-    const originalAddress = searchAddress || shippingInfo.streetAddress1 || "";
-    let resolvedAddress = originalAddress;
-    let resolvedPostalCode = shippingInfo.postalCode || "";
-
-    if (originalAddress) {
-      const kakaoResult = await searchAddressWithKakao(originalAddress);
-      if (kakaoResult) {
-        // 도로명주소 우선 사용
-        if (kakaoResult.roadAddress) {
-          resolvedAddress = kakaoResult.roadAddress;
-          console.log(`[adpia] 카카오 도로명주소 변환: ${originalAddress} → ${resolvedAddress}`);
-        }
-      } else {
-        console.log(`[adpia] 카카오 API 결과 없음, 원본 주소 사용: ${originalAddress}`);
-      }
-    }
-
-    // 우편번호 강제 입력 (#recv_post_no)
-    if (resolvedPostalCode) {
-      console.log(`[adpia] 우편번호 강제 입력: ${resolvedPostalCode}`);
-      const result = await page.evaluate((val) => {
-        const el = document.querySelector("#recv_post_no");
-        if (el) {
-          el.readOnly = false;
-          el.disabled = false;
-          el.value = val;
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-          el.dispatchEvent(new Event("change", { bubbles: true }));
-          return { success: true, value: el.value };
-        }
-        return { success: false, error: "element not found" };
-      }, resolvedPostalCode);
-      console.log(`[adpia] 우편번호 결과:`, result);
-      await delay(300);
-    }
-
-    // 기본주소 강제 입력 (#recv_addr_1) - 카카오 도로명주소 사용
-    if (resolvedAddress) {
-      console.log(`[adpia] 기본주소 강제 입력: ${resolvedAddress}`);
-      const result = await page.evaluate((val) => {
-        const el = document.querySelector("#recv_addr_1");
-        if (el) {
-          el.readOnly = false;
-          el.disabled = false;
-          el.value = val;
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-          el.dispatchEvent(new Event("change", { bubbles: true }));
-          return { success: true, value: el.value };
-        }
-        return { success: false, error: "element not found" };
-      }, resolvedAddress);
-      console.log(`[adpia] 기본주소 결과:`, result);
-      await delay(300);
-    }
-
-    // 상세주소 강제 입력 (#recv_addr_2)
-    const detailAddress =
-      shippingInfo.streetAddress2 || shippingInfo.addressDetail || "";
-    if (detailAddress) {
-      console.log(`[adpia] 상세주소 강제 입력: ${detailAddress}`);
-      const result = await page.evaluate((val) => {
-        const el = document.querySelector("#recv_addr_2");
-        if (el) {
-          el.readOnly = false;
-          el.disabled = false;
-          // 기존 값에 추가
-          el.value = el.value ? el.value + " " + val : val;
-          el.dispatchEvent(new Event("input", { bubbles: true }));
-          el.dispatchEvent(new Event("change", { bubbles: true }));
-          return { success: true, value: el.value };
-        }
-        return { success: false, error: "element not found" };
-      }, detailAddress);
-      console.log(`[adpia] 상세주소 결과:`, result);
-      await delay(300);
-    }
-
-    console.log("[adpia] directAddressInput: 완료");
-  } catch (error) {
-    console.error("[adpia] directAddressInput 에러:", error.message);
-  }
-}
+// directAddressInput 제거 — 다음 주소 검색 iframe 방식으로 전환 (lib/daum-address.js)
 
 /**
  * 배송지 입력
@@ -1187,337 +1098,111 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
       }
     }
 
-    // 5. 주소 직접 입력 (iframe 검색 스킵)
-    console.log("[adpia] 5. 주소 직접 입력...");
+    // 5. 주소 찾기 버튼 클릭 → 다음 주소 iframe 검색/선택
+    console.log("[adpia] 5. 주소 찾기 버튼 클릭...");
     const searchAddress =
       shippingInfo.streetAddress1 || shippingInfo.address || "";
-    await directAddressInput(page, shippingInfo, searchAddress);
 
-    /* 주소 검색 버튼 클릭 - 테스트용 주석처리
-    console.log("[adpia] 5. 주소 찾기 버튼 클릭...");
-    await delay(1000); // 주소 찾기 버튼 클릭 전 딜레이
-    const addressSearchBtn = await page.$(SELECTORS.order.addressSearchBtn);
-    if (addressSearchBtn) {
+    // 텍스트 기반으로 "주소 찾기" / "주소찾기" 버튼 찾기
+    const addressSearchBtn = await page.evaluateHandle(() => {
+      const links = document.querySelectorAll('a, button');
+      for (const el of links) {
+        const text = (el.textContent || '').trim();
+        if (text === '주소 찾기' || text === '주소찾기') {
+          return el;
+        }
+      }
+      return null;
+    });
+    const isBtnFound = await page.evaluate((el) => !!el, addressSearchBtn);
+    if (isBtnFound) {
       await addressSearchBtn.click();
-      await delay(3000); // Windows에서 iframe 로딩이 느릴 수 있음
+      await delay(3000);
 
-      // 6. 다음 주소 검색 iframe 찾기
+      // 6. 다음 주소 검색 iframe 찾기 (공통 모듈)
       console.log("[adpia] 6. 주소 검색 iframe 찾기...");
-      await delay(1000); // iframe 찾기 전 딜레이
-
-      // 방법 1: #__daum__layer_1 안의 iframe을 직접 찾기
       let frame = null;
-      for (let i = 0; i < 30; i++) {
-        // 15초 대기 (30 * 500ms)
-        if (i % 5 === 0) {
-          console.log(`[adpia] iframe 검색 ${i + 1}회...`);
-        }
 
-        try {
-          // 페이지에서 다음 주소 레이어 iframe 요소를 찾기
-          const iframeElement = await page.$("#__daum__layer_1 iframe");
-          if (iframeElement) {
-            const iframeSrc = await page.$eval(
-              "#__daum__layer_1 iframe",
-              (el) => el.src,
-            );
-            console.log(
-              `[adpia] iframe 요소 발견, src: ${
-                iframeSrc?.substring(0, 50) || "about:blank"
-              }...`,
-            );
-
-            // iframe이 로드될 때까지 대기 (src가 about:blank가 아닐 때)
-            if (iframeSrc && iframeSrc !== "about:blank") {
-              frame = await iframeElement.contentFrame();
-              if (frame) {
-                console.log(`[adpia] 주소 검색 iframe 발견 (${i + 1}회)`);
-                break;
-              }
-            }
-          }
-        } catch (e) {
-          // 무시
-        }
-
-        // 방법 2: page.frames()에서 postcode URL로 찾기 (백업)
+      // 먼저 일반 방식으로 iframe 찾기
+      for (let i = 0; i < 20; i++) {
         const allFrames = page.frames();
         for (const f of allFrames) {
-          try {
-            const frameUrl = f.url();
-            if (
-              frameUrl.includes("postcode.map.daum.net") ||
-              frameUrl.includes("postcode.v2.map.daum.net")
-            ) {
-              console.log(
-                `[adpia] 다음 주소 iframe URL 발견: ${frameUrl.substring(
-                  0,
-                  80,
-                )}...`,
-              );
-              frame = f;
-              console.log(`[adpia] 주소 검색 iframe 발견 (${i + 1}회)`);
-              break;
-            }
-          } catch (e) {
-            // 무시
+          const url = f.url();
+          if (url.includes("postcode") || url.includes("daum.net/search")) {
+            try {
+              const hasInput = await f.$("#region_name");
+              if (hasInput) {
+                frame = f;
+                console.log(`[adpia] 주소 iframe 발견 (일반, ${i + 1}회)`);
+                break;
+              }
+            } catch (e) { /* OOPIF일 수 있음 */ }
           }
         }
         if (frame) break;
         await delay(500);
       }
 
-      if (frame) {
-        // iframe 내부 DOM 로딩 대기 (더 오래 대기)
-        console.log("[adpia] iframe 내부 DOM 로딩 대기...");
-        await delay(5000);
-
-        // 디버깅: frame URL 확인
+      // 일반 방식 실패 시 OOPIF CDP 폴백
+      if (!frame) {
+        console.log("[adpia] 일반 방식 실패 → OOPIF CDP 폴백...");
         try {
-          const frameUrl = frame.url();
-          console.log(`[adpia] frame URL: ${frameUrl}`);
+          frame = await findDaumFrameViaCDP(page, "#region_name", "[adpia]");
         } catch (e) {
-          console.log("[adpia] frame URL 확인 실패");
-        }
-
-        // 7. 주소 검색어 입력
-        const searchAddress =
-          shippingInfo.streetAddress1 || shippingInfo.address || "";
-        if (searchAddress) {
-          console.log(`[adpia] 7. 주소 검색어: ${searchAddress}`);
-          await delay(2000); // 주소 검색어 입력 전 딜레이 증가
-
-          let addressInput = null;
-          let addressSearchSuccess = false;
-
-          // 먼저 frame.$()로 직접 시도
-          console.log("[adpia] frame에서 #region_name 찾기 시도...");
-          try {
-            addressInput = await frame.$("#region_name");
-            console.log(
-              `[adpia] frame.$('#region_name') 결과: ${addressInput ? "찾음!" : "없음"}`,
-            );
-
-            if (addressInput) {
-              // input 클릭하고 값 입력
-              await addressInput.click();
-              await delay(300);
-              await addressInput.type(searchAddress, { delay: 50 });
-              console.log(`[adpia] ✅ 주소 입력 완료: ${searchAddress}`);
-              await delay(500);
-
-              // 검색 버튼 클릭
-              const searchBtn = await frame.$("button.btn_search");
-              console.log(`[adpia] 검색 버튼: ${searchBtn ? "찾음!" : "없음"}`);
-              if (searchBtn) {
-                await searchBtn.click();
-                console.log("[adpia] 검색 버튼 클릭");
-              } else {
-                await addressInput.press("Enter");
-                console.log("[adpia] Enter 키 입력");
-              }
-              await delay(3000);
-
-              // 검색 결과 선택
-              const resultItem = await frame.$("li.list_post_item .link_post");
-              console.log(
-                `[adpia] 검색 결과: ${resultItem ? "찾음!" : "없음"}`,
-              );
-              if (resultItem) {
-                await resultItem.click();
-                console.log("[adpia] ✅ 주소 선택 완료");
-                addressSearchSuccess = true;
-              }
-            }
-          } catch (frameError) {
-            console.log(
-              `[adpia] frame.$() 에러: ${frameError.message.substring(0, 50)}`,
-            );
-          }
-
-          // frame.$()가 실패하면 CDP 방식으로 fallback
-          if (!addressSearchSuccess) {
-            console.log("[adpia] CDP 방식으로 fallback...");
-
-            for (let attempt = 1; attempt <= 3; attempt++) {
-              console.log(`[adpia] 주소 검색 시도 ${attempt}/3...`);
-
-              try {
-                // CDP 세션 생성
-                const client = await page.target().createCDPSession();
-
-                // 모든 frame 정보 가져오기
-                const { frameTree } = await client.send("Page.getFrameTree");
-
-                // postcode iframe의 frameId 찾기
-                let postcodeFrameId = null;
-                const findPostcodeFrame = (node) => {
-                  if (node.frame?.url?.includes("postcode")) {
-                    postcodeFrameId = node.frame.id;
-                    console.log(
-                      `[adpia] postcode frame URL: ${node.frame.url.substring(0, 60)}...`,
-                    );
-                    return;
-                  }
-                  if (node.childFrames) {
-                    for (const child of node.childFrames) {
-                      findPostcodeFrame(child);
-                      if (postcodeFrameId) return;
-                    }
-                  }
-                };
-                findPostcodeFrame(frameTree);
-
-                if (!postcodeFrameId) {
-                  console.log("[adpia] postcode frame 못찾음, 다음 시도...");
-                  await client.detach();
-                  await delay(2000);
-                  continue;
-                }
-
-                console.log(`[adpia] postcode frameId: ${postcodeFrameId}`);
-
-                // 해당 frame에 isolated world 생성하여 JavaScript 실행
-                const { executionContextId } = await client.send(
-                  "Page.createIsolatedWorld",
-                  {
-                    frameId: postcodeFrameId,
-                    worldName: "addressSearch",
-                  },
-                );
-
-                console.log(
-                  `[adpia] executionContextId: ${executionContextId}`,
-                );
-
-                // 1단계: #region_name input 찾아서 값 입력
-                const inputResult = await client.send("Runtime.evaluate", {
-                  expression: `
-                  (function() {
-                    const input = document.querySelector('#region_name');
-                    if (input) {
-                      input.focus();
-                      input.value = '';
-                      input.value = "${searchAddress.replace(/"/g, '\\"')}";
-                      input.dispatchEvent(new Event('input', { bubbles: true }));
-                      input.dispatchEvent(new Event('change', { bubbles: true }));
-                      return { success: true, value: input.value };
-                    }
-                    // fallback
-                    const inputs = document.querySelectorAll('input');
-                    return { success: false, inputCount: inputs.length, firstInput: inputs[0]?.id };
-                  })()
-                `,
-                  contextId: executionContextId,
-                  returnByValue: true,
-                });
-
-                console.log(
-                  `[adpia] input 결과:`,
-                  JSON.stringify(inputResult.result?.value),
-                );
-
-                if (!inputResult.result?.value?.success) {
-                  console.log("[adpia] #region_name 못찾음");
-                  await client.detach();
-                  await delay(2000);
-                  continue;
-                }
-
-                console.log(`[adpia] ✅ 주소 입력 완료: ${searchAddress}`);
-                await delay(500);
-
-                // 2단계: 검색 버튼 클릭
-                const searchResult = await client.send("Runtime.evaluate", {
-                  expression: `
-                  (function() {
-                    const btn = document.querySelector('button.btn_search') || document.querySelector('#search_btn');
-                    if (btn) {
-                      btn.click();
-                      return { clicked: 'button', selector: btn.className || btn.id };
-                    }
-                    // form submit
-                    const form = document.querySelector('#region_name')?.closest('form');
-                    if (form) {
-                      form.submit();
-                      return { clicked: 'form' };
-                    }
-                    return { clicked: null };
-                  })()
-                `,
-                  contextId: executionContextId,
-                  returnByValue: true,
-                });
-
-                console.log(
-                  `[adpia] 검색 버튼:`,
-                  JSON.stringify(searchResult.result?.value),
-                );
-                await delay(3000); // 검색 결과 로딩 대기
-
-                // 3단계: 검색 결과 첫 번째 항목 클릭
-                const selectResult = await client.send("Runtime.evaluate", {
-                  expression: `
-                  (function() {
-                    // 결과 리스트 찾기
-                    const items = document.querySelectorAll('li.list_post_item');
-                    if (items.length > 0) {
-                      // 첫 번째 결과의 클릭 가능한 요소 찾기
-                      const link = items[0].querySelector('.link_post') || items[0].querySelector('a') || items[0];
-                      if (link && link.click) {
-                        link.click();
-                        return { selected: true, count: items.length };
-                      }
-                    }
-                    return { selected: false, count: items.length };
-                  })()
-                `,
-                  contextId: executionContextId,
-                  returnByValue: true,
-                });
-
-                console.log(
-                  `[adpia] 주소 선택:`,
-                  JSON.stringify(selectResult.result?.value),
-                );
-
-                await client.detach();
-
-                if (selectResult.result?.value?.selected) {
-                  addressSearchSuccess = true;
-                  console.log(`[adpia] ✅ 주소 검색 완료 (CDP 방식)`);
-                  break;
-                } else if (selectResult.result?.value?.count === 0) {
-                  console.log("[adpia] 검색 결과 없음, 다음 시도...");
-                }
-              } catch (e) {
-                console.log(`[adpia] CDP 방식 에러: ${e.message}`);
-              }
-
-              await delay(2000);
-            }
-          } // if (!addressSearchSuccess) 닫기
-
-          if (addressSearchSuccess) {
-            console.log("[adpia] 8. 주소 선택 완료");
-            await delay(1000);
-          } else {
-            console.log("[adpia] ⚠️ 주소 검색 실패, 직접 입력 시도...");
-            await directAddressInput(page, shippingInfo, searchAddress);
-          }
-        }
-      } else {
-        console.log("[adpia] 주소 검색 iframe 못찾음, 직접 입력 시도...");
-        const searchAddress =
-          shippingInfo.streetAddress1 || shippingInfo.address || "";
-        if (searchAddress) {
-          await directAddressInput(page, shippingInfo, searchAddress);
+          console.log("[adpia] CDP 폴백 실패:", e.message);
         }
       }
-    }
-    주소 검색 버튼 클릭 주석처리 끝 */
 
-    // 9. 상세주소는 directAddressInput에서 처리됨
+      if (frame) {
+        // 7. iframe 내 주소 검색
+        console.log("[adpia] 7. iframe 내 주소 검색...");
+        await delay(500);
+        const searchResult = await searchAddressInFrame(
+          frame, searchAddress, "#region_name", ".btn_search", "[adpia]"
+        );
+
+        if (searchResult.success) {
+          // 8. 검색 결과 선택 (도로명 > 지번)
+          console.log("[adpia] 8. 주소 검색 결과 선택...");
+          const selectResult = await selectAddressResult(frame, "li.list_post_item", "[adpia]");
+          if (selectResult.success) {
+            console.log("[adpia] ✅ 주소 선택 완료");
+          } else {
+            console.log("[adpia] ❌ 주소 선택 실패:", selectResult.error);
+          }
+        } else {
+          console.log("[adpia] ❌ 주소 검색 실패:", searchResult.error);
+        }
+
+        // CDP 세션 정리
+        await cleanupCDPFrame(frame, "[adpia]");
+        await delay(1000);
+      } else {
+        console.log("[adpia] ❌ 주소 검색 iframe 못찾음");
+      }
+    } else {
+      console.log("[adpia] ❌ 주소 찾기 버튼 못찾음");
+    }
+
+    // 9. 상세주소 입력 (#recv_addr_2)
+    const detailAddress = shippingInfo.streetAddress2 || shippingInfo.addressDetail || "";
+    if (detailAddress) {
+      console.log(`[adpia] 9. 상세주소 입력: ${detailAddress}`);
+      const result = await page.evaluate((val) => {
+        const el = document.querySelector("#recv_addr_2");
+        if (el) {
+          el.readOnly = false;
+          el.disabled = false;
+          el.value = el.value ? el.value + " " + val : val;
+          el.dispatchEvent(new Event("input", { bubbles: true }));
+          el.dispatchEvent(new Event("change", { bubbles: true }));
+          return { success: true, value: el.value };
+        }
+        return { success: false };
+      }, detailAddress);
+      console.log("[adpia] 상세주소 결과:", result);
+      await delay(300);
+    }
 
     // 10~12. 배송방법 + 결제수단 선택 (서로 초기화시킬 수 있어서 재확인 필요)
     await delay(2000); // 주소 입력 후 렌더링 대기
