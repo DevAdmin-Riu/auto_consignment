@@ -1213,7 +1213,9 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
       await delay(300);
     }
 
-    // 9-1. 주소 검증 (카카오 API vs 화면 표시 주소)
+    // 9-1. 주소 검증 (카카오 API vs 화면 표시 주소) — 셀렉터 확인 후 활성화
+    // TODO: #recv_addr_1, #recv_zipcode 셀렉터 실제 사이트에서 확인 필요
+    /*
     console.log("[adpia] 주소 검증 시작...");
     const addrToVerify = shippingInfo.streetAddress1 || shippingInfo.address || "";
     const kakaoVerifyResult = await searchAddressWithKakao(addrToVerify);
@@ -1248,6 +1250,7 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
         return { success: false, message: `주소 검증 실패 - 카카오: ${kakaoVerifyResult.roadAddress}, 화면: ${displayedAddr.full}` };
       }
     }
+    */
 
     // 10~12. 배송방법 + 결제수단 선택 (서로 초기화시킬 수 있어서 재확인 필요)
     await delay(2000); // 주소 입력 후 렌더링 대기
