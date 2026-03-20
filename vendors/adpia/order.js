@@ -1693,7 +1693,7 @@ async function processAdpiaOrder(
           ORDER_STEPS.ORDER_PLACEMENT,
           ERROR_CODES.ELEMENT_NOT_FOUND,
           `디자인 파일 URL 없음: ${product.productSku}`,
-          { purchaseOrderId, productSku: product.productSku },
+          { purchaseOrderId },
         );
         await saveOrderResults(authToken, {
           purchaseOrderId,
@@ -1724,7 +1724,7 @@ async function processAdpiaOrder(
           ORDER_STEPS.ORDER_PLACEMENT,
           ERROR_CODES.ELEMENT_NOT_FOUND,
           `디자인 파일 다운로드 실패: ${product.productSku} - ${err.message}`,
-          { purchaseOrderId, productSku: product.productSku },
+          { purchaseOrderId },
         );
         await saveOrderResults(authToken, {
           purchaseOrderId,
