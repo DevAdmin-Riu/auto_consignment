@@ -51,7 +51,7 @@ const { automateISPPayment } = require("../../lib/isp-payment");
 const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
 const { getEnv } = require("../config");
 const { searchAddressInFrame, selectAddressResult } = require("../../lib/daum-address");
-const { searchAddressWithKakao } = require("../../lib/address-verify");
+const { searchAddressWithKakao, normalizeAddress } = require("../../lib/address-verify");
 
 // 임시 파일 저장 경로
 const TEMP_DIR = path.join(__dirname, "../../temp");
@@ -1411,6 +1411,42 @@ async function placeOrder(page, shippingAddress) {
       await page.type(SELECTORS.orderForm.addressDetail, streetAddress2, {
         delay: 30,
       });
+    }
+
+    // 8-1. 주소 검증 (카카오 API vs 화면 표시 주소)
+    console.log("[swadpia] 주소 검증 시작...");
+    const addrToVerify = shippingAddress?.streetAddress1 || "";
+    const kakaoVerifyResult = await searchAddressWithKakao(addrToVerify);
+    if (!kakaoVerifyResult) {
+      console.log("[swadpia] 카카오 API 결과 없음 - 검증 스킵");
+    } else {
+      const displayedAddr = await page.evaluate(() => {
+        const addr1 = document.querySelector("#recv_addr_1")?.value || "";
+        const addr2 = document.querySelector("#recv_addr_2")?.value || "";
+        const zipcode = document.querySelector("#recv_zipcode")?.value || "";
+        return { zipcode, addr1, addr2, full: `${addr1} ${addr2}`.trim() };
+      });
+      console.log("[swadpia] 화면 주소:", JSON.stringify(displayedAddr));
+
+      const kakaoAddresses = [
+        normalizeAddress(kakaoVerifyResult.roadAddress),
+        normalizeAddress(kakaoVerifyResult.jibunAddress),
+      ].filter(Boolean);
+
+      const normalizedDisplayed = normalizeAddress(displayedAddr.full);
+      const addressMatched = kakaoAddresses.some(
+        (kakaoAddr) => normalizedDisplayed.includes(kakaoAddr) || kakaoAddr.includes(normalizeAddress(displayedAddr.addr1))
+      );
+
+      if (addressMatched) {
+        console.log("[swadpia] 주소 검증 성공");
+      } else {
+        console.error("[swadpia] 주소 검증 실패!");
+        console.error(`[swadpia]   카카오 도로명: ${kakaoVerifyResult.roadAddress}`);
+        console.error(`[swadpia]   카카오 지번: ${kakaoVerifyResult.jibunAddress}`);
+        console.error(`[swadpia]   화면 주소: ${displayedAddr.full}`);
+        throw new Error(`주소 검증 실패 - 카카오: ${kakaoVerifyResult.roadAddress}, 화면: ${displayedAddr.full}`);
+      }
     }
 
     console.log("[swadpia] 배송지 정보 입력 완료");

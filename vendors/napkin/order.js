@@ -53,7 +53,7 @@ const {
   searchAddressInFrame,
   selectAddressResult,
 } = require("../../lib/daum-address");
-const { searchAddressWithKakao } = require("../../lib/address-verify"); // eslint-disable-line
+const { searchAddressWithKakao, normalizeAddress } = require("../../lib/address-verify"); // eslint-disable-line
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -1266,6 +1266,42 @@ async function processNapkinOrder(
               el.dispatchEvent(new Event('change', { bubbles: true }));
             }, detailInput, detailAddress);
             await delay(500);
+          }
+        }
+
+        // 7-6-1. 주소 검증 (카카오 API vs 화면 표시 주소)
+        console.log("[napkin] 주소 검증 시작...");
+        const addrToVerify = rawAddress;
+        const kakaoVerifyResult = await searchAddressWithKakao(addrToVerify);
+        if (!kakaoVerifyResult) {
+          console.log("[napkin] 카카오 API 결과 없음 - 검증 스킵");
+        } else {
+          const displayedAddr = await page.evaluate(() => {
+            const addr1 = document.querySelector("#raddr1")?.value || "";
+            const addr2 = document.querySelector("#raddr2")?.value || "";
+            const zipcode = document.querySelector("#rzipcode")?.value || document.querySelector("#rzipcode1")?.value || "";
+            return { zipcode, addr1, addr2, full: `${addr1} ${addr2}`.trim() };
+          });
+          console.log("[napkin] 화면 주소:", JSON.stringify(displayedAddr));
+
+          const kakaoAddresses = [
+            normalizeAddress(kakaoVerifyResult.roadAddress),
+            normalizeAddress(kakaoVerifyResult.jibunAddress),
+          ].filter(Boolean);
+
+          const normalizedDisplayed = normalizeAddress(displayedAddr.full);
+          const addressMatched = kakaoAddresses.some(
+            (kakaoAddr) => normalizedDisplayed.includes(kakaoAddr) || kakaoAddr.includes(normalizeAddress(displayedAddr.addr1))
+          );
+
+          if (addressMatched) {
+            console.log("[napkin] 주소 검증 성공");
+          } else {
+            console.error("[napkin] 주소 검증 실패!");
+            console.error(`[napkin]   카카오 도로명: ${kakaoVerifyResult.roadAddress}`);
+            console.error(`[napkin]   카카오 지번: ${kakaoVerifyResult.jibunAddress}`);
+            console.error(`[napkin]   화면 주소: ${displayedAddr.full}`);
+            throw new Error(`주소 검증 실패 - 카카오: ${kakaoVerifyResult.roadAddress}, 화면: ${displayedAddr.full}`);
           }
         }
 
