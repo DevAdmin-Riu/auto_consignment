@@ -65,7 +65,7 @@ async function processCoupangOrder(
 
   // 1. 로그인
   if (!getLoginStatus("coupang")) {
-    console.log("Step 1: 쿠팡 로그인...");
+    console.log("[coupang] Step 1: 쿠팡 로그인...");
     await coupangLogin(page);
     setLoginStatus("coupang", true);
     steps.push({ step: "login", success: true });
@@ -74,10 +74,10 @@ async function processCoupangOrder(
   }
 
   // 1.5. 장바구니 비우기 (깨끗한 상태에서 시작)
-  console.log("Step 1.5: 장바구니 비우기...");
+  console.log("[coupang] Step 1.5: 장바구니 비우기...");
   try {
     const clearResult = await clearCart(page);
-    console.log("장바구니 비우기 결과:", JSON.stringify(clearResult));
+    console.log("[coupang] 장바구니 비우기 결과:", clearResult.success);
     steps.push({
       step: "clear_cart",
       success: clearResult.success,
@@ -95,7 +95,7 @@ async function processCoupangOrder(
 
   while (cartRetryCount <= maxCartRetries && !cartVerified) {
     if (cartRetryCount > 0) {
-      console.log(`\n⚠️ 장바구니 재시도 ${cartRetryCount}/${maxCartRetries}회`);
+      console.log(`[coupang] 장바구니 재시도 ${cartRetryCount}/${maxCartRetries}회`);
       // 재시도 시 addedProducts 초기화
       addedProducts.length = 0;
     }
@@ -126,7 +126,7 @@ async function processCoupangOrder(
       );
 
       if (!productUrl) {
-        console.log(`상품 ${productIndex + 1}: URL 없음, 스킵`);
+        console.log(`[coupang] 상품 ${productIndex + 1}: URL 없음, 스킵`);
         steps.push({
           step: `product_${productIndex + 1}_skip`,
           success: false,
@@ -146,7 +146,7 @@ async function processCoupangOrder(
       }
 
       // 2-1. 상품 페이지 이동
-      console.log(`상품 ${productIndex + 1}: 페이지 이동...`, productUrl);
+      console.log(`[coupang] 상품 ${productIndex + 1}: 페이지 이동...`, productUrl);
       try {
         await page.goto(productUrl, {
           waitUntil: "networkidle2",
@@ -176,7 +176,7 @@ async function processCoupangOrder(
 
         // 2-2. 수량 설정
         if (quantity > 1) {
-          console.log(`상품 ${productIndex + 1}: 수량 설정...`, quantity);
+          console.log(`[coupang] 상품 ${productIndex + 1}: 수량 설정...`, quantity);
           let qtySet = false;
 
           // 방법 1: "수량더하기" 버튼 클릭 (가장 안정적)
@@ -249,7 +249,7 @@ async function processCoupangOrder(
         }
 
         // 2-3. 장바구니 담기
-        console.log(`상품 ${productIndex + 1}: 장바구니 담기...`);
+        console.log(`[coupang] 상품 ${productIndex + 1}: 장바구니 담기...`);
         const cartBtn = await page.$("button.prod-cart-btn");
         if (cartBtn) {
           await cartBtn.click();
@@ -285,7 +285,7 @@ async function processCoupangOrder(
           );
         }
       } catch (e) {
-        console.log(`상품 ${productIndex + 1} 처리 실패:`, e.message);
+        console.log(`[coupang] 상품 ${productIndex + 1} 처리 실패:`, e.message);
         steps.push({
           step: `product_${productIndex + 1}_error`,
           success: false,
@@ -304,7 +304,7 @@ async function processCoupangOrder(
     );
 
     // 3. 장바구니 페이지로 이동
-    console.log("Step 3: 장바구니 페이지로 이동...");
+    console.log("[coupang] Step 3: 장바구니 페이지로 이동...");
     await page.goto("https://cart.coupang.com/cartView.pang", {
       waitUntil: "networkidle2",
       timeout: 30000,
@@ -313,7 +313,7 @@ async function processCoupangOrder(
     steps.push({ step: "cart_page", success: true });
 
     // 4. 전체 선택 해제 후 방금 담은 상품들만 선택
-    console.log("Step 4: 담은 상품들만 선택...");
+    console.log("[coupang] Step 4: 담은 상품들만 선택...");
     try {
       // 전체 선택 체크박스 해제 (이미 선택되어 있으면)
       const allChecked = await page.evaluate(() => {
@@ -328,7 +328,7 @@ async function processCoupangOrder(
       });
       if (allChecked) {
         await delay(1000);
-        console.log("전체 선택 해제됨");
+        console.log("[coupang] 전체 선택 해제됨");
       }
 
       // 방금 담은 상품들 선택 (vendorItemId로 매칭)
@@ -336,7 +336,7 @@ async function processCoupangOrder(
         .filter((p) => p.vendorItemId)
         .map((p) => p.vendorItemId);
 
-      console.log(`선택할 vendorItemIds: ${vendorItemIds.join(", ")}`);
+      console.log(`[coupang] 선택할 vendorItemIds: ${vendorItemIds.join(", ")}`);
 
       const selectedCount = await page.evaluate((vendorItemIds) => {
         let count = 0;
@@ -364,7 +364,7 @@ async function processCoupangOrder(
         return count;
       }, vendorItemIds);
 
-      console.log(`${selectedCount}개 상품 선택됨`);
+      console.log(`[coupang] ${selectedCount}개 상품 선택됨`);
       steps.push({
         step: "select_items",
         success: selectedCount > 0,
@@ -372,17 +372,19 @@ async function processCoupangOrder(
       });
       await delay(1000);
     } catch (e) {
-      console.log("상품 선택 실패:", e.message);
+      console.log("[coupang] 상품 선택 실패:", e.message);
       steps.push({ step: "select_items", success: false, error: e.message });
     }
 
     // 4.5 장바구니 검증 - 선택된 상품이 주문할 상품과 일치하는지 확인
-    console.log("Step 4.5: 장바구니 검증...");
+    console.log("[coupang] Step 4.5: 장바구니 검증...");
     try {
       const cartVerification = await verifyCartItems(page, addedProducts);
       console.log(
-        "장바구니 검증 결과:",
-        JSON.stringify(cartVerification, null, 2),
+        "[coupang] 장바구니 검증 결과:",
+        cartVerification.success,
+        "상품수:",
+        cartVerification.items?.length,
       );
 
       steps.push({
@@ -396,7 +398,7 @@ async function processCoupangOrder(
         cartVerification.quantityMismatches &&
         cartVerification.quantityMismatches.length > 0
       ) {
-        console.log("⚠️ 수량 불일치 발견! 장바구니 비우고 재시도");
+        console.log("[coupang] 수량 불일치 발견! 장바구니 비우고 재시도");
         await clearCart(page);
         cartRetryCount++;
         continue; // while 루프 재시도
@@ -407,7 +409,7 @@ async function processCoupangOrder(
         cartVerification.unexpectedItems &&
         cartVerification.unexpectedItems.length > 0
       ) {
-        console.log("⚠️ 예상치 못한 상품 발견! 장바구니 비우고 재시도");
+        console.log("[coupang] 예상치 못한 상품 발견! 장바구니 비우고 재시도");
         await clearCart(page);
         cartRetryCount++;
         continue; // while 루프 재시도
@@ -416,7 +418,7 @@ async function processCoupangOrder(
       // 검증 성공
       cartVerified = true;
     } catch (e) {
-      console.log("장바구니 검증 실패:", e.message);
+      console.log("[coupang] 장바구니 검증 실패:", e.message);
       steps.push({
         step: "cart_verification",
         success: false,
@@ -452,7 +454,7 @@ async function processCoupangOrder(
   }
 
   // 5. 주문하기 버튼 클릭
-  console.log("Step 5: 주문하기 버튼 클릭...");
+  console.log("[coupang] Step 5: 주문하기 버튼 클릭...");
   try {
     const orderClicked = await page.evaluate(() => {
       const btn = document.querySelector("#btnPay");
@@ -463,7 +465,7 @@ async function processCoupangOrder(
       return { success: false, error: "#btnPay 버튼을 찾을 수 없음" };
     });
 
-    console.log("주문하기 버튼 결과:", JSON.stringify(orderClicked));
+    console.log("[coupang] 주문하기 버튼 결과:", orderClicked.success);
 
     if (orderClicked.success) {
       await delay(1500);
@@ -481,16 +483,16 @@ async function processCoupangOrder(
       });
     }
   } catch (e) {
-    console.log("주문하기 버튼 클릭 오류:", e.message);
+    console.log("[coupang] 주문하기 버튼 클릭 오류:", e.message);
     steps.push({ step: "checkout_click", success: false, error: e.message });
   }
 
   // 6. 배송지 정보 처리
   if (shippingAddress) {
-    console.log("Step 6: 배송지 변경 버튼 클릭...");
+    console.log("[coupang] Step 6: 배송지 변경 버튼 클릭...");
     try {
       const changeResult = await clickChangeAddressButton(page);
-      console.log("배송지 변경 버튼 결과:", JSON.stringify(changeResult));
+      console.log("[coupang] 배송지 변경 버튼 결과:", changeResult.success);
 
       if (changeResult.success) {
         steps.push({
@@ -500,11 +502,11 @@ async function processCoupangOrder(
         });
 
         // 배송지 목록에서 수정 버튼 클릭
-        console.log("Step 6-1: 배송지 목록에서 수정 버튼 클릭...");
+        console.log("[coupang] Step 6-1: 배송지 목록에서 수정 버튼 클릭...");
         await delay(1500); // 모달 로딩 대기
 
         const editResult = await clickEditAddressInList(page);
-        console.log("배송지 수정 버튼 결과:", JSON.stringify(editResult));
+        console.log("[coupang] 배송지 수정 버튼 결과:", editResult.success);
 
         if (editResult.success) {
           const isAddNew = editResult.action === "add_new";
@@ -524,7 +526,7 @@ async function processCoupangOrder(
           });
 
           // Step 6-2: 배송지 폼에 데이터 입력
-          console.log("Step 6-2: 배송지 폼에 데이터 입력...");
+          console.log("[coupang] Step 6-2: 배송지 폼에 데이터 입력...");
           await delay(1000); // 폼 로딩 대기
 
           const fillResult = await fillAddressForm(page, shippingAddress);
@@ -645,7 +647,7 @@ async function processCoupangOrder(
 
           console.log("[배송지] 결제 단계로 진행...");
         } else {
-          console.log("배송지 버튼 클릭 실패:", editResult.error);
+          console.log("[coupang] 배송지 버튼 클릭 실패:", editResult.error);
           steps.push({
             step: "shipping_address_button",
             success: false,
@@ -683,7 +685,7 @@ async function processCoupangOrder(
           });
         }
       } else {
-        console.log("배송지 변경 버튼 클릭 실패:", changeResult.error);
+        console.log("[coupang] 배송지 변경 버튼 클릭 실패:", changeResult.error);
         steps.push({
           step: "shipping_change_button",
           success: false,
@@ -716,7 +718,7 @@ async function processCoupangOrder(
         });
       }
     } catch (e) {
-      console.log("배송지 처리 오류:", e.message);
+      console.log("[coupang] 배송지 처리 오류:", e.message);
       steps.push({
         step: "shipping_address",
         success: false,
@@ -747,7 +749,7 @@ async function processCoupangOrder(
   }
 
   // 7. 결제금액 파싱 + 결제하기 버튼 클릭
-  console.log("Step 7: 결제금액 파싱 및 결제하기 버튼 클릭...");
+  console.log("[coupang] Step 7: 결제금액 파싱 및 결제하기 버튼 클릭...");
   let actualPaymentAmount = 0;
   try {
     // 결제금액 파싱 (결제 버튼 클릭 전)
@@ -783,7 +785,7 @@ async function processCoupangOrder(
       };
     });
 
-    console.log("결제하기 버튼 결과:", JSON.stringify(paymentClicked));
+    console.log("[coupang] 결제하기 버튼 결과:", paymentClicked.success);
 
     if (paymentClicked.success) {
       await delay(3000); // 쿠팡페이 팝업/결제 화면 로딩 대기
@@ -795,7 +797,7 @@ async function processCoupangOrder(
 
       // 쿠팡페이 비밀번호 입력 (재시도 포함)
       if (vendor.paymentPin) {
-        console.log("Step 7-1: 쿠팡페이 비밀번호 입력...");
+        console.log("[coupang] Step 7-1: 쿠팡페이 비밀번호 입력...");
 
         const maxPinRetries = 5;
         let pinSuccess = false;
@@ -814,7 +816,7 @@ async function processCoupangOrder(
               page,
               vendor.paymentPin,
             );
-            console.log("비밀번호 입력 결과:", JSON.stringify(pinEntered));
+            console.log("[coupang] 비밀번호 입력 결과:", pinEntered.success);
             lastPinResult = pinEntered;
 
             if (pinEntered.success) {
@@ -837,7 +839,7 @@ async function processCoupangOrder(
               }
             }
           } catch (e) {
-            console.log(`비밀번호 입력 실패 (시도 ${pinRetry}):`, e.message);
+            console.log(`[coupang] 비밀번호 입력 실패 (시도 ${pinRetry}):`, e.message);
             lastPinResult = { success: false, error: e.message };
           }
         }
@@ -855,7 +857,7 @@ async function processCoupangOrder(
       }
 
       // 쿠팡페이 결제 완료 대기 (팝업 닫힘 또는 결제 완료 페이지 감지)
-      console.log("Step 8: 쿠팡페이 결제 완료 대기...");
+      console.log("[coupang] Step 8: 쿠팡페이 결제 완료 대기...");
 
       // 결제 완료 감지 (최대 60초 대기)
       let paymentCompleted = false;
@@ -954,7 +956,7 @@ async function processCoupangOrder(
           pageState.isComplete
         ) {
           paymentCompleted = true;
-          console.log("결제 완료 감지!");
+          console.log("[coupang] 결제 완료 감지!");
           if (pageState.orderAmount) {
             console.log(`[가격] 쿠팡 주문금액: ${pageState.orderAmount}원`);
           }
@@ -1014,7 +1016,7 @@ async function processCoupangOrder(
       }
 
       if (!paymentCompleted) {
-        console.log("결제 완료 대기 시간 초과 (60초)");
+        console.log("[coupang] 결제 완료 대기 시간 초과 (60초)");
         steps.push({
           step: "payment_wait",
           success: false,
@@ -1031,7 +1033,7 @@ async function processCoupangOrder(
       });
     }
   } catch (e) {
-    console.log("결제 처리 실패:", e.message);
+    console.log("[coupang] 결제 처리 실패:", e.message);
     steps.push({
       step: "payment",
       success: false,
@@ -2567,18 +2569,7 @@ async function enterCoupangPayPin(page, pin) {
       ocrResults = [];
     }
 
-    // 전체 스크린샷 (디버깅용) - 시도 횟수 포함
     const sessionId = Date.now();
-    const keypadScreenshot = path.join(
-      tempDir,
-      `keypad_attempt_${ocrAttempt}_${sessionId}.png`,
-    );
-    try {
-      await page.screenshot({ path: keypadScreenshot, fullPage: false });
-      console.log(`[쿠팡페이] 전체 스크린샷 저장: ${keypadScreenshot}`);
-    } catch (e) {
-      console.log(`[쿠팡페이] 전체 스크린샷 실패: ${e.message}`);
-    }
 
     // 이번 시도의 OCR 결과 저장용
     const attemptResults = [];

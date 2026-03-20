@@ -997,10 +997,7 @@ async function clearCart(page) {
       }
       return results;
     });
-    console.log(
-      "[baemin] '삭제' 포함 요소들:",
-      JSON.stringify(debugTexts, null, 2),
-    );
+    console.log(`[baemin] '삭제' 포함 요소: ${debugTexts.length}개`);
 
     const deleteClicked = await page.evaluate(() => {
       // BUTTON 먼저 찾기
@@ -2625,7 +2622,7 @@ async function processBaeminOrder(
   console.log("\n========================================");
   console.log("[baemin] 배민상회 주문 처리 시작 (판매처별 배치 주문)");
   console.log(`[baemin] 상품 수: ${products?.length || 0}`);
-  console.log(`[baemin] poLineIds: ${JSON.stringify(poLineIds || [])}`);
+  console.log(`[baemin] poLineIds: ${(poLineIds || []).length}건`);
   console.log("========================================\n");
 
   const results = [];
@@ -2930,10 +2927,7 @@ async function processBaeminOrder(
             `[baemin] 실패 saveOrderResults: priceMismatches=${groupPriceMismatches.length}건, optionFailed=${groupOptionFailed.length}건`,
           );
           if (groupOptionFailed.length > 0) {
-            console.log(
-              `[baemin] optionFailed 데이터:`,
-              JSON.stringify(groupOptionFailed),
-            );
+            console.log(`[baemin] optionFailed 데이터: ${groupOptionFailed.length}건`);
           }
           // 실패한 상품들에 대해 saveOrderResults 호출
           const failedPoLineIds = group.products

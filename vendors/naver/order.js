@@ -150,7 +150,7 @@ async function handleCustomsCode(page) {
       }
       return { h3s: h3s.filter(Boolean), customsH3, sectionInfo };
     });
-    console.log(`[naver] 통관 디버깅 (${retry + 1}/5):`, JSON.stringify(debugInfo));
+    console.log(`[naver] 통관 확인 중... (${retry + 1}/5)`);
 
     customsBtn = await page.evaluateHandle(() => {
       // 방법 1: "통관" h3 → ContentSection 래퍼 → 그 안의 button
@@ -1327,10 +1327,7 @@ async function selectDeliveryAddress(page, shippingAddress) {
     }
 
     // 주소 선택 - 첫 번째 주소 선택 후 수정
-    console.log(
-      "[naver] shippingAddress 객체:",
-      JSON.stringify(shippingAddress, null, 2),
-    );
+    console.log(`[naver] 배송지: ${shippingAddress.firstName} / ${shippingAddress.streetAddress1}`);
     console.log("[naver] 첫 번째 주소 선택 후 수정 방식으로 진행...");
 
     // 먼저 첫 번째 주소의 "수정" 버튼 클릭하여 주소 수정 (최대 3회 재시도)
@@ -1381,13 +1378,8 @@ async function selectDeliveryAddress(page, shippingAddress) {
       const popupState = await popupPage.evaluate(() => ({
         url: window.location.href,
         listItems: document.querySelectorAll("li").length,
-        buttons: document.querySelectorAll("button").length,
-        bodyText: document.body.innerText.substring(0, 500),
       }));
-      console.log(
-        "[naver] 저장 후 팝업 상태:",
-        JSON.stringify(popupState, null, 2),
-      );
+      console.log(`[naver] 저장 후 팝업 상태: url=${popupState.url}, listItems=${popupState.listItems}`);
     } catch (e) {
       console.log("[naver] 팝업 상태 확인 실패 (팝업 닫힘?):", e.message);
       // 팝업이 닫혔다면 성공으로 처리 (저장 완료 후 자동으로 닫힌 경우)
@@ -1607,10 +1599,10 @@ async function processProduct(page, product) {
   console.log(`[naver] URL: ${productUrl}`);
   console.log(`[naver] 수량: ${quantity}`);
   if (openMallOptions) {
-    console.log(`[naver] 옵션:`, JSON.stringify(openMallOptions));
+    console.log(`[naver] 옵션: ${Array.isArray(openMallOptions) ? openMallOptions.length + '개' : '없음'}`);
   }
   if (openMallAdditionalOptions) {
-    console.log(`[naver] 추가옵션:`, JSON.stringify(openMallAdditionalOptions));
+    console.log(`[naver] 추가옵션: ${Array.isArray(openMallAdditionalOptions) ? openMallAdditionalOptions.length + '개' : '없음'}`);
   }
 
   // 1. 상품 페이지로 이동
