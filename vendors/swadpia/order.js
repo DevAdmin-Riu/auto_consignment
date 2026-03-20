@@ -1315,7 +1315,7 @@ async function placeOrder(page, shippingAddress) {
       }
 
       // 공통 모듈로 주소 검색 + 선택
-      const searchResult = await searchAddressInFrame(frame, searchAddress, "[swadpia]");
+      const searchResult = await searchAddressInFrame(frame, searchAddress, "#region_name", ".btn_search", "[swadpia]");
       if (!searchResult.success) {
         throw new Error(`주소 검색 실패: ${searchResult.error}`);
       }
@@ -1370,7 +1370,7 @@ async function placeOrder(page, shippingAddress) {
         }
 
         // 공통 모듈로 주소 검색
-        const searchResult = await searchAddressInFrame(targetFrame, searchAddress, "[swadpia]");
+        const searchResult = await searchAddressInFrame(targetFrame, searchAddress, "#region_name", ".btn_search", "[swadpia]");
         if (!searchResult.success) {
           try { if (!popup.isClosed()) await popup.close(); } catch (e) {}
           throw new Error(`주소 검색 실패: ${searchResult.error}`);

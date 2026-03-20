@@ -1234,7 +1234,7 @@ async function processNapkinOrder(
         if (!searchAddress) {
           throw new Error("검색할 주소가 없음");
         }
-        const searchResult = await searchAddressInFrame(frame, searchAddress, "[napkin]");
+        const searchResult = await searchAddressInFrame(frame, searchAddress, SELECTORS.order.daumAddressInput, SELECTORS.order.daumSearchButton, "[napkin]");
         if (!searchResult.success) {
           await cleanupCDPFrame(frame, "[napkin]");
           throw new Error(`주소 검색 실패: ${searchResult.error}`);
