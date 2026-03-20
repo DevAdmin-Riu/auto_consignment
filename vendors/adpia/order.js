@@ -1171,9 +1171,13 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
             console.log("[adpia] ✅ 주소 선택 완료");
           } else {
             console.log("[adpia] ❌ 주소 선택 실패:", selectResult.error);
+            await cleanupCDPFrame(frame, "[adpia]");
+            return { success: false, message: `주소 선택 실패: ${selectResult.error}` };
           }
         } else {
           console.log("[adpia] ❌ 주소 검색 실패:", searchResult.error);
+          await cleanupCDPFrame(frame, "[adpia]");
+          return { success: false, message: `주소 검색 실패: ${searchResult.error}` };
         }
 
         // CDP 세션 정리
@@ -1181,9 +1185,11 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
         await delay(1000);
       } else {
         console.log("[adpia] ❌ 주소 검색 iframe 못찾음");
+        return { success: false, message: "주소 검색 iframe 못찾음" };
       }
     } else {
       console.log("[adpia] ❌ 주소 찾기 버튼 못찾음");
+      return { success: false, message: "주소 찾기 버튼 못찾음" };
     }
 
     // 9. 상세주소 입력 (#recv_addr_2)
