@@ -751,6 +751,7 @@ async function processCoupangOrder(
   // 7. 결제금액 파싱 + 결제하기 버튼 클릭
   console.log("[coupang] Step 7: 결제금액 파싱 및 결제하기 버튼 클릭...");
   let actualPaymentAmount = 0;
+  let paymentParsingDetail = {};
   try {
     // 결제금액 파싱 (셀렉터 + 텍스트 기반 폴백)
     try {
@@ -778,6 +779,7 @@ async function processCoupangOrder(
         return result;
       });
 
+      paymentParsingDetail = { 셀렉터: amounts.fromSelector, 텍스트: amounts.fromText };
       console.log(`[coupang] 결제금액 파싱 - 셀렉터: ${amounts.fromSelector}원, 텍스트: ${amounts.fromText}원`);
 
       if (amounts.fromSelector > 0 && amounts.fromText > 0 && amounts.fromSelector !== amounts.fromText) {
@@ -1199,7 +1201,7 @@ async function processCoupangOrder(
           paymentCard: "BC",
         },
       ]);
-      alertPaymentParsingFailed({ vendor: "쿠팡", purchaseOrderId, openMallOrderNumber: finalOrderNumber, paymentAmount: actualPaymentAmount });
+      alertPaymentParsingFailed({ vendor: "쿠팡", purchaseOrderId, openMallOrderNumber: finalOrderNumber, paymentAmount: actualPaymentAmount, parsingDetail: paymentParsingDetail });
     } catch (e) {
       console.log("[coupang] 결제 로그 저장 실패 (무시):", e.message);
     }

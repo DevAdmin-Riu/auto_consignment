@@ -2360,6 +2360,7 @@ async function processNaverOrder(
 
     // 6-1. 결제금액 파싱 (3곳에서 추출 + 교차 검증)
     let actualPaymentAmount = 0;
+    let paymentParsingDetail = {};
     try {
       const amounts = await page.evaluate(() => {
         const result = { fromTotal: 0, fromPayment: 0, fromButton: 0 };
@@ -2414,6 +2415,7 @@ async function processNaverOrder(
         return result;
       });
 
+      paymentParsingDetail = { 총주문금액: amounts.fromTotal, 결제수단: amounts.fromPayment, 버튼: amounts.fromButton };
       console.log(`[naver] 결제금액 파싱 - 총주문금액: ${amounts.fromTotal}원, 결제수단: ${amounts.fromPayment}원, 버튼: ${amounts.fromButton}원`);
 
       // 우선순위: 버튼(blind) > 총주문금액 > 결제수단
@@ -2633,7 +2635,7 @@ async function processNaverOrder(
               paymentCard: "BC",
             },
           ]);
-          alertPaymentParsingFailed({ vendor: "네이버", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualPaymentAmount });
+          alertPaymentParsingFailed({ vendor: "네이버", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualPaymentAmount, parsingDetail: paymentParsingDetail });
         } catch (e) {
           console.log("[naver] 결제 로그 저장 실패 (무시):", e.message);
         }

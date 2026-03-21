@@ -2237,7 +2237,7 @@ async function processAdpiaOrder(
               },
             ]);
             console.log(`[adpia] 결제 로그 저장: ${paymentAmount}원`);
-            alertPaymentParsingFailed({ vendor: "애드피아몰", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: paymentAmount });
+            alertPaymentParsingFailed({ vendor: "애드피아몰", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: paymentAmount, parsingDetail: { 단가계산: fromCalc, 주문서: fromPage } });
           } catch (e) {
             console.log(`[adpia] 결제 로그 저장 실패 (무시): ${e.message}`);
           }

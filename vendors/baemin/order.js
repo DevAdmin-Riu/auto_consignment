@@ -1928,6 +1928,7 @@ async function processPayment(page) {
 
     // 3-1. 결제금액 파싱 (2곳에서 추출 + 교차 검증)
     let actualPaymentAmount = 0;
+    let paymentParsingDetail = {};
     try {
       const amounts = await page.evaluate(() => {
         const result = { fromTotal: 0, fromButton: 0 };
@@ -1966,6 +1967,7 @@ async function processPayment(page) {
         return result;
       });
 
+      paymentParsingDetail = { 총결제금액: amounts.fromTotal, 버튼: amounts.fromButton };
       console.log(`[baemin] 결제금액 파싱 - 총결제금액: ${amounts.fromTotal}원, 버튼: ${amounts.fromButton}원`);
 
       if (amounts.fromTotal > 0 && amounts.fromButton > 0) {
@@ -3245,7 +3247,7 @@ async function processBaeminOrder(
             console.log(
               `[baemin] 결제 로그 저장: ${paidAmount}원, 카드: BC, 주문번호: ${orderNumber || "없음"}`,
             );
-            alertPaymentParsingFailed({ vendor: "배민상회", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: paidAmount });
+            alertPaymentParsingFailed({ vendor: "배민상회", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: paidAmount, parsingDetail: paymentParsingDetail });
           } catch (e) {
             console.log("[baemin] 결제 로그 저장 실패 (무시):", e.message);
           }

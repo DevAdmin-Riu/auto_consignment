@@ -1099,6 +1099,7 @@ async function processNapkinOrder(
     // 결제 재시도 루프 (빈 창 등 결제 실패 시 장바구니에서 재시도)
     let paymentCompleted = false;
     let actualPaymentAmount = 0;
+    let paymentParsingDetail = {};
     const MAX_PAYMENT_RETRIES = 5;
 
     for (
@@ -1392,6 +1393,7 @@ async function processNapkinOrder(
           return result;
         });
 
+        paymentParsingDetail = { 최종결제금액: amounts.fromTotal, 버튼: amounts.fromButton };
         console.log(`[napkin] 결제금액 파싱 - 최종결제금액: ${amounts.fromTotal}원, 버튼: ${amounts.fromButton}원`);
 
         if (amounts.fromTotal > 0 && amounts.fromButton > 0 && amounts.fromTotal !== amounts.fromButton) {
@@ -2216,7 +2218,7 @@ async function processNapkinOrder(
           paymentCard: "SHINHAN",
         },
       ]);
-      alertPaymentParsingFailed({ vendor: "냅킨코리아", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualPaymentAmount });
+      alertPaymentParsingFailed({ vendor: "냅킨코리아", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualPaymentAmount, parsingDetail: paymentParsingDetail });
     } catch (e) {
       console.log("[napkin] 결제 로그 저장 실패 (무시):", e.message);
     }

@@ -1496,6 +1496,7 @@ async function placeOrder(page, shippingAddress) {
 
     // 12-1. 결제금액 파싱 (셀렉터 + id 기반 폴백)
     let actualPaymentAmount = 0;
+    let paymentParsingDetail = {};
     try {
       const amounts = await page.evaluate(() => {
         const result = { fromSelector: 0, fromId: 0 };
@@ -1511,6 +1512,7 @@ async function placeOrder(page, shippingAddress) {
         return result;
       });
 
+      paymentParsingDetail = { 셀렉터: amounts.fromSelector, pnl_pay_amt: amounts.fromId };
       console.log(`[swadpia] 결제금액 파싱 - 셀렉터: ${amounts.fromSelector}원, #pnl_pay_amt: ${amounts.fromId}원`);
 
       if (amounts.fromSelector > 0 && amounts.fromId > 0 && amounts.fromSelector !== amounts.fromId) {
@@ -2037,7 +2039,7 @@ async function processSwadpiaOrder(
             paymentCard: "SHINHAN",
           },
         ]);
-        alertPaymentParsingFailed({ vendor: "성원애드피아", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualAmount });
+        alertPaymentParsingFailed({ vendor: "성원애드피아", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualAmount, parsingDetail: paymentParsingDetail });
       } catch (e) {
         console.log("[swadpia] 결제 로그 저장 실패 (무시):", e.message);
       }
