@@ -45,7 +45,6 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
-  calculateExpectedPaymentAmount,
 } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
 const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
@@ -1986,14 +1985,12 @@ async function processSwadpiaOrder(
       // 결제 금액 로깅
       const actualAmount = orderResult?.actualPaymentAmount || 0;
       if (actualAmount > 0) {
-        const expectedAmount = calculateExpectedPaymentAmount(products);
         try {
           await createPaymentLogs(authToken, [
             {
-              vendor: "swadpia",
-              paymentAmount: actualAmount,
-              expectedAmount,
               purchaseOrderId,
+              openMallOrderNumber: orderNumber || null,
+              paymentAmount: actualAmount,
             },
           ]);
         } catch (e) {

@@ -47,7 +47,6 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
-  calculateExpectedPaymentAmount,
 } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
 const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
@@ -2198,10 +2197,9 @@ async function processAdpiaOrder(
           const paymentAmount = priceInfo.unitPrice * (product.quantity || 1);
           await createPaymentLogs(authToken, [
             {
-              vendor: vendor.name,
-              paymentAmount: paymentAmount,
               purchaseOrderId: purchaseOrderId,
-              orderLineId: product.orderLineIds?.[0] || null,
+              openMallOrderNumber: orderNumber || null,
+              paymentAmount: paymentAmount,
             },
           ]);
           console.log(`[adpia] 결제 로그 저장: ${paymentAmount}원`);

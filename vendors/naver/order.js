@@ -37,7 +37,6 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
-  calculateExpectedPaymentAmount,
 } = require("../../lib/graphql-client");
 const { getEnv } = require("../config");
 const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
@@ -2575,14 +2574,12 @@ async function processNaverOrder(
 
         // 결제 금액 로깅
         if (actualPaymentAmount > 0) {
-          const expectedAmount = calculateExpectedPaymentAmount(addedProducts);
           try {
             await createPaymentLogs(authToken, [
               {
-                vendor: "naver",
-                paymentAmount: actualPaymentAmount,
-                expectedAmount,
                 purchaseOrderId,
+                openMallOrderNumber: orderNumber || null,
+                paymentAmount: actualPaymentAmount,
               },
             ]);
           } catch (e) {

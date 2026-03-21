@@ -41,7 +41,6 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
-  calculateExpectedPaymentAmount,
 } = require("../../lib/graphql-client");
 const Tesseract = require("tesseract.js");
 const sharp = require("sharp");
@@ -1170,14 +1169,12 @@ async function processCoupangOrder(
 
     // 결제 로그 저장
     if (actualPaymentAmount > 0) {
-      const expectedAmount = calculateExpectedPaymentAmount(products);
       try {
         await createPaymentLogs(authToken, [
           {
-            vendor: "coupang",
-            paymentAmount: actualPaymentAmount,
-            expectedAmount,
             purchaseOrderId,
+            openMallOrderNumber: finalOrderNumber || null,
+            paymentAmount: actualPaymentAmount,
           },
         ]);
       } catch (e) {

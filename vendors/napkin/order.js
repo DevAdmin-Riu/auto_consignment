@@ -38,7 +38,6 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
-  calculateExpectedPaymentAmount,
 } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
 const {
@@ -2197,14 +2196,12 @@ async function processNapkinOrder(
 
     // 결제 로그 저장
     if (actualPaymentAmount > 0) {
-      const expectedAmount = calculateExpectedPaymentAmount(products);
       try {
         await createPaymentLogs(authToken, [
           {
-            vendor: "napkin",
-            paymentAmount: actualPaymentAmount,
-            expectedAmount,
             purchaseOrderId,
+            openMallOrderNumber: orderNumber || null,
+            paymentAmount: actualPaymentAmount,
           },
         ]);
       } catch (e) {

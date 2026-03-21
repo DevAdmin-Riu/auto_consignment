@@ -38,7 +38,6 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
-  calculateExpectedPaymentAmount,
 } = require("../../lib/graphql-client");
 const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
 const { findDaumFrameViaCDP, cleanupCDPFrame, searchAddressInFrame, selectAddressResult } = require("../../lib/daum-address");
@@ -3202,24 +3201,16 @@ async function processBaeminOrder(
         // 3-9. 결제 로그 저장 - 그룹당 1회
         const paidAmount = paymentResult?.actualPaymentAmount || 0;
         if (groupOrderSuccess && paidAmount > 0) {
-          const expectedAmount =
-            calculateExpectedPaymentAmount(groupAddedProducts);
           try {
-            const couponNote =
-              couponResult?.couponDiscount > 0
-                ? `쿠폰 할인: -${couponResult.couponDiscount}원 (${couponResult.couponDescription})`
-                : undefined;
             await createPaymentLogs(authToken, [
               {
-                vendor: vendor.name,
-                paymentAmount: paidAmount,
-                expectedAmount,
                 purchaseOrderId,
-                note: couponNote,
+                openMallOrderNumber: orderNumber || null,
+                paymentAmount: paidAmount,
               },
             ]);
             console.log(
-              `[baemin] 결제 로그 저장: 실제=${paidAmount}원, 예상=${expectedAmount}원${couponNote ? `, ${couponNote}` : ""}`,
+              `[baemin] 결제 로그 저장: ${paidAmount}원, 주문번호: ${orderNumber || "없음"}`,
             );
           } catch (e) {
             console.log("[baemin] 결제 로그 저장 실패 (무시):", e.message);
