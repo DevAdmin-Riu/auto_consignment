@@ -2191,18 +2191,54 @@ async function processAdpiaOrder(
           vendor: "adpia",
         });
 
-        // 결제 성공 시 결제 로그 저장
-        if (orderSuccess && priceInfo.unitPrice > 0) {
-          const paymentAmount = priceInfo.unitPrice * (product.quantity || 1);
-          await createPaymentLogs(authToken, [
-            {
-              purchaseOrderId: purchaseOrderId,
-              openMallOrderNumber: orderNumber || null,
-              paymentAmount: paymentAmount,
-              paymentCard: "SHINHAN",
-            },
-          ]);
-          console.log(`[adpia] 결제 로그 저장: ${paymentAmount}원`);
+        // 결제 로그 저장 (2곳에서 파싱 + 교차 검증)
+        if (orderSuccess) {
+          const fromCalc = (priceInfo.unitPrice || 0) * (product.quantity || 1);
+          // 주문서 페이지의 총 합계금액 파싱
+          let fromPage = 0;
+          try {
+            fromPage = await page.evaluate(() => {
+              // 1. 셀렉터 기반
+              const selectorEl = document.querySelector("#ordersForm > div.cart_menu > div > div.list02 > div.list_menu03 > div .t3.t6");
+              if (selectorEl) return parseInt((selectorEl.textContent || "").replace(/[^0-9]/g, ""), 10) || 0;
+              // 2. "총 합계금액" 텍스트 기반 폴백
+              const allElements = document.querySelectorAll("h6, div, span");
+              for (const el of allElements) {
+                if ((el.textContent || "").trim() === "총 합계금액") {
+                  const parent = el.parentElement;
+                  if (parent) {
+                    const match = parent.textContent.match(/([\d,]+)\s*원/);
+                    if (match) return parseInt(match[1].replace(/,/g, ""), 10) || 0;
+                  }
+                }
+              }
+              return 0;
+            });
+          } catch (e) {
+            console.log(`[adpia] 주문서 결제금액 파싱 실패: ${e.message}`);
+          }
+
+          console.log(`[adpia] 결제금액 파싱 - 단가계산: ${fromCalc}원, 주문서: ${fromPage}원`);
+
+          let paymentAmount = fromPage || fromCalc || 0;
+          if (fromCalc > 0 && fromPage > 0 && fromCalc !== fromPage) {
+            console.log(`[adpia] ⚠️ 결제금액 불일치! → 주문서 금액 사용`);
+            paymentAmount = fromPage;
+          }
+
+          try {
+            await createPaymentLogs(authToken, [
+              {
+                purchaseOrderId: purchaseOrderId,
+                openMallOrderNumber: orderNumber || null,
+                paymentAmount: paymentAmount,
+                paymentCard: "SHINHAN",
+              },
+            ]);
+            console.log(`[adpia] 결제 로그 저장: ${paymentAmount}원`);
+          } catch (e) {
+            console.log(`[adpia] 결제 로그 저장 실패 (무시): ${e.message}`);
+          }
         }
       } catch (error) {
         console.error(`[adpia] 상품 처리 에러:`, error.message);

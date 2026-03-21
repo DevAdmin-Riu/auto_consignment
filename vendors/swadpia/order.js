@@ -1493,23 +1493,34 @@ async function placeOrder(page, shippingAddress) {
     });
     await new Promise((r) => setTimeout(r, 500));
 
-    // 12-1. 결제금액 파싱 (결제 버튼 클릭 전)
+    // 12-1. 결제금액 파싱 (셀렉터 + id 기반 폴백)
     let actualPaymentAmount = 0;
     try {
-      const amountText = await page.$eval(
-        "#div_order_price_label11 > span.re_e_text.red.size18.nls",
-        (el) => el.textContent?.trim() || "",
-      );
-      actualPaymentAmount =
-        parseInt(amountText.replace(/[^0-9]/g, ""), 10) || 0;
-      console.log(
-        `[swadpia] 결제금액 파싱: ${amountText} → ${actualPaymentAmount}원`,
-      );
+      const amounts = await page.evaluate(() => {
+        const result = { fromSelector: 0, fromId: 0 };
+
+        // 1. 기존 셀렉터 기반
+        const selectorEl = document.querySelector("#div_order_price_label11 > span.re_e_text.red.size18.nls");
+        if (selectorEl) result.fromSelector = parseInt((selectorEl.textContent || "").replace(/[^0-9]/g, ""), 10) || 0;
+
+        // 2. #pnl_pay_amt id 기반
+        const idEl = document.querySelector("#pnl_pay_amt");
+        if (idEl) result.fromId = parseInt((idEl.textContent || "").replace(/[^0-9]/g, ""), 10) || 0;
+
+        return result;
+      });
+
+      console.log(`[swadpia] 결제금액 파싱 - 셀렉터: ${amounts.fromSelector}원, #pnl_pay_amt: ${amounts.fromId}원`);
+
+      if (amounts.fromSelector > 0 && amounts.fromId > 0 && amounts.fromSelector !== amounts.fromId) {
+        console.log(`[swadpia] ⚠️ 결제금액 불일치! → #pnl_pay_amt 사용`);
+      }
+      actualPaymentAmount = amounts.fromId || amounts.fromSelector || 0;
+      if (actualPaymentAmount === 0) {
+        console.log("[swadpia] ⚠️ 결제금액 파싱 실패 (두 곳 모두 0원)");
+      }
     } catch (e) {
-      console.log(
-        "[swadpia] 결제금액 파싱 실패 (결제 진행에 영향 없음):",
-        e.message,
-      );
+      console.log("[swadpia] 결제금액 파싱 실패:", e.message);
     }
 
     // 결제 버튼 클릭 전 페이지 목록 저장 (BC카드 팝업 감지용)
@@ -2014,21 +2025,19 @@ async function processSwadpiaOrder(
         vendor: "swadpia",
       });
 
-      // 결제 금액 로깅
+      // 결제 로그 저장 (파싱 실패 시 0원으로 저장 → 대시보드에서 수동 수정)
       const actualAmount = orderResult?.actualPaymentAmount || 0;
-      if (actualAmount > 0) {
-        try {
-          await createPaymentLogs(authToken, [
-            {
-              purchaseOrderId,
-              openMallOrderNumber: orderNumber || null,
-              paymentAmount: actualAmount,
-              paymentCard: "SHINHAN",
-            },
-          ]);
-        } catch (e) {
-          console.log("[swadpia] 결제 로그 저장 실패 (무시):", e.message);
-        }
+      try {
+        await createPaymentLogs(authToken, [
+          {
+            purchaseOrderId,
+            openMallOrderNumber: orderNumber || null,
+            paymentAmount: actualAmount,
+            paymentCard: "SHINHAN",
+          },
+        ]);
+      } catch (e) {
+        console.log("[swadpia] 결제 로그 저장 실패 (무시):", e.message);
       }
     } else {
       // 실패: 장바구니 검증 실패 또는 결제 실패

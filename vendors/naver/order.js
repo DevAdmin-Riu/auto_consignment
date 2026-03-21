@@ -2357,25 +2357,75 @@ async function processNaverOrder(
       }
     }
 
-    // 6-1. 결제금액 파싱 (결제 버튼 클릭 전)
+    // 6-1. 결제금액 파싱 (3곳에서 추출 + 교차 검증)
     let actualPaymentAmount = 0;
     try {
-      const amountText = await page.evaluate(() => {
-        const wrap = document.querySelector("#PAYMENT_WRAP");
-        if (!wrap) return "";
-        const em = wrap.querySelector("em");
-        return em ? em.textContent?.trim() || "" : "";
+      const amounts = await page.evaluate(() => {
+        const result = { fromTotal: 0, fromPayment: 0, fromButton: 0 };
+        const priceRegex = /([\d,]+)원/;
+
+        // 1. "총 주문금액" 텍스트 옆에서 추출
+        const allElements = document.querySelectorAll("dt, div, span");
+        for (const el of allElements) {
+          const text = (el.textContent || "").trim();
+          if (text === "총 주문금액") {
+            const parent = el.parentElement;
+            if (parent) {
+              const dd = parent.querySelector("dd");
+              if (dd) {
+                const match = dd.textContent.match(/([\d,]+)원/);
+                if (match) result.fromTotal = parseInt(match[1].replace(/,/g, ""), 10) || 0;
+              }
+            }
+            break;
+          }
+        }
+
+        // 2. "결제수단" 헤더 옆 em 태그에서 추출
+        for (const el of allElements) {
+          const text = (el.textContent || "").trim();
+          if (text === "결제수단") {
+            const parent = el.closest("[class*='SectionHeader']") || el.parentElement?.parentElement;
+            if (parent) {
+              const em = parent.querySelector("em");
+              if (em) {
+                const match = em.textContent.match(/([\d,]+)원/);
+                if (match) result.fromPayment = parseInt(match[1].replace(/,/g, ""), 10) || 0;
+              }
+            }
+            break;
+          }
+        }
+
+        // 3. 결제하기 버튼 안 blind span에서 추출 (가장 정확)
+        const blindSpans = document.querySelectorAll("span.blind, span[class*='blind']");
+        for (const span of blindSpans) {
+          const text = (span.textContent || "").trim();
+          if (/^\d+$/.test(text) && parseInt(text) > 0) {
+            const button = span.closest("button");
+            if (button && (button.textContent || "").includes("결제하기")) {
+              result.fromButton = parseInt(text, 10) || 0;
+              break;
+            }
+          }
+        }
+
+        return result;
       });
-      actualPaymentAmount =
-        parseInt(amountText.replace(/[^0-9]/g, ""), 10) || 0;
-      console.log(
-        `[naver] 결제금액 파싱: "${amountText}" → ${actualPaymentAmount}원`,
-      );
+
+      console.log(`[naver] 결제금액 파싱 - 총주문금액: ${amounts.fromTotal}원, 결제수단: ${amounts.fromPayment}원, 버튼: ${amounts.fromButton}원`);
+
+      // 우선순위: 버튼(blind) > 총주문금액 > 결제수단
+      const candidates = [amounts.fromButton, amounts.fromTotal, amounts.fromPayment].filter(v => v > 0);
+      if (candidates.length >= 2 && new Set(candidates).size > 1) {
+        console.log(`[naver] ⚠️ 결제금액 불일치 감지! → 버튼 금액 우선 사용`);
+      }
+      actualPaymentAmount = amounts.fromButton || amounts.fromTotal || amounts.fromPayment || 0;
+      if (actualPaymentAmount === 0) {
+        console.log("[naver] ⚠️ 결제금액 파싱 실패 (세 곳 모두 0원)");
+      }
     } catch (e) {
-      console.log(
-        "[naver] 결제금액 파싱 실패 (결제 진행에 영향 없음):",
-        e.message,
-      );
+      console.log("[naver] 결제금액 파싱 실패:", e.message);
     }
 
     // 7. 결제하기 버튼 클릭 + 네이버페이 결제
@@ -2572,20 +2622,18 @@ async function processNaverOrder(
           vendor: "naver",
         });
 
-        // 결제 금액 로깅
-        if (actualPaymentAmount > 0) {
-          try {
-            await createPaymentLogs(authToken, [
-              {
-                purchaseOrderId,
-                openMallOrderNumber: orderNumber || null,
-                paymentAmount: actualPaymentAmount,
-                paymentCard: "BC",
-              },
-            ]);
-          } catch (e) {
-            console.log("[naver] 결제 로그 저장 실패 (무시):", e.message);
-          }
+        // 결제 금액 로깅 (파싱 실패 시 0원으로 저장 → 대시보드에서 수동 수정)
+        try {
+          await createPaymentLogs(authToken, [
+            {
+              purchaseOrderId,
+              openMallOrderNumber: orderNumber || null,
+              paymentAmount: actualPaymentAmount,
+              paymentCard: "BC",
+            },
+          ]);
+        } catch (e) {
+          console.log("[naver] 결제 로그 저장 실패 (무시):", e.message);
         }
 
         // dialog 핸들러 제거 (다른 협력사와 충돌 방지)

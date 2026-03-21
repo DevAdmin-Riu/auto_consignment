@@ -751,22 +751,43 @@ async function processCoupangOrder(
   console.log("[coupang] Step 7: 결제금액 파싱 및 결제하기 버튼 클릭...");
   let actualPaymentAmount = 0;
   try {
-    // 결제금액 파싱 (결제 버튼 클릭 전)
+    // 결제금액 파싱 (셀렉터 + 텍스트 기반 폴백)
     try {
-      const amountText = await page.$eval(
-        "#payInfo > div > div.twc-my-4 > div > span:nth-child(2) > span:nth-child(1)",
-        (el) => el.textContent?.trim() || "",
-      );
-      actualPaymentAmount =
-        parseInt(amountText.replace(/[^0-9]/g, ""), 10) || 0;
-      console.log(
-        `[coupang] 결제금액 파싱: ${amountText} → ${actualPaymentAmount}원`,
-      );
+      const amounts = await page.evaluate(() => {
+        const result = { fromSelector: 0, fromText: 0 };
+
+        // 1. 셀렉터 기반
+        const selectorEl = document.querySelector("#payInfo > div > div.twc-my-4 > div > span:nth-child(2) > span:nth-child(1)");
+        if (selectorEl) result.fromSelector = parseInt((selectorEl.textContent || "").replace(/[^0-9]/g, ""), 10) || 0;
+
+        // 2. "총 결제 금액" 텍스트 기반 폴백
+        const allSpans = document.querySelectorAll("span");
+        for (const span of allSpans) {
+          const text = (span.textContent || "").trim();
+          if (text === "총 결제 금액") {
+            const parent = span.closest("div");
+            if (parent) {
+              const match = parent.textContent.match(/([\d,]+)\s*원/);
+              if (match) result.fromText = parseInt(match[1].replace(/,/g, ""), 10) || 0;
+            }
+            break;
+          }
+        }
+
+        return result;
+      });
+
+      console.log(`[coupang] 결제금액 파싱 - 셀렉터: ${amounts.fromSelector}원, 텍스트: ${amounts.fromText}원`);
+
+      if (amounts.fromSelector > 0 && amounts.fromText > 0 && amounts.fromSelector !== amounts.fromText) {
+        console.log(`[coupang] ⚠️ 결제금액 불일치! → 텍스트 금액 사용`);
+      }
+      actualPaymentAmount = amounts.fromSelector || amounts.fromText || 0;
+      if (actualPaymentAmount === 0) {
+        console.log("[coupang] ⚠️ 결제금액 파싱 실패 (두 곳 모두 0원)");
+      }
     } catch (e) {
-      console.log(
-        "[coupang] 결제금액 파싱 실패 (결제 진행에 영향 없음):",
-        e.message,
-      );
+      console.log("[coupang] 결제금액 파싱 실패:", e.message);
     }
 
     await delay(2000);
@@ -1167,20 +1188,19 @@ async function processCoupangOrder(
       vendor: "coupang",
     });
 
-    // 결제 로그 저장
-    if (actualPaymentAmount > 0) {
-      try {
-        await createPaymentLogs(authToken, [
-          {
-            purchaseOrderId,
-            openMallOrderNumber: finalOrderNumber || null,
-            paymentAmount: actualPaymentAmount,
-            paymentCard: "BC",
-          },
-        ]);
-      } catch (e) {
-        console.log("[coupang] 결제 로그 저장 실패 (무시):", e.message);
-      }
+    // 결제 로그 저장 (파싱 실패 시 0원으로 저장 → 대시보드에서 수동 수정)
+    try {
+      await createPaymentLogs(authToken, [
+        {
+          purchaseOrderId,
+          openMallOrderNumber: finalOrderNumber || null,
+          paymentAmount: actualPaymentAmount,
+          paymentCard: "BC",
+        },
+      ]);
+    } catch (e) {
+      console.log("[coupang] 결제 로그 저장 실패 (무시):", e.message);
+    }
     }
   } else {
     await saveOrderResults(authToken, {

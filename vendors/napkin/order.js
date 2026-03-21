@@ -1374,23 +1374,34 @@ async function processNapkinOrder(
         );
       }
 
-      // 결제금액 파싱 (결제 버튼 클릭 전)
+      // 결제금액 파싱 (2곳에서 추출 + 교차 검증)
       actualPaymentAmount = 0;
       try {
-        const amountText = await page.$eval(
-          "#payment_total_order_sale_price_view",
-          (el) => el.textContent?.trim() || "",
-        );
-        actualPaymentAmount =
-          parseInt(amountText.replace(/[^0-9]/g, ""), 10) || 0;
-        console.log(
-          `[napkin] 결제금액 파싱: ${amountText} → ${actualPaymentAmount}원`,
-        );
+        const amounts = await page.evaluate(() => {
+          const result = { fromTotal: 0, fromButton: 0 };
+
+          // 1. 최종 결제 금액
+          const totalEl = document.querySelector("#payment_total_order_sale_price_view");
+          if (totalEl) result.fromTotal = parseInt((totalEl.textContent || "").replace(/[^0-9]/g, ""), 10) || 0;
+
+          // 2. 결제하기 버튼 금액
+          const btnEl = document.querySelector("#total_order_sale_price_view");
+          if (btnEl) result.fromButton = parseInt((btnEl.textContent || "").replace(/[^0-9]/g, ""), 10) || 0;
+
+          return result;
+        });
+
+        console.log(`[napkin] 결제금액 파싱 - 최종결제금액: ${amounts.fromTotal}원, 버튼: ${amounts.fromButton}원`);
+
+        if (amounts.fromTotal > 0 && amounts.fromButton > 0 && amounts.fromTotal !== amounts.fromButton) {
+          console.log(`[napkin] ⚠️ 결제금액 불일치! → 최종결제금액 사용`);
+        }
+        actualPaymentAmount = amounts.fromTotal || amounts.fromButton || 0;
+        if (actualPaymentAmount === 0) {
+          console.log("[napkin] ⚠️ 결제금액 파싱 실패 (두 곳 모두 0원)");
+        }
       } catch (e) {
-        console.log(
-          "[napkin] 결제금액 파싱 실패 (결제 진행에 영향 없음):",
-          e.message,
-        );
+        console.log("[napkin] 결제금액 파싱 실패:", e.message);
       }
 
 
@@ -2194,20 +2205,18 @@ async function processNapkinOrder(
       vendor: "napkin",
     });
 
-    // 결제 로그 저장
-    if (actualPaymentAmount > 0) {
-      try {
-        await createPaymentLogs(authToken, [
-          {
-            purchaseOrderId,
-            openMallOrderNumber: orderNumber || null,
-            paymentAmount: actualPaymentAmount,
-            paymentCard: "SHINHAN",
-          },
-        ]);
-      } catch (e) {
-        console.log("[napkin] 결제 로그 저장 실패 (무시):", e.message);
-      }
+    // 결제 로그 저장 (파싱 실패 시 0원으로 저장 → 대시보드에서 수동 수정)
+    try {
+      await createPaymentLogs(authToken, [
+        {
+          purchaseOrderId,
+          openMallOrderNumber: orderNumber || null,
+          paymentAmount: actualPaymentAmount,
+          paymentCard: "SHINHAN",
+        },
+      ]);
+    } catch (e) {
+      console.log("[napkin] 결제 로그 저장 실패 (무시):", e.message);
     }
 
     // dialog 핸들러 제거 (다른 협력사와 충돌 방지)

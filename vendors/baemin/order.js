@@ -1925,34 +1925,65 @@ async function processPayment(page) {
     }
     await delay(1100);
 
-    // 3-1. 결제금액 파싱 (결제 버튼 텍스트에서 추출)
+    // 3-1. 결제금액 파싱 (2곳에서 추출 + 교차 검증)
     let actualPaymentAmount = 0;
     try {
-      const btnText = await page.evaluate(() => {
-        const btn = document.querySelector(
-          "#root > div > div.sc-jephDI.fmkuTR > section > section > div.sc-fWpDKo.hauHbL > div.sc-eXGUsz.knNOLb > div.sc-jdudiz.eHkFji > button",
-        );
-        if (btn) return btn.textContent?.trim() || "";
-        // 폴백: 텍스트로 버튼 검색
+      const amounts = await page.evaluate(() => {
+        const result = { fromTotal: 0, fromButton: 0 };
+        const priceRegex = /([\d,]+)원/;
+
+        // 1. "총 결제금액" 텍스트 옆에서 추출
+        const allElements = document.querySelectorAll("div, span");
+        for (const el of allElements) {
+          const text = (el.textContent || "").trim();
+          if (text === "총 결제금액") {
+            const parent = el.parentElement;
+            if (parent) {
+              const parentText = parent.textContent || "";
+              const match = parentText.match(/([\d,]+)원/);
+              if (match) {
+                result.fromTotal = parseInt(match[1].replace(/,/g, ""), 10) || 0;
+              }
+            }
+            break;
+          }
+        }
+
+        // 2. 결제하기 버튼 텍스트에서 추출
         const buttons = document.querySelectorAll("button");
         for (const b of buttons) {
           const text = (b.innerText || b.textContent || "").trim();
-          if (text.includes("결제하기") && /[\d,]+원/.test(text)) return text;
+          if (text.includes("결제하기") && priceRegex.test(text)) {
+            const match = text.match(priceRegex);
+            if (match) {
+              result.fromButton = parseInt(match[1].replace(/,/g, ""), 10) || 0;
+            }
+            break;
+          }
         }
-        return "";
+
+        return result;
       });
-      const match = btnText.match(/([\d,]+)원/);
-      if (match) {
-        actualPaymentAmount = parseInt(match[1].replace(/,/g, ""), 10) || 0;
+
+      console.log(`[baemin] 결제금액 파싱 - 총결제금액: ${amounts.fromTotal}원, 버튼: ${amounts.fromButton}원`);
+
+      if (amounts.fromTotal > 0 && amounts.fromButton > 0) {
+        if (amounts.fromTotal === amounts.fromButton) {
+          actualPaymentAmount = amounts.fromTotal;
+          console.log(`[baemin] 결제금액 확정: ${actualPaymentAmount}원 (일치)`);
+        } else {
+          actualPaymentAmount = amounts.fromButton;
+          console.log(`[baemin] ⚠️ 결제금액 불일치! → 버튼 금액 사용: ${actualPaymentAmount}원`);
+        }
+      } else if (amounts.fromTotal > 0) {
+        actualPaymentAmount = amounts.fromTotal;
+      } else if (amounts.fromButton > 0) {
+        actualPaymentAmount = amounts.fromButton;
+      } else {
+        console.log("[baemin] ⚠️ 결제금액 파싱 실패 (두 곳 모두 0원)");
       }
-      console.log(
-        `[baemin] 결제금액 파싱: "${btnText}" → ${actualPaymentAmount}원`,
-      );
     } catch (e) {
-      console.log(
-        "[baemin] 결제금액 파싱 실패 (결제 진행에 영향 없음):",
-        e.message,
-      );
+      console.log("[baemin] 결제금액 파싱 실패:", e.message);
     }
 
     // 4. 결제하기 버튼 클릭
@@ -3200,7 +3231,7 @@ async function processBaeminOrder(
 
         // 3-9. 결제 로그 저장 - 그룹당 1회
         const paidAmount = paymentResult?.actualPaymentAmount || 0;
-        if (groupOrderSuccess && paidAmount > 0) {
+        if (groupOrderSuccess) {
           try {
             await createPaymentLogs(authToken, [
               {
