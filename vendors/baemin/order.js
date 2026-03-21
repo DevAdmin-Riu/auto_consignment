@@ -41,6 +41,7 @@ const {
 } = require("../../lib/graphql-client");
 const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
 const { findDaumFrameViaCDP, cleanupCDPFrame, searchAddressInFrame, selectAddressResult } = require("../../lib/daum-address");
+const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
 
 // ==================== 셀렉터 정의 ====================
 
@@ -3244,6 +3245,7 @@ async function processBaeminOrder(
             console.log(
               `[baemin] 결제 로그 저장: ${paidAmount}원, 카드: BC, 주문번호: ${orderNumber || "없음"}`,
             );
+            alertPaymentParsingFailed({ vendor: "배민상회", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: paidAmount });
           } catch (e) {
             console.log("[baemin] 결제 로그 저장 실패 (무시):", e.message);
           }

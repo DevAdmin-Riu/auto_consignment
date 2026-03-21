@@ -47,6 +47,7 @@ const sharp = require("sharp");
 const path = require("path");
 const fs = require("fs");
 const { searchAddressWithKakao, normalizeAddress } = require("../../lib/address-verify");
+const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
 
 /**
  * 쿠팡 주문 처리 메인 함수
@@ -1198,6 +1199,7 @@ async function processCoupangOrder(
           paymentCard: "BC",
         },
       ]);
+      alertPaymentParsingFailed({ vendor: "쿠팡", purchaseOrderId, openMallOrderNumber: finalOrderNumber, paymentAmount: actualPaymentAmount });
     } catch (e) {
       console.log("[coupang] 결제 로그 저장 실패 (무시):", e.message);
     }

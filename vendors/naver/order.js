@@ -40,6 +40,7 @@ const {
 } = require("../../lib/graphql-client");
 const { getEnv } = require("../config");
 const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
+const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -2632,6 +2633,7 @@ async function processNaverOrder(
               paymentCard: "BC",
             },
           ]);
+          alertPaymentParsingFailed({ vendor: "네이버", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualPaymentAmount });
         } catch (e) {
           console.log("[naver] 결제 로그 저장 실패 (무시):", e.message);
         }

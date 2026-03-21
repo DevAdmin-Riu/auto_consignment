@@ -52,6 +52,7 @@ const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
 const { getEnv } = require("../config");
 const { searchAddressInFrame, selectAddressResult } = require("../../lib/daum-address");
 const { searchAddressWithKakao, normalizeAddress } = require("../../lib/address-verify");
+const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
 
 // 임시 파일 저장 경로
 const TEMP_DIR = path.join(__dirname, "../../temp");
@@ -2036,6 +2037,7 @@ async function processSwadpiaOrder(
             paymentCard: "SHINHAN",
           },
         ]);
+        alertPaymentParsingFailed({ vendor: "성원애드피아", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualAmount });
       } catch (e) {
         console.log("[swadpia] 결제 로그 저장 실패 (무시):", e.message);
       }

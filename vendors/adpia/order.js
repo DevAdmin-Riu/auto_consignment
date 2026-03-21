@@ -54,6 +54,7 @@ const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
 const { getEnv } = require("../config");
 const { findDaumFrameViaCDP, cleanupCDPFrame, searchAddressInFrame, selectAddressResult } = require("../../lib/daum-address");
 const { searchAddressWithKakao, normalizeAddress } = require("../../lib/address-verify");
+const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
 const https = require("https");
 const http = require("http");
 
@@ -2236,6 +2237,7 @@ async function processAdpiaOrder(
               },
             ]);
             console.log(`[adpia] 결제 로그 저장: ${paymentAmount}원`);
+            alertPaymentParsingFailed({ vendor: "애드피아몰", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: paymentAmount });
           } catch (e) {
             console.log(`[adpia] 결제 로그 저장 실패 (무시): ${e.message}`);
           }

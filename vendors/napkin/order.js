@@ -46,6 +46,7 @@ const {
   processPhonePayment,
 } = require("../../lib/shinhan-payment");
 const { getEnv } = require("../config");
+const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
 const {
   findDaumFrameViaCDP,
   cleanupCDPFrame,
@@ -2215,6 +2216,7 @@ async function processNapkinOrder(
           paymentCard: "SHINHAN",
         },
       ]);
+      alertPaymentParsingFailed({ vendor: "냅킨코리아", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualPaymentAmount });
     } catch (e) {
       console.log("[napkin] 결제 로그 저장 실패 (무시):", e.message);
     }
