@@ -45,6 +45,7 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
+  createNeedsManagerVerification,
 } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
 const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
@@ -1746,33 +1747,64 @@ async function processSwadpiaOrder(
     console.log("[swadpia] 주문 처리 시작...");
     console.log("[swadpia] 상품 수:", products.length);
 
-    // 0. 디자인 파일 미리 다운로드 (고정 파일명으로 재사용 가능)
+    // 0. 디자인 파일 미리 다운로드 (없는 상품은 담당자 확인 필요로 표시 후 스킵)
+    const skippedProducts = [];
     for (let i = 0; i < products.length; i++) {
       const product = products[i];
       const designFileUrl = product.designFileUrl;
 
-      if (designFileUrl && product.productSku) {
+      if (!designFileUrl) {
+        console.log(`[swadpia] ⚠️ 디자인 파일 URL 없음 → 담당자 확인 필요: ${product.productSku}`);
         try {
-          // 고정된 파일명 생성 (재사용 가능)
-          const filename = getStableFilename(designFileUrl, product.productSku);
-
-          console.log(
-            `[swadpia] 디자인 파일 준비 (${i + 1}/${products.length}):`,
-            filename,
-          );
-          const filePath = await downloadFile(designFileUrl, filename);
-          downloadedFiles.push({
-            index: i,
-            filePath,
-            productSku: product.productSku,
-          });
-        } catch (err) {
-          console.error(
-            `[swadpia] 디자인 파일 다운로드 실패 (${product.productSku}):`,
-            err.message,
-          );
+          await createNeedsManagerVerification(authToken, [{
+            productVariantVendorId: product.productVariantVendorId,
+            purchaseOrderId,
+            reason: `디자인 파일 URL 없음: ${product.productSku} (${product.productName})`,
+          }]);
+        } catch (e) {
+          console.log(`[swadpia] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
         }
+        skippedProducts.push(product.productSku);
+        continue;
       }
+
+      try {
+        const filename = getStableFilename(designFileUrl, product.productSku);
+        console.log(
+          `[swadpia] 디자인 파일 준비 (${i + 1}/${products.length}):`,
+          filename,
+        );
+        const filePath = await downloadFile(designFileUrl, filename);
+        downloadedFiles.push({
+          index: i,
+          filePath,
+          productSku: product.productSku,
+        });
+      } catch (err) {
+        console.log(`[swadpia] ⚠️ 디자인 파일 다운로드 실패 → 담당자 확인 필요: ${product.productSku} - ${err.message}`);
+        try {
+          await createNeedsManagerVerification(authToken, [{
+            productVariantVendorId: product.productVariantVendorId,
+            purchaseOrderId,
+            reason: `디자인 파일 다운로드 실패: ${product.productSku} - ${err.message}`,
+          }]);
+        } catch (e) {
+          console.log(`[swadpia] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+        }
+        skippedProducts.push(product.productSku);
+        continue;
+      }
+    }
+
+    // 디자인 파일 있는 상품만 남기기
+    if (skippedProducts.length > 0) {
+      products = products.filter(p => !skippedProducts.includes(p.productSku));
+      console.log(`[swadpia] 디자인 파일 없는 상품 ${skippedProducts.length}건 스킵, 남은 상품: ${products.length}건`);
+    }
+
+    if (products.length === 0) {
+      console.log("[swadpia] 주문 가능한 상품 없음 (모두 디자인 파일 누락)");
+      return { success: false, error: "모든 상품 디자인 파일 누락" };
     }
 
     console.log("[swadpia] 준비된 파일 수:", downloadedFiles.length);
