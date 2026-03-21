@@ -3207,10 +3207,11 @@ async function processBaeminOrder(
                 purchaseOrderId,
                 openMallOrderNumber: orderNumber || null,
                 paymentAmount: paidAmount,
+                paymentCard: "BC",
               },
             ]);
             console.log(
-              `[baemin] 결제 로그 저장: ${paidAmount}원, 주문번호: ${orderNumber || "없음"}`,
+              `[baemin] 결제 로그 저장: ${paidAmount}원, 카드: BC, 주문번호: ${orderNumber || "없음"}`,
             );
           } catch (e) {
             console.log("[baemin] 결제 로그 저장 실패 (무시):", e.message);

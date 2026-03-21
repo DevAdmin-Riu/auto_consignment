@@ -1175,6 +1175,7 @@ async function processCoupangOrder(
             purchaseOrderId,
             openMallOrderNumber: finalOrderNumber || null,
             paymentAmount: actualPaymentAmount,
+            paymentCard: "BC",
           },
         ]);
       } catch (e) {

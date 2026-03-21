@@ -2580,6 +2580,7 @@ async function processNaverOrder(
                 purchaseOrderId,
                 openMallOrderNumber: orderNumber || null,
                 paymentAmount: actualPaymentAmount,
+                paymentCard: "BC",
               },
             ]);
           } catch (e) {

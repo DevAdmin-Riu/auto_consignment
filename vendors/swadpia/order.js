@@ -1991,6 +1991,7 @@ async function processSwadpiaOrder(
               purchaseOrderId,
               openMallOrderNumber: orderNumber || null,
               paymentAmount: actualAmount,
+              paymentCard: "SHINHAN",
             },
           ]);
         } catch (e) {

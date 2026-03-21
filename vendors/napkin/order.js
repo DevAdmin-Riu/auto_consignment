@@ -2202,6 +2202,7 @@ async function processNapkinOrder(
             purchaseOrderId,
             openMallOrderNumber: orderNumber || null,
             paymentAmount: actualPaymentAmount,
+            paymentCard: "SHINHAN",
           },
         ]);
       } catch (e) {

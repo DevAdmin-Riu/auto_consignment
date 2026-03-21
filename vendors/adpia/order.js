@@ -2200,6 +2200,7 @@ async function processAdpiaOrder(
               purchaseOrderId: purchaseOrderId,
               openMallOrderNumber: orderNumber || null,
               paymentAmount: paymentAmount,
+              paymentCard: "SHINHAN",
             },
           ]);
           console.log(`[adpia] 결제 로그 저장: ${paymentAmount}원`);
