@@ -2033,6 +2033,7 @@ async function processSwadpiaOrder(
       try {
         await createPaymentLogs(authToken, [
           {
+            vendor: "swadpia",  // TODO:DEPLOY - 배포 후 제거
             purchaseOrderId,
             openMallOrderNumber: orderNumber || null,
             paymentAmount: actualAmount,

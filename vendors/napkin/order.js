@@ -2212,6 +2212,7 @@ async function processNapkinOrder(
     try {
       await createPaymentLogs(authToken, [
         {
+          vendor: "napkin",  // TODO:DEPLOY - 배포 후 제거
           purchaseOrderId,
           openMallOrderNumber: orderNumber || null,
           paymentAmount: actualPaymentAmount,

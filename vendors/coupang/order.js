@@ -1195,6 +1195,7 @@ async function processCoupangOrder(
     try {
       await createPaymentLogs(authToken, [
         {
+          vendor: "coupang",  // TODO:DEPLOY - 배포 후 제거
           purchaseOrderId,
           openMallOrderNumber: finalOrderNumber || null,
           paymentAmount: actualPaymentAmount,
