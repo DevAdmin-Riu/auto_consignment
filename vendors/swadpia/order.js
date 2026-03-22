@@ -2034,12 +2034,12 @@ async function processSwadpiaOrder(
         await createPaymentLogs(authToken, [
           {
             purchaseOrderId,
-            openMallOrderNumber: orderNumber || null,
+            openMallOrderNumber: orderResult?.vendorOrderNumber || null,
             paymentAmount: actualAmount,
             paymentCard: "SHINHAN",
           },
         ]);
-        alertPaymentParsingFailed({ vendor: "성원애드피아", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualAmount, parsingDetail: paymentParsingDetail });
+        alertPaymentParsingFailed({ vendor: "성원애드피아", purchaseOrderId, openMallOrderNumber: orderResult?.vendorOrderNumber, paymentAmount: actualAmount, parsingDetail: paymentParsingDetail });
       } catch (e) {
         console.log("[swadpia] 결제 로그 저장 실패 (무시):", e.message);
       }

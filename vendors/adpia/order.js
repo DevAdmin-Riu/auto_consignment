@@ -2231,13 +2231,13 @@ async function processAdpiaOrder(
             await createPaymentLogs(authToken, [
               {
                 purchaseOrderId: purchaseOrderId,
-                openMallOrderNumber: orderNumber || null,
+                openMallOrderNumber: vendorOrderNumber || null,
                 paymentAmount: paymentAmount,
                 paymentCard: "SHINHAN",
               },
             ]);
             console.log(`[adpia] 결제 로그 저장: ${paymentAmount}원`);
-            alertPaymentParsingFailed({ vendor: "애드피아몰", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: paymentAmount, parsingDetail: { 단가계산: fromCalc, 주문서: fromPage } });
+            alertPaymentParsingFailed({ vendor: "애드피아몰", purchaseOrderId, openMallOrderNumber: vendorOrderNumber, paymentAmount: paymentAmount, parsingDetail: { 단가계산: fromCalc, 주문서: fromPage } });
           } catch (e) {
             console.log(`[adpia] 결제 로그 저장 실패 (무시): ${e.message}`);
           }

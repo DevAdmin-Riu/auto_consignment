@@ -2213,12 +2213,12 @@ async function processNapkinOrder(
       await createPaymentLogs(authToken, [
         {
           purchaseOrderId,
-          openMallOrderNumber: orderNumber || null,
+          openMallOrderNumber: vendorOrderNumber || null,
           paymentAmount: actualPaymentAmount,
           paymentCard: "SHINHAN",
         },
       ]);
-      alertPaymentParsingFailed({ vendor: "냅킨코리아", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualPaymentAmount, parsingDetail: paymentParsingDetail });
+      alertPaymentParsingFailed({ vendor: "냅킨코리아", purchaseOrderId, openMallOrderNumber: vendorOrderNumber, paymentAmount: actualPaymentAmount, parsingDetail: paymentParsingDetail });
     } catch (e) {
       console.log("[napkin] 결제 로그 저장 실패 (무시):", e.message);
     }
