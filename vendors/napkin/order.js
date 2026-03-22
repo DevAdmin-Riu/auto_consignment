@@ -503,6 +503,14 @@ async function setQuantityAndGetPrice(
         console.log(`[napkin] 수량 입력 완전 실패 (박스: ${boxIndex}, 수량: ${quantity}): ${e2.message}`);
       }
     }
+
+    // 즉시 검증
+    const actualVal = await page.$eval(quantitySelector, el => parseInt(el.value, 10) || 0);
+    if (actualVal !== quantity) {
+      console.log(`[napkin] ⚠️ 수량 검증 실패: 기대=${quantity}, 실제=${actualVal} (박스: ${boxIndex})`);
+      throw new Error(`수량 불일치: 기대=${quantity}, 실제=${actualVal} (박스: ${boxIndex})`);
+    }
+    console.log(`[napkin] 수량 검증 OK: ${actualVal}개 (박스: ${boxIndex})`);
   }
 
   // 가격 정보 가져오기 (세트별로 다른 박스)

@@ -395,6 +395,13 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       );
       console.log(`[adpia] 수량 select 선택: ${actualQuantity}`);
       await delay(1000);
+      // 즉시 검증
+      const actualVal = await page.$eval(SELECTORS.orderPage.quantitySelect, el => el.value);
+      if (parseInt(actualVal, 10) !== actualQuantity) {
+        console.log(`[adpia] ⚠️ 수량 검증 실패: 기대=${actualQuantity}, 실제=${actualVal}`);
+        return { success: false, message: `수량 불일치: 기대=${actualQuantity}, 실제=${actualVal}` };
+      }
+      console.log(`[adpia] 수량 검증 OK: ${actualVal}개`);
     } else {
       // input 방식 시도
       let quantityInput = await waitFor(
@@ -402,6 +409,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
         SELECTORS.orderPage.quantityInput,
         5000,
       );
+      let usedSelector = SELECTORS.orderPage.quantityInput;
       // 기본 셀렉터 없으면 대체 셀렉터 시도 (RTN-112326 등)
       if (!quantityInput) {
         console.log("[adpia] 기본 수량 필드 없음, 대체 셀렉터 시도...");
@@ -410,12 +418,20 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
           SELECTORS.orderPage.quantityInputAlt,
           5000,
         );
+        usedSelector = SELECTORS.orderPage.quantityInputAlt;
       }
       if (quantityInput) {
         await quantityInput.click({ clickCount: 3 });
         await delay(500);
         await quantityInput.type(String(actualQuantity), { delay: 100 });
         await delay(1000);
+        // 즉시 검증
+        const actualVal = await page.$eval(usedSelector, el => el.value);
+        if (parseInt(actualVal, 10) !== actualQuantity) {
+          console.log(`[adpia] ⚠️ 수량 검증 실패: 기대=${actualQuantity}, 실제=${actualVal}`);
+          return { success: false, message: `수량 불일치: 기대=${actualQuantity}, 실제=${actualVal}` };
+        }
+        console.log(`[adpia] 수량 검증 OK: ${actualVal}개`);
       } else {
         console.log(`[adpia] 수량 입력/선택 필드를 찾을 수 없음 (상품코드: ${product.productSku})`);
         return {

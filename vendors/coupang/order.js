@@ -240,6 +240,21 @@ async function processCoupangOrder(
             return { success: false, error: "수량 설정 실패" };
           }
 
+          // 즉시 검증: 수량 input 값 readback
+          await delay(500);
+          const actualQty = await page.evaluate(() => {
+            const input = document.querySelector('.product-quantity input[type="text"]');
+            if (input) return parseInt(input.value, 10) || 0;
+            const numInput = document.querySelector('.product-quantity input[type="number"]');
+            if (numInput) return parseInt(numInput.value, 10) || 0;
+            return 0;
+          });
+          if (actualQty !== quantity) {
+            console.log(`[coupang] ⚠️ 수량 즉시 검증 불일치: 기대=${quantity}, 실제=${actualQty} - 상품: ${productName || productUrl}`);
+            return { success: false, error: `수량 불일치: 기대=${quantity}, 실제=${actualQty}` };
+          }
+          console.log(`[coupang] 수량 검증 OK: ${actualQty}개`);
+
           await delay(1000);
           steps.push({
             step: `product_${productIndex + 1}_quantity`,
