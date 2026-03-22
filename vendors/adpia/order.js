@@ -2230,7 +2230,6 @@ async function processAdpiaOrder(
           try {
             await createPaymentLogs(authToken, [
               {
-                vendor: "adpia",  // TODO:DEPLOY - 배포 후 제거
                 purchaseOrderId: purchaseOrderId,
                 openMallOrderNumber: orderNumber || null,
                 paymentAmount: paymentAmount,

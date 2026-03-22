@@ -2629,7 +2629,6 @@ async function processNaverOrder(
         try {
           await createPaymentLogs(authToken, [
             {
-              vendor: "naver",  // TODO:DEPLOY - 배포 후 제거
               purchaseOrderId,
               openMallOrderNumber: orderNumber || null,
               paymentAmount: actualPaymentAmount,
