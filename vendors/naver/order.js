@@ -702,27 +702,33 @@ async function setQuantity(page, quantity) {
 
   console.log(`[naver] 수량 설정: ${quantity}개`);
 
-  // 수량 입력 필드 찾기 (data attribute 기반 - styled-components 대응)
-  const quantityInput = await page.$(
-    '[data-shp-area-id="optquantity"] input[type="number"]',
-  );
+  const QUANTITY_SELECTOR = '[data-shp-area-id="optquantity"] input[type="number"]';
 
-  if (quantityInput) {
+  // 수량 입력 필드 찾기 - 마지막 input 사용 (옵션 여러 개일 때 최신 옵션의 수량)
+  const quantityInputs = await page.$$(QUANTITY_SELECTOR);
+
+  if (quantityInputs.length > 0) {
+    const targetInput = quantityInputs[0]; // 첫 번째 input (prepend 구조 - 최신이 위에)
+    if (quantityInputs.length > 1) {
+      console.log(`[naver] 수량 input ${quantityInputs.length}개 감지 → 첫 번째(최신) 사용`);
+    }
+
     for (let attempt = 1; attempt <= 3; attempt++) {
-      await quantityInput.click({ clickCount: 3 });
+      await targetInput.click({ clickCount: 3 });
       await delay(300);
       await page.keyboard.type(String(quantity), { delay: 50 });
       await delay(300);
       await page.keyboard.press('Tab');
       await delay(500);
 
-      // 입력된 값 검증
+      // 입력된 값 검증 - 첫 번째 input (prepend 구조 - 최신이 위에)
       const actualValue = await page.evaluate(
         (sel) => {
-          const input = document.querySelector(sel);
-          return input ? Number(input.value) : null;
+          const inputs = document.querySelectorAll(sel);
+          if (inputs.length === 0) return null;
+          return Number(inputs[0].value);
         },
-        '[data-shp-area-id="optquantity"] input[type="number"]',
+        QUANTITY_SELECTOR,
       );
 
       if (actualValue === quantity) {
@@ -737,7 +743,7 @@ async function setQuantity(page, quantity) {
     return false;
   }
 
-  // 플러스 버튼으로 수량 증가 (blind 텍스트 기반)
+  // 플러스 버튼으로 수량 증가 (blind 텍스트 기반) - 첫 번째 버튼 사용 (prepend 구조)
   const plusBtn = await page.evaluateHandle(() => {
     const spans = document.querySelectorAll('span.blind');
     for (const span of spans) {
@@ -753,13 +759,14 @@ async function setQuantity(page, quantity) {
       await plusBtn.click();
       await delay(300);
     }
-    // 검증
+    // 검증 - 첫 번째 input (prepend 구조)
     const actualValue = await page.evaluate(
       (sel) => {
-        const input = document.querySelector(sel);
-        return input ? Number(input.value) : null;
+        const inputs = document.querySelectorAll(sel);
+        if (inputs.length === 0) return null;
+        return Number(inputs[0].value);
       },
-      '[data-shp-area-id="optquantity"] input[type="number"]',
+      QUANTITY_SELECTOR,
     );
     if (actualValue === quantity) {
       console.log(`[naver] 수량 증가 버튼 ${quantity - 1}회 클릭 완료 (검증 OK: ${actualValue}개)`);
