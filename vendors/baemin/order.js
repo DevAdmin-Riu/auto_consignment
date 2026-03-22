@@ -3239,15 +3239,15 @@ async function processBaeminOrder(
             await createPaymentLogs(authToken, [
               {
                 purchaseOrderId,
-                openMallOrderNumber: orderNumber || null,
+                openMallOrderNumber: vendorOrderNumber || null,
                 paymentAmount: paidAmount,
                 paymentCard: "BC",
               },
             ]);
             console.log(
-              `[baemin] 결제 로그 저장: ${paidAmount}원, 카드: BC, 주문번호: ${orderNumber || "없음"}`,
+              `[baemin] 결제 로그 저장: ${paidAmount}원, 카드: BC, 주문번호: ${vendorOrderNumber || "없음"}`,
             );
-            alertPaymentParsingFailed({ vendor: "배민상회", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: paidAmount, parsingDetail: paymentParsingDetail });
+            alertPaymentParsingFailed({ vendor: "배민상회", purchaseOrderId, openMallOrderNumber: vendorOrderNumber, paymentAmount: paidAmount, parsingDetail: paymentParsingDetail });
           } catch (e) {
             console.log("[baemin] 결제 로그 저장 실패 (무시):", e.message);
           }
