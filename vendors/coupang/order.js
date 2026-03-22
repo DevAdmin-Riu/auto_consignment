@@ -1196,12 +1196,12 @@ async function processCoupangOrder(
       await createPaymentLogs(authToken, [
         {
           purchaseOrderId,
-          openMallOrderNumber: finalOrderNumber || null,
+          openMallOrderNumber: paymentStep?.orderNumber || null,
           paymentAmount: actualPaymentAmount,
           paymentCard: "BC",
         },
       ]);
-      alertPaymentParsingFailed({ vendor: "쿠팡", purchaseOrderId, openMallOrderNumber: finalOrderNumber, paymentAmount: actualPaymentAmount, parsingDetail: paymentParsingDetail });
+      alertPaymentParsingFailed({ vendor: "쿠팡", purchaseOrderId, openMallOrderNumber: paymentStep?.orderNumber, paymentAmount: actualPaymentAmount, parsingDetail: paymentParsingDetail });
     } catch (e) {
       console.log("[coupang] 결제 로그 저장 실패 (무시):", e.message);
     }
