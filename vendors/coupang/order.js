@@ -2149,20 +2149,40 @@ async function verifyCartItems(page, expectedProducts) {
         }
       }
 
-      // 가격 추출
-      const priceEl = item.querySelector(
-        '[class*="price"], [class*="amount"], .sale-price',
-      );
-      const priceText = priceEl
-        ? priceEl.textContent?.replace(/[^\d]/g, "")
-        : "0";
-      const price = parseInt(priceText, 10) || 0;
+      // 가격 추출 (할인가 우선 — data-component-id="price-area" 내 큰 글씨)
+      let price = 0;
+      const priceArea = item.querySelector('[data-component-id="price-area"]');
+      if (priceArea) {
+        // 할인가: twc-text-[20px] 또는 twc-font-bold 큰 글씨 숫자
+        const boldPrice = priceArea.querySelector('span[class*="twc-text-[20px"]');
+        if (boldPrice) {
+          price = parseInt(boldPrice.textContent.replace(/[^\d]/g, ""), 10) || 0;
+        }
+        // 폴백: price-area 안 마지막 숫자+원 패턴
+        if (!price) {
+          const allText = priceArea.textContent || "";
+          const matches = allText.match(/([\d,]+)\s*원/g);
+          if (matches && matches.length > 0) {
+            const lastMatch = matches[matches.length - 1];
+            price = parseInt(lastMatch.replace(/[^\d]/g, ""), 10) || 0;
+          }
+        }
+      }
+      // 최종 폴백
+      if (!price) {
+        const fallbackEl = item.querySelector('[class*="price"] strong, [class*="amount"]');
+        if (fallbackEl) price = parseInt(fallbackEl.textContent.replace(/[^\d]/g, ""), 10) || 0;
+      }
+
+      // 장바구니 가격은 총가(단가×수량)이므로 수량으로 나눠서 단가 계산
+      const unitPrice = quantity > 0 ? Math.round(price / quantity) : price;
 
       items.push({
-        name: name.substring(0, 100), // 이름 길이 제한
+        name: name.substring(0, 100),
         quantity,
         vendorItemId,
-        price,
+        price: unitPrice, // 단가
+        totalPrice: price, // 총가 (원본)
         isSelected,
       });
     }
