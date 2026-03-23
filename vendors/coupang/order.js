@@ -50,6 +50,66 @@ const { searchAddressWithKakao, normalizeAddress } = require("../../lib/address-
 const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
 
 /**
+ * Access Denied 감지 + 쿠키 삭제 + 재시도
+ * @param {object} page - Puppeteer page
+ * @returns {Promise<boolean>} true면 access denied 감지됨
+ */
+async function checkAccessDenied(page) {
+  try {
+    const isBlocked = await page.evaluate(() => {
+      const text = (document.body?.textContent || "").toLowerCase();
+      const title = (document.title || "").toLowerCase();
+      return text.includes("access denied") || title.includes("access denied") ||
+             text.includes("access_denied") || text.includes("접근이 거부");
+    });
+    return isBlocked;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Access Denied 발생 시 쿠키 삭제 + 대기 + 재시도
+ */
+async function handleAccessDenied(page) {
+  console.log("[coupang] ⚠️ Access Denied 감지! 쿠키 삭제 + 대기 시작...");
+
+  try {
+    // 쿠키 삭제
+    const client = await page.target().createCDPSession();
+    await client.send("Network.clearBrowserCookies");
+    await client.send("Network.clearBrowserCache");
+    await client.detach();
+    console.log("[coupang] 쿠키/캐시 삭제 완료");
+  } catch (e) {
+    console.log("[coupang] 쿠키 삭제 실패 (무시):", e.message);
+  }
+
+  // 5분 대기
+  console.log("[coupang] Access Denied 해제 대기 (5분)...");
+  await new Promise(r => setTimeout(r, 5 * 60 * 1000));
+  console.log("[coupang] 대기 완료, 재시도...");
+}
+
+/**
+ * page.goto 래퍼 — Access Denied 감지 시 자동 복구 + 재시도
+ */
+async function safeGoto(page, url, options = {}, maxRetries = 2) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    await page.goto(url, options);
+    const blocked = await checkAccessDenied(page);
+    if (!blocked) return;
+
+    console.log(`[coupang] Access Denied (시도 ${attempt}/${maxRetries})`);
+    if (attempt < maxRetries) {
+      await handleAccessDenied(page);
+    } else {
+      throw new Error("Access Denied 복구 실패 (쿠키 삭제 + 5분 대기 후에도 차단)");
+    }
+  }
+}
+
+/**
  * 쿠팡 주문 처리 메인 함수
  */
 async function processCoupangOrder(
@@ -148,7 +208,7 @@ async function processCoupangOrder(
       // 2-1. 상품 페이지 이동
       console.log(`[coupang] 상품 ${productIndex + 1}: 페이지 이동...`, productUrl);
       try {
-        await page.goto(productUrl, {
+        await safeGoto(page, productUrl, {
           waitUntil: "networkidle2",
           timeout: 30000,
         });
@@ -320,7 +380,7 @@ async function processCoupangOrder(
 
     // 3. 장바구니 페이지로 이동
     console.log("[coupang] Step 3: 장바구니 페이지로 이동...");
-    await page.goto("https://cart.coupang.com/cartView.pang", {
+    await safeGoto(page, "https://cart.coupang.com/cartView.pang", {
       waitUntil: "networkidle2",
       timeout: 30000,
     });
@@ -2937,7 +2997,7 @@ async function clearCart(page) {
   let dialogHandled = false;
 
   // 장바구니 페이지로 이동
-  await page.goto("https://cart.coupang.com/cartView.pang", {
+  await safeGoto(page, "https://cart.coupang.com/cartView.pang", {
     waitUntil: "networkidle2",
     timeout: 30000,
   });
