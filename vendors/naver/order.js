@@ -1565,6 +1565,10 @@ async function processProduct(page, product) {
   }
 
   // 1. 상품 페이지로 이동
+  if (!productUrl || !productUrl.trim() || !productUrl.startsWith("http")) {
+    console.log(`[naver] ❌ 오픈몰 상품 링크 비어 있음: ${product.productSku} (${product.productName})`);
+    return { success: false, error: `오픈몰 상품 링크 비어 있음: ${product.productSku}` };
+  }
   await page.goto(productUrl, {
     waitUntil: "networkidle2",
     timeout: 30000,
