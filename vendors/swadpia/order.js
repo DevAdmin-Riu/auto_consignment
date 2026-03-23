@@ -220,10 +220,10 @@ const SELECTORS = {
     selectAllCheckbox: "#cart_all_check",
     // 장바구니 비우기 버튼 (선택 상품 삭제)
     deleteSelectedBtn:
-      "#cart_list_result > table > tbody > tr:last-child > td > table > tbody > tr > td:nth-child(1) > a:nth-child(1)",
+      'a[onclick*="cartSelDelete"]',
     // 전체 주문하기 버튼
     orderAllBtn:
-      "#cart_list_result > table > tbody > tr:last-child > td > table > tbody > tr > td:nth-child(2) > a:nth-child(3)",
+      'a[onclick*="cartAllOrder"]',
   },
   // 주문서 작성 페이지 셀렉터
   orderForm: {
