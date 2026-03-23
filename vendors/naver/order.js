@@ -2206,41 +2206,10 @@ async function processNaverOrder(
           continue;
         }
 
-        // 배송지 선택 후 검증 (span.blind "주소" 기반 + 카카오 API)
-        console.log("[naver] 결제 전 배송지 검증...");
-        await delay(2000);
-
-        // span.blind "주소" 텍스트로 화면 주소 추출
-        const displayedAddress = await page.evaluate(() => {
-          const blindSpans = document.querySelectorAll("span.blind");
-          for (const span of blindSpans) {
-            if (span.textContent.trim() === "주소") {
-              const parent = span.parentElement;
-              if (parent) {
-                const fullText = parent.textContent.replace("주소", "").trim();
-                return fullText;
-              }
-            }
-          }
-          return null;
-        });
-
-        if (displayedAddress) {
-          console.log(`[naver] 화면 배송지 (blind): ${displayedAddress}`);
-        }
-
-        const verifyResult = await verifyShippingAddressOnPage(page, shippingAddress, "naver");
-        if (verifyResult.success) {
-          console.log("[naver] ✅ 배송지 검증 통과");
-          addressVerified = true;
-          break;
-        }
-
-        console.log(`[naver] ❌ 배송지 검증 실패 (시도 ${addrAttempt}): ${verifyResult.message}`);
-        if (addrAttempt < MAX_ADDRESS_ATTEMPTS) {
-          console.log("[naver] 배송지 재입력을 위해 재시도...");
-          await delay(2000);
-        }
+        // 카카오 배송지 결제 전 검증 비활성화 (네이버/카카오 주소 구조 차이로 오탐 발생)
+        console.log("[naver] 배송지 검증 스킵 (카카오 비활성화)");
+        addressVerified = true;
+        break;
       }
 
       if (!addressVerified) {
