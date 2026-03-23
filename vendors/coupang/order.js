@@ -318,6 +318,31 @@ async function processCoupangOrder(
           });
         }
 
+        // 2-2.5. 상품 페이지에서 단가 추출
+        let productUnitPrice = 0;
+        try {
+          productUnitPrice = await page.evaluate(() => {
+            // 1. 할인가 (sale price)
+            const salePrice = document.querySelector('.prod-sale-price .total-price strong');
+            if (salePrice) return parseInt(salePrice.textContent.replace(/[^\d]/g, ''), 10) || 0;
+            // 2. 일반가
+            const totalPrice = document.querySelector('.total-price strong');
+            if (totalPrice) return parseInt(totalPrice.textContent.replace(/[^\d]/g, ''), 10) || 0;
+            // 3. 텍스트 기반 폴백
+            const priceEls = document.querySelectorAll('[class*="price"] strong, [class*="Price"] strong');
+            for (const el of priceEls) {
+              const val = parseInt(el.textContent.replace(/[^\d]/g, ''), 10);
+              if (val > 0) return val;
+            }
+            return 0;
+          });
+          if (productUnitPrice > 0) {
+            console.log(`[coupang] 상품 ${productIndex + 1} 단가: ${productUnitPrice}원`);
+          }
+        } catch (e) {
+          console.log(`[coupang] 상품 단가 추출 실패 (무시): ${e.message}`);
+        }
+
         // 2-3. 장바구니 담기
         console.log(`[coupang] 상품 ${productIndex + 1}: 장바구니 담기...`);
         const cartBtn = await page.$("button.prod-cart-btn");
@@ -336,6 +361,7 @@ async function processCoupangOrder(
             productName: extractedName?.trim() || productName,
             quantity,
             vendorItemId: vendorItemIdMatch ? vendorItemIdMatch[1] : null,
+            unitPrice: productUnitPrice || 0,
           });
         } else {
           steps.push({
