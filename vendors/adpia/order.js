@@ -716,12 +716,22 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
 async function loginToAdpia(page, vendor) {
   console.log("[adpia] 로그인 시작...");
 
-  // 1. 로그인 페이지 이동
+  // 1. 로그인 페이지 이동 (ERR_EMPTY_RESPONSE 등 네트워크 에러 시 재시도)
   console.log("[adpia] 1. 로그인 페이지 이동...");
-  await page.goto(vendor.loginUrl, {
-    waitUntil: "networkidle2",
-    timeout: 30000,
-  });
+  const MAX_GOTO_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_GOTO_RETRIES; attempt++) {
+    try {
+      await page.goto(vendor.loginUrl, {
+        waitUntil: "networkidle2",
+        timeout: 30000,
+      });
+      break;
+    } catch (e) {
+      console.log(`[adpia] 페이지 이동 실패 (시도 ${attempt}/${MAX_GOTO_RETRIES}): ${e.message}`);
+      if (attempt === MAX_GOTO_RETRIES) throw e;
+      await delay(5000);
+    }
+  }
   await delay(1500);
 
   // 2. 이미 로그인 되어있는지 확인
