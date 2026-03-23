@@ -1112,31 +1112,27 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
         return { found: false };
       });
 
-      // 선택 후 카카오 매칭 검증 (normalizeAddress로 "광역시/특별시" 등 제거 후 비교)
-      if (addressSelected.found && kakaoResult) {
-        const { normalizeAddress } = require("../../lib/address-verify");
-        const rawSelected = addressSelected.address;
-        const normalizedSelected = normalizeAddress(rawSelected);
-        const kakaoChecks = [
-          kakaoResult.roadAddress,
-          kakaoResult.jibunAddress,
-          normalizeAddress(kakaoResult.roadAddress),
-          normalizeAddress(kakaoResult.jibunAddress),
-        ].filter(Boolean);
-
-        const matched = kakaoChecks.some(addr =>
-          rawSelected.includes(addr) || normalizedSelected.includes(addr)
-        );
-        if (matched) {
-          console.log(`[naver] ✅ 선택된 주소 카카오 매칭 성공`);
-        } else {
-          console.error(`[naver] ❌ 선택된 주소가 카카오 결과와 불일치`);
-          console.error(`[naver]   선택된: ${addressSelected.address}`);
-          console.error(`[naver]   카카오 도로명: ${kakaoResult.roadAddress}`);
-          console.error(`[naver]   카카오 지번: ${kakaoResult.jibunAddress}`);
-          return { success: false, reason: "address_mismatch_after_select" };
-        }
-      }
+      // 카카오 매칭 검증 비활성화 (네이버/카카오 주소 구조 차이로 오탐 발생)
+      // if (addressSelected.found && kakaoResult) {
+      //   const { normalizeAddress } = require("../../lib/address-verify");
+      //   const rawSelected = addressSelected.address;
+      //   const normalizedSelected = normalizeAddress(rawSelected);
+      //   const kakaoChecks = [
+      //     kakaoResult.roadAddress,
+      //     kakaoResult.jibunAddress,
+      //     normalizeAddress(kakaoResult.roadAddress),
+      //     normalizeAddress(kakaoResult.jibunAddress),
+      //   ].filter(Boolean);
+      //   const matched = kakaoChecks.some(addr =>
+      //     rawSelected.includes(addr) || normalizedSelected.includes(addr)
+      //   );
+      //   if (matched) {
+      //     console.log(`[naver] ✅ 선택된 주소 카카오 매칭 성공`);
+      //   } else {
+      //     console.error(`[naver] ❌ 선택된 주소가 카카오 결과와 불일치`);
+      //     return { success: false, reason: "address_mismatch_after_select" };
+      //   }
+      // }
 
       if (!addressSelected.found) {
         console.log(`[naver] 주소 검색 결과에서 매칭 실패 (후보 ${addressSelected.candidateCount}개)`);
@@ -1413,56 +1409,12 @@ async function selectDeliveryAddress(page, shippingAddress) {
       console.log("[naver] 첫 번째 주소 선택 버튼 클릭 완료");
       await delay(3000);
 
-      // 배송지 입력 직후 카카오 API로 즉시 검증
-      console.log("[naver] 배송지 입력 직후 주소 검증...");
-      const { searchAddressWithKakao, normalizeAddress } = require("../../lib/address-verify");
-      const ourAddress = shippingAddress.streetAddress1 || "";
-      const kakaoResult = await searchAddressWithKakao(ourAddress);
-
-      if (kakaoResult) {
-        // span.blind "주소" 기반으로 화면 주소 읽기
-        const displayedAddress = await page.evaluate(() => {
-          const blindSpans = document.querySelectorAll("span.blind");
-          for (const span of blindSpans) {
-            if (span.textContent.trim() === "주소") {
-              const parent = span.parentElement;
-              if (parent) return parent.textContent.replace("주소", "").trim();
-            }
-          }
-          return null;
-        });
-
-        if (displayedAddress) {
-          const kakaoAddresses = [
-            kakaoResult.roadAddress,
-            kakaoResult.jibunAddress,
-            kakaoResult.roadAddressShort,
-            kakaoResult.jibunAddressShort,
-          ].filter(Boolean).map(a => normalizeAddress(a));
-
-          const normalizedDisplay = normalizeAddress(displayedAddress);
-          let matched = false;
-          for (const kakaoAddr of kakaoAddresses) {
-            if (normalizedDisplay.includes(kakaoAddr)) {
-              matched = true;
-              console.log(`[naver] ✅ 배송지 즉시 검증 통과: "${kakaoAddr}"`);
-              break;
-            }
-          }
-
-          if (!matched) {
-            console.error(`[naver] ❌ 배송지 즉시 검증 실패!`);
-            console.error(`[naver]   우리: ${ourAddress}`);
-            console.error(`[naver]   카카오 도로명: ${kakaoResult.roadAddress}`);
-            console.error(`[naver]   화면: ${displayedAddress}`);
-            return { success: false, reason: "address_verification_failed_after_input" };
-          }
-        } else {
-          console.log("[naver] 화면 주소 추출 실패 - 결제 전 검증에서 재확인");
-        }
-      } else {
-        console.log("[naver] 카카오 API 결과 없음 - 검증 스킵");
-      }
+      // 카카오 배송지 즉시 검증 비활성화 (네이버/카카오 주소 구조 차이로 오탐 발생)
+      // console.log("[naver] 배송지 입력 직후 주소 검증...");
+      // const { searchAddressWithKakao, normalizeAddress } = require("../../lib/address-verify");
+      // const ourAddress = shippingAddress.streetAddress1 || "";
+      // const kakaoResult2 = await searchAddressWithKakao(ourAddress);
+      // ... (검증 로직 생략)
 
       return { success: true };
     }
@@ -2261,41 +2213,10 @@ async function processNaverOrder(
           continue;
         }
 
-        // 배송지 선택 후 검증 (span.blind "주소" 기반 + 카카오 API)
-        console.log("[naver] 결제 전 배송지 검증...");
-        await delay(2000);
-
-        // span.blind "주소" 텍스트로 화면 주소 추출
-        const displayedAddress = await page.evaluate(() => {
-          const blindSpans = document.querySelectorAll("span.blind");
-          for (const span of blindSpans) {
-            if (span.textContent.trim() === "주소") {
-              const parent = span.parentElement;
-              if (parent) {
-                const fullText = parent.textContent.replace("주소", "").trim();
-                return fullText;
-              }
-            }
-          }
-          return null;
-        });
-
-        if (displayedAddress) {
-          console.log(`[naver] 화면 배송지 (blind): ${displayedAddress}`);
-        }
-
-        const verifyResult = await verifyShippingAddressOnPage(page, shippingAddress, "naver");
-        if (verifyResult.success) {
-          console.log("[naver] ✅ 배송지 검증 통과");
-          addressVerified = true;
-          break;
-        }
-
-        console.log(`[naver] ❌ 배송지 검증 실패 (시도 ${addrAttempt}): ${verifyResult.message}`);
-        if (addrAttempt < MAX_ADDRESS_ATTEMPTS) {
-          console.log("[naver] 배송지 재입력을 위해 재시도...");
-          await delay(2000);
-        }
+        // 카카오 배송지 결제 전 검증 비활성화 (네이버/카카오 주소 구조 차이로 오탐 발생)
+        console.log("[naver] 배송지 검증 스킵 (카카오 비활성화)");
+        addressVerified = true;
+        break;
       }
 
       if (!addressVerified) {
