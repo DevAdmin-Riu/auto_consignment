@@ -463,6 +463,19 @@ async function processCoupangOrder(
         detail: cartVerification,
       });
 
+      // 장바구니 검증에서 추출한 가격을 addedProducts에 매핑
+      if (cartVerification.matchedItems) {
+        for (const matched of cartVerification.matchedItems) {
+          if (matched.price > 0 && matched.vendorItemId) {
+            const ap = addedProducts.find(p => p.vendorItemId === matched.vendorItemId);
+            if (ap) {
+              ap.unitPrice = matched.price;
+              console.log(`[coupang] 상품 가격 매핑: ${matched.name?.substring(0, 30)}... = ${matched.price}원`);
+            }
+          }
+        }
+      }
+
       // 수량 불일치가 있으면 장바구니 비우고 재시도
       if (
         cartVerification.quantityMismatches &&
@@ -2208,6 +2221,7 @@ async function verifyCartItems(page, expectedProducts) {
           vendorItemId: cartItem.vendorItemId || null,
           quantity: cartItem.quantity,
           expectedQuantity: expected.quantity,
+          price: cartItem.price || 0,
           matchMethod,
         });
         console.log(
