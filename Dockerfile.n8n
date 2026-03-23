@@ -2,14 +2,18 @@ FROM docker.n8n.io/n8nio/n8n
 
 USER root
 
-# xlsx-js-style, exceljs, axios 전역 설치
+# 외부 모듈 전역 설치
 RUN npm install -g xlsx-js-style exceljs axios nodemailer
 
-# n8n node_modules에 심볼릭 링크 (vm2 resolver가 찾을 수 있도록)
-RUN ln -sf /usr/local/lib/node_modules/xlsx-js-style /usr/local/lib/node_modules/n8n/node_modules/xlsx-js-style 2>/dev/null; \
-    ln -sf /usr/local/lib/node_modules/exceljs /usr/local/lib/node_modules/n8n/node_modules/exceljs 2>/dev/null; \
-    ln -sf /usr/local/lib/node_modules/axios /usr/local/lib/node_modules/n8n/node_modules/axios 2>/dev/null; \
-    ln -sf /usr/local/lib/node_modules/nodemailer /usr/local/lib/node_modules/n8n/node_modules/nodemailer 2>/dev/null; \
-    true
+# n8n node_modules에 강제 심볼릭 링크 (기존 pnpm 링크 덮어쓰기)
+# rm -f로 기존 링크/디렉토리 제거 후 글로벌 모듈로 연결
+RUN rm -rf /usr/local/lib/node_modules/n8n/node_modules/xlsx-js-style && \
+    rm -rf /usr/local/lib/node_modules/n8n/node_modules/exceljs && \
+    rm -rf /usr/local/lib/node_modules/n8n/node_modules/axios && \
+    rm -rf /usr/local/lib/node_modules/n8n/node_modules/nodemailer && \
+    ln -s /usr/local/lib/node_modules/xlsx-js-style /usr/local/lib/node_modules/n8n/node_modules/xlsx-js-style && \
+    ln -s /usr/local/lib/node_modules/exceljs /usr/local/lib/node_modules/n8n/node_modules/exceljs && \
+    ln -s /usr/local/lib/node_modules/axios /usr/local/lib/node_modules/n8n/node_modules/axios && \
+    ln -s /usr/local/lib/node_modules/nodemailer /usr/local/lib/node_modules/n8n/node_modules/nodemailer
 
 USER node

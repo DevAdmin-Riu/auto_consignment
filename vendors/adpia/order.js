@@ -395,6 +395,13 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       );
       console.log(`[adpia] 수량 select 선택: ${actualQuantity}`);
       await delay(1000);
+      // 즉시 검증
+      const actualVal = await page.$eval(SELECTORS.orderPage.quantitySelect, el => el.value);
+      if (parseInt(actualVal, 10) !== actualQuantity) {
+        console.log(`[adpia] ⚠️ 수량 검증 실패: 기대=${actualQuantity}, 실제=${actualVal}`);
+        return { success: false, message: `수량 불일치: 기대=${actualQuantity}, 실제=${actualVal}` };
+      }
+      console.log(`[adpia] 수량 검증 OK: ${actualVal}개`);
     } else {
       // input 방식 시도
       let quantityInput = await waitFor(
@@ -402,6 +409,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
         SELECTORS.orderPage.quantityInput,
         5000,
       );
+      let usedSelector = SELECTORS.orderPage.quantityInput;
       // 기본 셀렉터 없으면 대체 셀렉터 시도 (RTN-112326 등)
       if (!quantityInput) {
         console.log("[adpia] 기본 수량 필드 없음, 대체 셀렉터 시도...");
@@ -410,12 +418,20 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
           SELECTORS.orderPage.quantityInputAlt,
           5000,
         );
+        usedSelector = SELECTORS.orderPage.quantityInputAlt;
       }
       if (quantityInput) {
         await quantityInput.click({ clickCount: 3 });
         await delay(500);
         await quantityInput.type(String(actualQuantity), { delay: 100 });
         await delay(1000);
+        // 즉시 검증
+        const actualVal = await page.$eval(usedSelector, el => el.value);
+        if (parseInt(actualVal, 10) !== actualQuantity) {
+          console.log(`[adpia] ⚠️ 수량 검증 실패: 기대=${actualQuantity}, 실제=${actualVal}`);
+          return { success: false, message: `수량 불일치: 기대=${actualQuantity}, 실제=${actualVal}` };
+        }
+        console.log(`[adpia] 수량 검증 OK: ${actualVal}개`);
       } else {
         console.log(`[adpia] 수량 입력/선택 필드를 찾을 수 없음 (상품코드: ${product.productSku})`);
         return {
@@ -522,7 +538,16 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       return { success: false, message: "장바구니 담기 버튼을 찾을 수 없음" };
     }
 
-    await addToCartBtn.click();
+    try {
+      await addToCartBtn.click();
+    } catch (clickErr) {
+      // "Node is not clickable" 등 → evaluate로 직접 클릭 폴백
+      console.log(`[adpia] 장바구니 버튼 click 실패 (${clickErr.message}), evaluate 폴백...`);
+      await page.evaluate((sel) => {
+        const btn = document.querySelector(sel);
+        if (btn) btn.click();
+      }, SELECTORS.orderPage.addToCartBtn);
+    }
     console.log("[adpia] 파일 업로드 진행 중...");
     await delay(3000); // 업로드 시작 대기
 
@@ -700,12 +725,22 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
 async function loginToAdpia(page, vendor) {
   console.log("[adpia] 로그인 시작...");
 
-  // 1. 로그인 페이지 이동
+  // 1. 로그인 페이지 이동 (ERR_EMPTY_RESPONSE 등 네트워크 에러 시 재시도)
   console.log("[adpia] 1. 로그인 페이지 이동...");
-  await page.goto(vendor.loginUrl, {
-    waitUntil: "networkidle2",
-    timeout: 30000,
-  });
+  const MAX_GOTO_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_GOTO_RETRIES; attempt++) {
+    try {
+      await page.goto(vendor.loginUrl, {
+        waitUntil: "networkidle2",
+        timeout: 30000,
+      });
+      break;
+    } catch (e) {
+      console.log(`[adpia] 페이지 이동 실패 (시도 ${attempt}/${MAX_GOTO_RETRIES}): ${e.message}`);
+      if (attempt === MAX_GOTO_RETRIES) throw e;
+      await delay(5000);
+    }
+  }
   await delay(1500);
 
   // 2. 이미 로그인 되어있는지 확인
@@ -1469,7 +1504,7 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
 
           await delay(1000);
           console.log("[adpia] 신한카드 결제 자동화 시작...");
-          const shinhanResult = await processShinhanCardPayment(paymentFrame, page);
+          const shinhanResult = await processShinhanCardPayment(paymentFrame, page, "phone", page);
 
           if (shinhanResult.success) {
             console.log("[adpia] ✅ 신한카드 결제 자동화 완료");
@@ -2245,7 +2280,17 @@ async function processAdpiaOrder(
         }
       } catch (error) {
         console.error(`[adpia] 상품 처리 에러:`, error.message);
-        errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, error.message, {
+        // 에러 메시지로 step 추정
+        const errorMsg = error.message || "";
+        let errorStep = ORDER_STEPS.ADD_TO_CART;
+        if (errorMsg.includes("결제") || errorMsg.includes("Shinhan") || errorMsg.includes("ISP") || errorMsg.includes("payment")) {
+          errorStep = ORDER_STEPS.PAYMENT;
+        } else if (errorMsg.includes("배송") || errorMsg.includes("주소") || errorMsg.includes("address")) {
+          errorStep = ORDER_STEPS.ORDER_PLACEMENT;
+        } else if (errorMsg.includes("로그인") || errorMsg.includes("login")) {
+          errorStep = ORDER_STEPS.LOGIN;
+        }
+        errorCollector.addError(errorStep, null, error.message, {
           purchaseOrderId,
           purchaseOrderLineId: poLineIds?.[productIndex],
           productVariantVendorId: product.productVariantVendorId,

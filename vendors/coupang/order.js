@@ -50,6 +50,61 @@ const { searchAddressWithKakao, normalizeAddress } = require("../../lib/address-
 const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
 
 /**
+ * Access Denied 감지 + 쿠키 삭제 + 재시도
+ * @param {object} page - Puppeteer page
+ * @returns {Promise<boolean>} true면 access denied 감지됨
+ */
+async function checkAccessDenied(page) {
+  try {
+    const isBlocked = await page.evaluate(() => {
+      const text = (document.body?.textContent || "").toLowerCase();
+      const title = (document.title || "").toLowerCase();
+      return text.includes("access denied") || title.includes("access denied") ||
+             text.includes("access_denied") || text.includes("접근이 거부");
+    });
+    return isBlocked;
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * Access Denied 발생 시 쿠키 삭제 + 대기 + 재시도
+ */
+async function handleAccessDenied(page) {
+  console.log("[coupang] ⚠️ Access Denied 감지! 쿠키 삭제 + 대기 시작...");
+
+  try {
+    const client = await page.target().createCDPSession();
+    await client.send("Network.clearBrowserCookies");
+    await client.send("Network.clearBrowserCache");
+    await client.detach();
+    console.log("[coupang] 쿠키/캐시 삭제 완료 → 바로 재시도");
+  } catch (e) {
+    console.log("[coupang] 쿠키 삭제 실패 (무시):", e.message);
+  }
+  await new Promise(r => setTimeout(r, 10000)); // 10초 대기
+}
+
+/**
+ * page.goto 래퍼 — Access Denied 감지 시 자동 복구 + 재시도
+ */
+async function safeGoto(page, url, options = {}, maxRetries = 2) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    await page.goto(url, options);
+    const blocked = await checkAccessDenied(page);
+    if (!blocked) return;
+
+    console.log(`[coupang] Access Denied (시도 ${attempt}/${maxRetries})`);
+    if (attempt < maxRetries) {
+      await handleAccessDenied(page);
+    } else {
+      throw new Error("Access Denied 복구 실패 (쿠키 삭제 + 5분 대기 후에도 차단)");
+    }
+  }
+}
+
+/**
  * 쿠팡 주문 처리 메인 함수
  */
 async function processCoupangOrder(
@@ -148,7 +203,7 @@ async function processCoupangOrder(
       // 2-1. 상품 페이지 이동
       console.log(`[coupang] 상품 ${productIndex + 1}: 페이지 이동...`, productUrl);
       try {
-        await page.goto(productUrl, {
+        await safeGoto(page, productUrl, {
           waitUntil: "networkidle2",
           timeout: 30000,
         });
@@ -240,12 +295,52 @@ async function processCoupangOrder(
             return { success: false, error: "수량 설정 실패" };
           }
 
+          // 즉시 검증: 수량 input 값 readback
+          await delay(500);
+          const actualQty = await page.evaluate(() => {
+            const input = document.querySelector('.product-quantity input[type="text"]');
+            if (input) return parseInt(input.value, 10) || 0;
+            const numInput = document.querySelector('.product-quantity input[type="number"]');
+            if (numInput) return parseInt(numInput.value, 10) || 0;
+            return 0;
+          });
+          if (actualQty !== quantity) {
+            console.log(`[coupang] ⚠️ 수량 즉시 검증 불일치: 기대=${quantity}, 실제=${actualQty} - 상품: ${productName || productUrl}`);
+            return { success: false, error: `수량 불일치: 기대=${quantity}, 실제=${actualQty}` };
+          }
+          console.log(`[coupang] 수량 검증 OK: ${actualQty}개`);
+
           await delay(1000);
           steps.push({
             step: `product_${productIndex + 1}_quantity`,
             success: qtySet,
             quantity,
           });
+        }
+
+        // 2-2.5. 상품 페이지에서 단가 추출
+        let productUnitPrice = 0;
+        try {
+          productUnitPrice = await page.evaluate(() => {
+            // 1. 할인가 (sale price)
+            const salePrice = document.querySelector('.prod-sale-price .total-price strong');
+            if (salePrice) return parseInt(salePrice.textContent.replace(/[^\d]/g, ''), 10) || 0;
+            // 2. 일반가
+            const totalPrice = document.querySelector('.total-price strong');
+            if (totalPrice) return parseInt(totalPrice.textContent.replace(/[^\d]/g, ''), 10) || 0;
+            // 3. 텍스트 기반 폴백
+            const priceEls = document.querySelectorAll('[class*="price"] strong, [class*="Price"] strong');
+            for (const el of priceEls) {
+              const val = parseInt(el.textContent.replace(/[^\d]/g, ''), 10);
+              if (val > 0) return val;
+            }
+            return 0;
+          });
+          if (productUnitPrice > 0) {
+            console.log(`[coupang] 상품 ${productIndex + 1} 단가: ${productUnitPrice}원`);
+          }
+        } catch (e) {
+          console.log(`[coupang] 상품 단가 추출 실패 (무시): ${e.message}`);
         }
 
         // 2-3. 장바구니 담기
@@ -266,6 +361,7 @@ async function processCoupangOrder(
             productName: extractedName?.trim() || productName,
             quantity,
             vendorItemId: vendorItemIdMatch ? vendorItemIdMatch[1] : null,
+            unitPrice: productUnitPrice || 0,
           });
         } else {
           steps.push({
@@ -305,7 +401,7 @@ async function processCoupangOrder(
 
     // 3. 장바구니 페이지로 이동
     console.log("[coupang] Step 3: 장바구니 페이지로 이동...");
-    await page.goto("https://cart.coupang.com/cartView.pang", {
+    await safeGoto(page, "https://cart.coupang.com/cartView.pang", {
       waitUntil: "networkidle2",
       timeout: 30000,
     });
@@ -392,6 +488,19 @@ async function processCoupangOrder(
         success: cartVerification.isValid,
         detail: cartVerification,
       });
+
+      // 장바구니 검증에서 추출한 가격을 addedProducts에 매핑
+      if (cartVerification.matchedItems) {
+        for (const matched of cartVerification.matchedItems) {
+          if (matched.price > 0 && matched.vendorItemId) {
+            const ap = addedProducts.find(p => p.vendorItemId === matched.vendorItemId);
+            if (ap) {
+              ap.unitPrice = matched.price;
+              console.log(`[coupang] 상품 가격 매핑: ${matched.name?.substring(0, 30)}... = ${matched.price}원`);
+            }
+          }
+        }
+      }
 
       // 수량 불일치가 있으면 장바구니 비우고 재시도
       if (
@@ -2041,20 +2150,40 @@ async function verifyCartItems(page, expectedProducts) {
         }
       }
 
-      // 가격 추출
-      const priceEl = item.querySelector(
-        '[class*="price"], [class*="amount"], .sale-price',
-      );
-      const priceText = priceEl
-        ? priceEl.textContent?.replace(/[^\d]/g, "")
-        : "0";
-      const price = parseInt(priceText, 10) || 0;
+      // 가격 추출 (할인가 우선 — data-component-id="price-area" 내 큰 글씨)
+      let price = 0;
+      const priceArea = item.querySelector('[data-component-id="price-area"]');
+      if (priceArea) {
+        // 할인가: twc-text-[20px] 또는 twc-font-bold 큰 글씨 숫자
+        const boldPrice = priceArea.querySelector('span[class*="twc-text-[20px"]');
+        if (boldPrice) {
+          price = parseInt(boldPrice.textContent.replace(/[^\d]/g, ""), 10) || 0;
+        }
+        // 폴백: price-area 안 마지막 숫자+원 패턴
+        if (!price) {
+          const allText = priceArea.textContent || "";
+          const matches = allText.match(/([\d,]+)\s*원/g);
+          if (matches && matches.length > 0) {
+            const lastMatch = matches[matches.length - 1];
+            price = parseInt(lastMatch.replace(/[^\d]/g, ""), 10) || 0;
+          }
+        }
+      }
+      // 최종 폴백
+      if (!price) {
+        const fallbackEl = item.querySelector('[class*="price"] strong, [class*="amount"]');
+        if (fallbackEl) price = parseInt(fallbackEl.textContent.replace(/[^\d]/g, ""), 10) || 0;
+      }
+
+      // 장바구니 가격은 총가(단가×수량)이므로 수량으로 나눠서 단가 계산
+      const unitPrice = quantity > 0 ? Math.round(price / quantity) : price;
 
       items.push({
-        name: name.substring(0, 100), // 이름 길이 제한
+        name: name.substring(0, 100),
         quantity,
         vendorItemId,
-        price,
+        price: unitPrice, // 단가
+        totalPrice: price, // 총가 (원본)
         isSelected,
       });
     }
@@ -2139,6 +2268,7 @@ async function verifyCartItems(page, expectedProducts) {
           vendorItemId: cartItem.vendorItemId || null,
           quantity: cartItem.quantity,
           expectedQuantity: expected.quantity,
+          price: cartItem.price || 0,
           matchMethod,
         });
         console.log(
@@ -2923,7 +3053,7 @@ async function clearCart(page) {
   let dialogHandled = false;
 
   // 장바구니 페이지로 이동
-  await page.goto("https://cart.coupang.com/cartView.pang", {
+  await safeGoto(page, "https://cart.coupang.com/cartView.pang", {
     waitUntil: "networkidle2",
     timeout: 30000,
   });

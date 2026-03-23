@@ -220,10 +220,10 @@ const SELECTORS = {
     selectAllCheckbox: "#cart_all_check",
     // 장바구니 비우기 버튼 (선택 상품 삭제)
     deleteSelectedBtn:
-      "#cart_list_result > table > tbody > tr:nth-child(7) > td > table > tbody > tr > td:nth-child(1) > a:nth-child(1)",
+      'a[onclick*="cartSelDelete"]',
     // 전체 주문하기 버튼
     orderAllBtn:
-      "#cart_list_result > table > tbody > tr:nth-child(7) > td > table > tbody > tr > td:nth-child(2) > a:nth-child(3)",
+      'a[onclick*="cartAllOrder"]',
   },
   // 주문서 작성 페이지 셀렉터
   orderForm: {
@@ -1582,7 +1582,7 @@ async function placeOrder(page, shippingAddress) {
 
       await new Promise((r) => setTimeout(r, 1000));
       console.log("[swadpia] 신한카드 결제 자동화 시작...");
-      const shinhanResult = await processShinhanCardPayment(paymentFrame, page);
+      const shinhanResult = await processShinhanCardPayment(paymentFrame, page, "phone", page);
 
       if (shinhanResult.success) {
         console.log("[swadpia] ✅ 신한카드 결제 자동화 완료");

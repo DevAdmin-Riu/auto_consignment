@@ -37,6 +37,7 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
+  createNeedsManagerVerification,
 } = require("../../lib/graphql-client");
 const { getEnv } = require("../config");
 const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
@@ -482,7 +483,11 @@ async function getProductPrice(page) {
  */
 async function selectSingleOption(page, option) {
   // 네이버 스마트스토어 옵션 버튼 찾기 (data-shp-contents-type 속성으로 매칭, 클래스명은 빌드마다 변경됨)
-  const optionBtn = await page.$(`a[data-shp-contents-type="${option.title}"]`);
+  let optionBtn = await page.$(`a[data-shp-contents-type="${option.title}"]`);
+  // 폴백: input, button, div 등 다른 요소 타입도 시도
+  if (!optionBtn) {
+    optionBtn = await page.$(`[data-shp-contents-type="${option.title}"]`);
+  }
 
   if (optionBtn) {
     // 옵션 드롭다운 버튼 클릭
@@ -702,27 +707,33 @@ async function setQuantity(page, quantity) {
 
   console.log(`[naver] 수량 설정: ${quantity}개`);
 
-  // 수량 입력 필드 찾기 (data attribute 기반 - styled-components 대응)
-  const quantityInput = await page.$(
-    '[data-shp-area-id="optquantity"] input[type="number"]',
-  );
+  const QUANTITY_SELECTOR = '[data-shp-area-id="optquantity"] input[type="number"]';
 
-  if (quantityInput) {
+  // 수량 입력 필드 찾기 - 마지막 input 사용 (옵션 여러 개일 때 최신 옵션의 수량)
+  const quantityInputs = await page.$$(QUANTITY_SELECTOR);
+
+  if (quantityInputs.length > 0) {
+    const targetInput = quantityInputs[0]; // 첫 번째 input (prepend 구조 - 최신이 위에)
+    if (quantityInputs.length > 1) {
+      console.log(`[naver] 수량 input ${quantityInputs.length}개 감지 → 첫 번째(최신) 사용`);
+    }
+
     for (let attempt = 1; attempt <= 3; attempt++) {
-      await quantityInput.click({ clickCount: 3 });
+      await targetInput.click({ clickCount: 3 });
       await delay(300);
       await page.keyboard.type(String(quantity), { delay: 50 });
       await delay(300);
       await page.keyboard.press('Tab');
       await delay(500);
 
-      // 입력된 값 검증
+      // 입력된 값 검증 - 첫 번째 input (prepend 구조 - 최신이 위에)
       const actualValue = await page.evaluate(
         (sel) => {
-          const input = document.querySelector(sel);
-          return input ? Number(input.value) : null;
+          const inputs = document.querySelectorAll(sel);
+          if (inputs.length === 0) return null;
+          return Number(inputs[0].value);
         },
-        '[data-shp-area-id="optquantity"] input[type="number"]',
+        QUANTITY_SELECTOR,
       );
 
       if (actualValue === quantity) {
@@ -737,7 +748,7 @@ async function setQuantity(page, quantity) {
     return false;
   }
 
-  // 플러스 버튼으로 수량 증가 (blind 텍스트 기반)
+  // 플러스 버튼으로 수량 증가 (blind 텍스트 기반) - 첫 번째 버튼 사용 (prepend 구조)
   const plusBtn = await page.evaluateHandle(() => {
     const spans = document.querySelectorAll('span.blind');
     for (const span of spans) {
@@ -753,13 +764,14 @@ async function setQuantity(page, quantity) {
       await plusBtn.click();
       await delay(300);
     }
-    // 검증
+    // 검증 - 첫 번째 input (prepend 구조)
     const actualValue = await page.evaluate(
       (sel) => {
-        const input = document.querySelector(sel);
-        return input ? Number(input.value) : null;
+        const inputs = document.querySelectorAll(sel);
+        if (inputs.length === 0) return null;
+        return Number(inputs[0].value);
       },
-      '[data-shp-area-id="optquantity"] input[type="number"]',
+      QUANTITY_SELECTOR,
     );
     if (actualValue === quantity) {
       console.log(`[naver] 수량 증가 버튼 ${quantity - 1}회 클릭 완료 (검증 OK: ${actualValue}개)`);
@@ -1558,6 +1570,10 @@ async function processProduct(page, product) {
   }
 
   // 1. 상품 페이지로 이동
+  if (!productUrl || !productUrl.trim() || !productUrl.startsWith("https")) {
+    console.log(`[naver] ⚠️ 오픈몰 상품 링크 비어 있음: ${product.productSku} (${product.productName})`);
+    return { success: false, error: `오픈몰 상품 링크 비어 있음: ${product.productSku}`, needsManagerVerification: true };
+  }
   await page.goto(productUrl, {
     waitUntil: "networkidle2",
     timeout: 30000,
@@ -1584,7 +1600,7 @@ async function processProduct(page, product) {
   // 옵션 선택 실패 시 조기 반환
   if (!optionResult.success) {
     console.log(
-      `[naver] ❌ 상품 스킵 (옵션 선택 실패): ${optionResult.reason}`,
+      `[naver] ⚠️ 상품 스킵 (옵션 선택 실패) → 담당자 확인 필요: ${optionResult.reason}`,
     );
     return {
       success: false,
@@ -1594,6 +1610,7 @@ async function processProduct(page, product) {
       priceMismatch: false,
       optionFailed: true,
       optionFailReason: optionResult.reason,
+      needsManagerVerification: true,
     };
   }
 
@@ -2011,12 +2028,26 @@ async function processNaverOrder(
 
       try {
         const result = await processProduct(page, product);
+
+        // 오픈몰 상품 링크 없음 → 담당자 확인 필요로 기록, 해당 상품 스킵
+        if (result.needsManagerVerification) {
+          try {
+            await createNeedsManagerVerification(authToken, [{
+              productVariantVendorId: product.productVariantVendorId,
+              purchaseOrderId,
+              reason: result.error || `오픈몰 상품 링크 비어 있음: ${product.productSku}`,
+            }]);
+          } catch (e) {
+            console.log(`[naver] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+          }
+          continue; // 다음 상품으로
+        }
+
         addedProducts.push({
-          ...product, // 원본 product의 모든 필드 유지 (orderLineId, purchaseOrderLineId 등)
+          ...product,
           openMallPrice: result.openMallPrice,
           priceMismatch: result.priceMismatch,
           addedToCart: result.success,
-          // 옵션 선택 실패 정보
           optionFailed: result.optionFailed || false,
           optionFailReason: result.optionFailReason || null,
         });
