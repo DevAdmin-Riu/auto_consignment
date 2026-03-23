@@ -75,20 +75,15 @@ async function handleAccessDenied(page) {
   console.log("[coupang] ⚠️ Access Denied 감지! 쿠키 삭제 + 대기 시작...");
 
   try {
-    // 쿠키 삭제
     const client = await page.target().createCDPSession();
     await client.send("Network.clearBrowserCookies");
     await client.send("Network.clearBrowserCache");
     await client.detach();
-    console.log("[coupang] 쿠키/캐시 삭제 완료");
+    console.log("[coupang] 쿠키/캐시 삭제 완료 → 바로 재시도");
   } catch (e) {
     console.log("[coupang] 쿠키 삭제 실패 (무시):", e.message);
   }
-
-  // 5분 대기
-  console.log("[coupang] Access Denied 해제 대기 (5분)...");
-  await new Promise(r => setTimeout(r, 5 * 60 * 1000));
-  console.log("[coupang] 대기 완료, 재시도...");
+  await new Promise(r => setTimeout(r, 3000)); // 3초만 대기
 }
 
 /**
