@@ -1206,7 +1206,6 @@ async function processCoupangOrder(
     } catch (e) {
       console.log("[coupang] 결제 로그 저장 실패 (무시):", e.message);
     }
-    }
   } else {
     await saveOrderResults(authToken, {
       purchaseOrderId,
