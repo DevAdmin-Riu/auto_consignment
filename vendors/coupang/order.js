@@ -83,7 +83,7 @@ async function handleAccessDenied(page) {
   } catch (e) {
     console.log("[coupang] 쿠키 삭제 실패 (무시):", e.message);
   }
-  await new Promise(r => setTimeout(r, 3000)); // 3초만 대기
+  await new Promise(r => setTimeout(r, 10000)); // 10초 대기
 }
 
 /**
