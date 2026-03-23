@@ -2260,7 +2260,17 @@ async function processAdpiaOrder(
         }
       } catch (error) {
         console.error(`[adpia] 상품 처리 에러:`, error.message);
-        errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, error.message, {
+        // 에러 메시지로 step 추정
+        const errorMsg = error.message || "";
+        let errorStep = ORDER_STEPS.ADD_TO_CART;
+        if (errorMsg.includes("결제") || errorMsg.includes("Shinhan") || errorMsg.includes("ISP") || errorMsg.includes("payment")) {
+          errorStep = ORDER_STEPS.PAYMENT;
+        } else if (errorMsg.includes("배송") || errorMsg.includes("주소") || errorMsg.includes("address")) {
+          errorStep = ORDER_STEPS.ORDER_PLACEMENT;
+        } else if (errorMsg.includes("로그인") || errorMsg.includes("login")) {
+          errorStep = ORDER_STEPS.LOGIN;
+        }
+        errorCollector.addError(errorStep, null, error.message, {
           purchaseOrderId,
           purchaseOrderLineId: poLineIds?.[productIndex],
           productVariantVendorId: product.productVariantVendorId,
