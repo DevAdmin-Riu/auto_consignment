@@ -482,7 +482,11 @@ async function getProductPrice(page) {
  */
 async function selectSingleOption(page, option) {
   // 네이버 스마트스토어 옵션 버튼 찾기 (data-shp-contents-type 속성으로 매칭, 클래스명은 빌드마다 변경됨)
-  const optionBtn = await page.$(`a[data-shp-contents-type="${option.title}"]`);
+  let optionBtn = await page.$(`a[data-shp-contents-type="${option.title}"]`);
+  // 폴백: input, button, div 등 다른 요소 타입도 시도
+  if (!optionBtn) {
+    optionBtn = await page.$(`[data-shp-contents-type="${option.title}"]`);
+  }
 
   if (optionBtn) {
     // 옵션 드롭다운 버튼 클릭
