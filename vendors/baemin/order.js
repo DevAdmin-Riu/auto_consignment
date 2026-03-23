@@ -616,8 +616,39 @@ async function selectSingleOption(page, targetValue, optionTitle = null) {
     console.log(`[baemin] 옵션 클릭 성공 (방식: ${clickResult.method})`);
     await delay(1100);
 
-    console.log(`[baemin] 옵션 선택 완료: "${matchedOption}"`);
-    return { success: true, selectedOption: matchedOption, price: optionPrice };
+    // 옵션 선택 후 마지막 append된 옵션의 개별 가격 추출 (수량 1개 기준)
+    let selectedOptionPrice = optionPrice || 0;
+    try {
+      const lastPrice = await page.evaluate(() => {
+        // bm-goods-quantity__input이 있는 마지막 영역의 가격 (p 태그)
+        const quantityInputs = document.querySelectorAll('.bm-goods-quantity__input');
+        if (quantityInputs.length > 0) {
+          const lastInput = quantityInputs[quantityInputs.length - 1];
+          // input의 부모 컨테이너에서 "원"이 포함된 p 태그 찾기
+          let container = lastInput.parentElement;
+          for (let i = 0; i < 5 && container; i++) {
+            const pTags = container.querySelectorAll('p');
+            for (const p of pTags) {
+              const text = p.textContent || '';
+              if (text.includes('원') && /[\d,]+원/.test(text)) {
+                return parseInt(text.replace(/[^\d]/g, ''), 10) || 0;
+              }
+            }
+            container = container.parentElement;
+          }
+        }
+        return 0;
+      });
+      if (lastPrice > 0) {
+        selectedOptionPrice = lastPrice;
+        console.log(`[baemin] 옵션 개별 가격 (DOM): ${selectedOptionPrice}원`);
+      }
+    } catch (e) {
+      console.log(`[baemin] 옵션 가격 DOM 추출 실패 (무시): ${e.message}`);
+    }
+
+    console.log(`[baemin] 옵션 선택 완료: "${matchedOption}" (가격: ${selectedOptionPrice}원)`);
+    return { success: true, selectedOption: matchedOption, price: selectedOptionPrice };
   } catch (error) {
     console.error("[baemin] 옵션 선택 에러:", error.message);
     return { success: false, reason: error.message };
