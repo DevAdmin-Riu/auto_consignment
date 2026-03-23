@@ -37,6 +37,7 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
+  createNeedsManagerVerification,
 } = require("../../lib/graphql-client");
 const { getEnv } = require("../config");
 const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
@@ -1569,9 +1570,9 @@ async function processProduct(page, product) {
   }
 
   // 1. 상품 페이지로 이동
-  if (!productUrl || !productUrl.trim() || !productUrl.startsWith("http")) {
-    console.log(`[naver] ❌ 오픈몰 상품 링크 비어 있음: ${product.productSku} (${product.productName})`);
-    return { success: false, error: `오픈몰 상품 링크 비어 있음: ${product.productSku}` };
+  if (!productUrl || !productUrl.trim() || !productUrl.startsWith("https")) {
+    console.log(`[naver] ⚠️ 오픈몰 상품 링크 비어 있음: ${product.productSku} (${product.productName})`);
+    return { success: false, error: `오픈몰 상품 링크 비어 있음: ${product.productSku}`, needsManagerVerification: true };
   }
   await page.goto(productUrl, {
     waitUntil: "networkidle2",
@@ -1599,7 +1600,7 @@ async function processProduct(page, product) {
   // 옵션 선택 실패 시 조기 반환
   if (!optionResult.success) {
     console.log(
-      `[naver] ❌ 상품 스킵 (옵션 선택 실패): ${optionResult.reason}`,
+      `[naver] ⚠️ 상품 스킵 (옵션 선택 실패) → 담당자 확인 필요: ${optionResult.reason}`,
     );
     return {
       success: false,
@@ -1609,6 +1610,7 @@ async function processProduct(page, product) {
       priceMismatch: false,
       optionFailed: true,
       optionFailReason: optionResult.reason,
+      needsManagerVerification: true,
     };
   }
 
@@ -2026,12 +2028,26 @@ async function processNaverOrder(
 
       try {
         const result = await processProduct(page, product);
+
+        // 오픈몰 상품 링크 없음 → 담당자 확인 필요로 기록, 해당 상품 스킵
+        if (result.needsManagerVerification) {
+          try {
+            await createNeedsManagerVerification(authToken, [{
+              productVariantVendorId: product.productVariantVendorId,
+              purchaseOrderId,
+              reason: result.error || `오픈몰 상품 링크 비어 있음: ${product.productSku}`,
+            }]);
+          } catch (e) {
+            console.log(`[naver] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+          }
+          continue; // 다음 상품으로
+        }
+
         addedProducts.push({
-          ...product, // 원본 product의 모든 필드 유지 (orderLineId, purchaseOrderLineId 등)
+          ...product,
           openMallPrice: result.openMallPrice,
           priceMismatch: result.priceMismatch,
           addedToCart: result.success,
-          // 옵션 선택 실패 정보
           optionFailed: result.optionFailed || false,
           optionFailReason: result.optionFailReason || null,
         });
