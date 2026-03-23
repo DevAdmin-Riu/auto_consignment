@@ -538,7 +538,16 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       return { success: false, message: "장바구니 담기 버튼을 찾을 수 없음" };
     }
 
-    await addToCartBtn.click();
+    try {
+      await addToCartBtn.click();
+    } catch (clickErr) {
+      // "Node is not clickable" 등 → evaluate로 직접 클릭 폴백
+      console.log(`[adpia] 장바구니 버튼 click 실패 (${clickErr.message}), evaluate 폴백...`);
+      await page.evaluate((sel) => {
+        const btn = document.querySelector(sel);
+        if (btn) btn.click();
+      }, SELECTORS.orderPage.addToCartBtn);
+    }
     console.log("[adpia] 파일 업로드 진행 중...");
     await delay(3000); // 업로드 시작 대기
 
