@@ -1485,7 +1485,7 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
 
           await delay(1000);
           console.log("[adpia] 신한카드 결제 자동화 시작...");
-          const shinhanResult = await processShinhanCardPayment(paymentFrame, page);
+          const shinhanResult = await processShinhanCardPayment(paymentFrame, page, "phone", page);
 
           if (shinhanResult.success) {
             console.log("[adpia] ✅ 신한카드 결제 자동화 완료");

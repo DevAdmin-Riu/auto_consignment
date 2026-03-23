@@ -1582,7 +1582,7 @@ async function placeOrder(page, shippingAddress) {
 
       await new Promise((r) => setTimeout(r, 1000));
       console.log("[swadpia] 신한카드 결제 자동화 시작...");
-      const shinhanResult = await processShinhanCardPayment(paymentFrame, page);
+      const shinhanResult = await processShinhanCardPayment(paymentFrame, page, "phone", page);
 
       if (shinhanResult.success) {
         console.log("[swadpia] ✅ 신한카드 결제 자동화 완료");
