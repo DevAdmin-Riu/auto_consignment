@@ -503,6 +503,56 @@ app.get("/health", (req, res) => {
   });
 });
 
+// ==================== 로그 분석 ====================
+const fs = require("fs");
+const pathModule = require("path");
+
+// 정적 파일 서빙
+app.use(express.static(pathModule.join(__dirname, "public")));
+
+// 로그 파일 목록
+app.get("/api/logs/files", (req, res) => {
+  const logDir = pathModule.join(process.env.HOME || process.env.USERPROFILE, ".pm2", "logs");
+  try {
+    const files = fs.readdirSync(logDir)
+      .filter(f => f.endsWith(".log"))
+      .map(f => {
+        const stat = fs.statSync(pathModule.join(logDir, f));
+        return { name: f, size: stat.size, modified: stat.mtime };
+      })
+      .sort((a, b) => b.modified - a.modified);
+    res.json(files);
+  } catch (e) {
+    res.json([]);
+  }
+});
+
+// 로그 파일 내용 조회
+app.get("/api/logs/content", (req, res) => {
+  const logDir = pathModule.join(process.env.HOME || process.env.USERPROFILE, ".pm2", "logs");
+  const filename = req.query.file;
+  const limit = parseInt(req.query.limit) || 5000;
+
+  if (!filename || filename.includes("..") || !filename.endsWith(".log")) {
+    return res.status(400).json({ error: "invalid filename" });
+  }
+
+  const filepath = pathModule.join(logDir, filename);
+  try {
+    const content = fs.readFileSync(filepath, "utf-8");
+    const lines = content.split("\n").filter(l => l.trim());
+    const lastLines = lines.slice(-limit);
+    res.json({ total: lines.length, returned: lastLines.length, lines: lastLines });
+  } catch (e) {
+    res.json({ total: 0, returned: 0, lines: [], error: e.message });
+  }
+});
+
+// /logs → logs.html
+app.get("/logs", (req, res) => {
+  res.sendFile(pathModule.join(__dirname, "public", "logs.html"));
+});
+
 // ==================== 서버 시작 ====================
 const PORT = process.env.PORT || 3002;
 app.listen(PORT, () => {

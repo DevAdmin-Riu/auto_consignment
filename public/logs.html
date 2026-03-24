@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>PM2 로그 분석</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Malgun Gothic', sans-serif; background: #1e1e2e; color: #cdd6f4; padding: 20px; }
+    h1 { margin-bottom: 20px; color: #89b4fa; }
+    .filters { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; align-items: center; }
+    .filters select, .filters input, .filters button {
+      padding: 8px 12px; border: 1px solid #45475a; border-radius: 6px;
+      background: #313244; color: #cdd6f4; font-size: 14px;
+    }
+    .filters button { background: #89b4fa; color: #1e1e2e; font-weight: bold; cursor: pointer; }
+    .filters button:hover { background: #74c7ec; }
+    .filters button.error-btn { background: #f38ba8; }
+    .filters button.error-btn.active { background: #eb6f92; }
+    .stats { margin-bottom: 15px; color: #a6adc8; font-size: 13px; }
+    .log-container {
+      background: #11111b; border-radius: 8px; padding: 15px;
+      max-height: 70vh; overflow-y: auto; font-family: 'Consolas', monospace; font-size: 13px;
+      line-height: 1.6; white-space: pre-wrap; word-break: break-all;
+    }
+    .log-line { padding: 2px 0; }
+    .log-line:hover { background: #1e1e2e; }
+    .log-line.error { color: #f38ba8; }
+    .log-line.success { color: #a6e3a1; }
+    .log-line.warning { color: #fab387; }
+    .log-line.graphql { color: #89dceb; }
+    .log-line .timestamp { color: #6c7086; }
+    .log-line .vendor { color: #cba6f7; font-weight: bold; }
+    .highlight { background: #f9e2af33; color: #f9e2af; }
+    .file-list { margin-bottom: 15px; }
+    .file-list select { min-width: 300px; }
+    .loading { color: #a6adc8; padding: 20px; text-align: center; }
+  </style>
+</head>
+<body>
+  <h1>PM2 로그 분석</h1>
+
+  <div class="filters">
+    <select id="logFile">
+      <option value="">로그 파일 로딩중...</option>
+    </select>
+    <select id="vendor">
+      <option value="">전체 벤더</option>
+      <option value="adpia">애드피아몰</option>
+      <option value="swadpia">성원애드피아</option>
+      <option value="napkin">냅킨코리아</option>
+      <option value="naver">네이버</option>
+      <option value="coupang">쿠팡</option>
+      <option value="baemin">배민상회</option>
+      <option value="GraphQL">GraphQL</option>
+      <option value="tracking">송장조회</option>
+    </select>
+    <input type="text" id="keyword" placeholder="키워드 검색 (PO번호, 에러 등)" style="min-width: 250px;">
+    <button onclick="search()">검색</button>
+    <button class="error-btn" id="errorToggle" onclick="toggleError()">에러만</button>
+    <button onclick="clearSearch()">초기화</button>
+  </div>
+
+  <div class="stats" id="stats"></div>
+  <div class="log-container" id="logContainer">
+    <div class="loading">로그 파일을 선택하세요.</div>
+  </div>
+
+  <script>
+    let allLines = [];
+    let errorOnly = false;
+
+    // 로그 파일 목록 로드
+    async function loadFileList() {
+      const res = await fetch('/api/logs/files');
+      const files = await res.json();
+      const select = document.getElementById('logFile');
+      select.innerHTML = '<option value="">로그 파일 선택</option>';
+      files.forEach(f => {
+        const opt = document.createElement('option');
+        opt.value = f.name;
+        opt.textContent = `${f.name} (${(f.size / 1024).toFixed(0)}KB)`;
+        select.appendChild(opt);
+      });
+    }
+
+    // 로그 파일 로드
+    async function loadLog(filename) {
+      if (!filename) return;
+      const container = document.getElementById('logContainer');
+      container.innerHTML = '<div class="loading">로딩 중...</div>';
+
+      const res = await fetch(`/api/logs/content?file=${encodeURIComponent(filename)}&limit=5000`);
+      const data = await res.json();
+      allLines = data.lines || [];
+      renderLines(allLines);
+    }
+
+    // 검색
+    function search() {
+      const vendor = document.getElementById('vendor').value;
+      const keyword = document.getElementById('keyword').value.trim();
+
+      let filtered = allLines;
+
+      if (vendor) {
+        filtered = filtered.filter(l => l.toLowerCase().includes(`[${vendor.toLowerCase()}]`));
+      }
+      if (keyword) {
+        filtered = filtered.filter(l => l.toLowerCase().includes(keyword.toLowerCase()));
+      }
+      if (errorOnly) {
+        filtered = filtered.filter(l =>
+          l.includes('❌') || l.includes('⚠️') || l.includes('실패') ||
+          l.includes('에러') || l.includes('error') || l.includes('Error') ||
+          l.includes('FAIL')
+        );
+      }
+
+      renderLines(filtered);
+    }
+
+    // 에러 토글
+    function toggleError() {
+      errorOnly = !errorOnly;
+      const btn = document.getElementById('errorToggle');
+      btn.classList.toggle('active', errorOnly);
+      btn.textContent = errorOnly ? '에러만 (ON)' : '에러만';
+      search();
+    }
+
+    // 초기화
+    function clearSearch() {
+      document.getElementById('vendor').value = '';
+      document.getElementById('keyword').value = '';
+      errorOnly = false;
+      document.getElementById('errorToggle').classList.remove('active');
+      document.getElementById('errorToggle').textContent = '에러만';
+      renderLines(allLines);
+    }
+
+    // 렌더링
+    function renderLines(lines) {
+      const container = document.getElementById('logContainer');
+      const keyword = document.getElementById('keyword').value.trim();
+      const stats = document.getElementById('stats');
+
+      const errorCount = lines.filter(l =>
+        l.includes('❌') || l.includes('실패') || l.includes('FAIL')
+      ).length;
+      const successCount = lines.filter(l =>
+        l.includes('✅') || l.includes('완료') || l.includes('OK')
+      ).length;
+
+      stats.textContent = `총 ${lines.length}줄 | 성공 ${successCount}건 | 에러 ${errorCount}건`;
+
+      if (lines.length === 0) {
+        container.innerHTML = '<div class="loading">결과 없음</div>';
+        return;
+      }
+
+      // 최대 3000줄만 렌더링
+      const displayLines = lines.slice(-3000);
+      container.innerHTML = displayLines.map(line => {
+        let cls = 'log-line';
+        if (line.includes('❌') || line.includes('실패') || line.includes('Error') || line.includes('FAIL')) cls += ' error';
+        else if (line.includes('✅') || line.includes('완료')) cls += ' success';
+        else if (line.includes('⚠️')) cls += ' warning';
+        else if (line.includes('[GraphQL]')) cls += ' graphql';
+
+        let html = escapeHtml(line);
+
+        // 타임스탬프 하이라이트
+        html = html.replace(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/, '<span class="timestamp">$1</span>');
+
+        // 벤더 하이라이트
+        html = html.replace(/\[(adpia|swadpia|napkin|naver|coupang|baemin|GraphQL|tracking)\]/gi, '<span class="vendor">[$1]</span>');
+
+        // 키워드 하이라이트
+        if (keyword) {
+          const regex = new RegExp(`(${escapeRegex(keyword)})`, 'gi');
+          html = html.replace(regex, '<span class="highlight">$1</span>');
+        }
+
+        return `<div class="${cls}">${html}</div>`;
+      }).join('');
+
+      container.scrollTop = container.scrollHeight;
+    }
+
+    function escapeHtml(str) {
+      return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function escapeRegex(str) {
+      return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // 이벤트
+    document.getElementById('logFile').addEventListener('change', e => loadLog(e.target.value));
+    document.getElementById('keyword').addEventListener('keypress', e => { if (e.key === 'Enter') search(); });
+
+    // 초기화
+    loadFileList();
+  </script>
+</body>
+</html>
