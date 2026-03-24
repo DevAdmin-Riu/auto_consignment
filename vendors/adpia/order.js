@@ -581,7 +581,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
           await delay(2000);
           if (uploadRetryCount >= 3) {
             console.error("[adpia] 파일 업로드 3회 실패 - 중단");
-            return { success: false, message: "파일 업로드 3회 실패" };
+            return { success: false, message: `파일 업로드 3회 실패: ${product.productSku} (${product.productName}) - 파일 형식 또는 용량 확인 필요`, needsManagerVerification: true };
           }
           // 장바구니 담기 버튼 다시 클릭
           const retryBtn = await page.$(SELECTORS.orderPage.addToCartBtn);
@@ -1973,6 +1973,26 @@ async function processAdpiaOrder(
 
         // 장바구니 담기 실패 시
         if (!orderPageResult.success) {
+          // 담당자 확인 필요 플래그 처리
+          if (orderPageResult.needsManagerVerification) {
+            try {
+              await createNeedsManagerVerification(authToken, [{
+                productVariantVendorId: product.productVariantVendorId,
+                purchaseOrderId,
+                reason: orderPageResult.message || `주문 실패: ${product.productSku}`,
+              }]);
+              console.log("[adpia] 담당자 확인 필요 저장 완료");
+            } catch (e) {
+              console.log(`[adpia] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+            }
+          }
+          // 에러 로그 기록
+          errorCollector.addError(
+            ORDER_STEPS.ADD_TO_CART,
+            ERROR_CODES.ELEMENT_NOT_FOUND,
+            orderPageResult.message || `주문 실패: ${product.productSku}`,
+            { purchaseOrderId, productVariantVendorId: product.productVariantVendorId },
+          );
           results.push({
             lineId: poLineIds?.[productIndex],
             productVariantVendorId: product.productVariantVendorId,
