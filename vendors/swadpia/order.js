@@ -772,7 +772,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
 
               // 담당자 휴대폰 번호 입력
               const proofPhone =
-                getEnv("SWADPIA_PROOF_PHONE") || "010-8405-1314";
+                getEnv("SWADPIA_PROOF_PHONE") || "010-7769-2905";
               const phoneParts = proofPhone.split("-");
               if (phoneParts.length === 3) {
                 const [hp1, hp2, hp3] = phoneParts;
