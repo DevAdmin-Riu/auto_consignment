@@ -571,9 +571,20 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
           modalFoundEarly = true;
           break;
         } else if (modalText.includes("실패")) {
-          // 업로드 실패 모달 → 닫고 장바구니 버튼 재클릭
+          // 업로드 실패 모달 → 3초 대기 후 닫고 장바구니 버튼 재클릭
+          await delay(3000); // 모달 내용 확인 대기
+          // 대기 후 모달 텍스트 재확인 (업로드 완료로 바뀔 수 있음)
+          const recheckedText = await page.evaluate(() => {
+            const content = document.querySelector(".ajs-modal .ajs-content");
+            return content ? content.textContent?.trim() || "" : "";
+          });
+          if (recheckedText.includes("장바구니")) {
+            console.log("[adpia] 파일 업로드 완료 (대기 후 장바구니 모달 감지)");
+            modalFoundEarly = true;
+            break;
+          }
           uploadRetryCount++;
-          console.log(`[adpia] ❌ 파일 업로드 실패 (${uploadRetryCount}/3) - 장바구니 버튼 재클릭`);
+          console.log(`[adpia] ❌ 파일 업로드 실패 (${uploadRetryCount}/3): "${recheckedText}"`);
           await page.evaluate(() => {
             const btn = document.querySelector(".ajs-modal button.ajs-button.btn_orange");
             if (btn) btn.click();
@@ -591,7 +602,18 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
           }
           await delay(3000);
         } else {
-          console.log(`[adpia] 모달 감지되었으나 업로드 완료가 아님: "${modalText}" → 확인 후 계속 대기`);
+          // 빈 모달이나 알 수 없는 모달 → 3초 대기 후 재확인
+          await delay(3000);
+          const recheckedText2 = await page.evaluate(() => {
+            const content = document.querySelector(".ajs-modal .ajs-content");
+            return content ? content.textContent?.trim() || "" : "";
+          });
+          if (recheckedText2.includes("장바구니")) {
+            console.log("[adpia] 파일 업로드 완료 (빈 모달 대기 후 장바구니 감지)");
+            modalFoundEarly = true;
+            break;
+          }
+          console.log(`[adpia] 모달 감지되었으나 업로드 완료가 아님: "${recheckedText2}" → 확인 후 계속 대기`);
           await page.evaluate(() => {
             const btn = document.querySelector(".ajs-modal button.ajs-button.btn_orange");
             if (btn) btn.click();
