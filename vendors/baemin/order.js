@@ -952,8 +952,8 @@ async function addToCart(page) {
         };
       });
       if (pageState.hasError) {
-        console.log(`[baemin] 장바구니 담기 실패 감지: ${pageState.snippet}`);
-        return false;
+        console.log(`[baemin] 장바구니 담기 실패 감지 (품절/판매중지): ${pageState.snippet}`);
+        return { success: false, outOfStock: true };
       }
       console.log(
         `[baemin] 모달 미출현 (버튼: ${pageState.buttons.join(", ")})`,
@@ -961,10 +961,10 @@ async function addToCart(page) {
     }
 
     console.log("[baemin] 장바구니 담기 완료");
-    return true;
+    return { success: true };
   } catch (error) {
     console.error("[baemin] 장바구니 담기 실패:", error.message);
-    return false;
+    return { success: false, outOfStock: false };
   }
 }
 
@@ -2918,15 +2918,28 @@ async function processBaeminOrder(
             const openMallPrice = await getProductPrice(page);
 
             // 장바구니 담기
-            const addedToCart = await addToCart(page);
-            if (!addedToCart) {
+            const addToCartResult = await addToCart(page);
+            if (!addToCartResult.success) {
+              // 품절/판매중지 → 담당자 확인 필요
+              if (addToCartResult.outOfStock) {
+                console.log(`[baemin] ⚠️ 품절/판매중지 → 담당자 확인 필요: ${product.productSku}`);
+                try {
+                  await createNeedsManagerVerification(authToken, [{
+                    productVariantVendorId: product.productVariantVendorId,
+                    purchaseOrderId,
+                    reason: `품절/판매중지: ${product.productSku} (${product.productName})`,
+                  }]);
+                } catch (e) {
+                  console.log(`[baemin] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+                }
+              }
               results.push({
                 lineId: poLineIds?.[idx],
                 productVariantVendorId: product.productVariantVendorId,
                 productSku: product.productSku,
                 productName: product.productName,
                 success: false,
-                message: "장바구니 담기 실패",
+                message: addToCartResult.outOfStock ? "품절/판매중지" : "장바구니 담기 실패",
               });
               continue;
             }
