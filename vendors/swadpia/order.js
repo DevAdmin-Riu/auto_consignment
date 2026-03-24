@@ -218,7 +218,10 @@ const SELECTORS = {
     price: "td:nth-child(8) b", // 금액 (예: "22,660원")
     // 전체 선택 체크박스
     selectAllCheckbox: "#cart_all_check",
-    // 장바구니 비우기 버튼 (선택 상품 삭제)
+    // 장바구니 전체 비우기 버튼
+    deleteAllBtn:
+      'a[onclick*="cartAllDelete"]',
+    // 선택 상품 삭제 버튼 (폴백)
     deleteSelectedBtn:
       'a[onclick*="cartSelDelete"]',
     // 전체 주문하기 버튼
@@ -292,32 +295,36 @@ async function clearCart(page) {
       return true;
     }
 
-    console.log(`[swadpia] 장바구니 상품 ${cartRows.length}개 일괄 삭제 중...`);
+    console.log(`[swadpia] 장바구니 상품 ${cartRows.length}개 삭제 중...`);
 
-    // 1. 전체 선택 체크박스 클릭
-    const selectAllCheckbox = await page.$(
-      SELECTORS.cartPage.selectAllCheckbox,
-    );
-    if (selectAllCheckbox) {
-      await selectAllCheckbox.click();
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-
-    // 2. confirm/alert 창 자동 확인 처리
+    // confirm/alert 창 자동 확인 처리
     const dialogHandler = async (dialog) => {
       console.log("[swadpia] Dialog:", dialog.type(), dialog.message());
-      await dialog.accept(); // 확인 버튼 클릭
+      await dialog.accept();
     };
     page.on("dialog", dialogHandler);
 
-    // 3. 선택 상품 삭제 버튼 클릭
-    const deleteBtn = await page.$(SELECTORS.cartPage.deleteSelectedBtn);
-    if (deleteBtn) {
-      await deleteBtn.click();
+    // 장바구니 전체 비우기 (cartAllDelete) 우선 사용
+    const deleteAllBtn = await page.$(SELECTORS.cartPage.deleteAllBtn);
+    if (deleteAllBtn) {
+      await deleteAllBtn.click();
+      console.log("[swadpia] 장바구니 전체 비우기 클릭");
       await new Promise((resolve) => setTimeout(resolve, 2000));
+    } else {
+      // 폴백: 전체 선택 후 선택 삭제
+      console.log("[swadpia] 전체 비우기 버튼 없음, 선택 삭제 폴백...");
+      const selectAllCheckbox = await page.$(SELECTORS.cartPage.selectAllCheckbox);
+      if (selectAllCheckbox) {
+        await selectAllCheckbox.click();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      const deleteBtn = await page.$(SELECTORS.cartPage.deleteSelectedBtn);
+      if (deleteBtn) {
+        await deleteBtn.click();
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
     }
 
-    // 4. dialog 핸들러 제거
     page.off("dialog", dialogHandler);
 
     console.log("[swadpia] 장바구니 비우기 완료");
