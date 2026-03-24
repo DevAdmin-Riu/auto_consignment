@@ -1862,6 +1862,17 @@ async function processAdpiaOrder(
         const findResult = await findProductByCode(page, product.productSku);
 
         if (!findResult.success) {
+          // 상품 못찾음 / 옵션 실패 → 담당자 확인 필요
+          try {
+            await createNeedsManagerVerification(authToken, [{
+              productVariantVendorId: product.productVariantVendorId,
+              purchaseOrderId,
+              reason: findResult.message || `상품 처리 실패: ${product.productSku}`,
+            }]);
+            console.log(`[adpia] 담당자 확인 필요 저장: ${findResult.message}`);
+          } catch (e) {
+            console.log(`[adpia] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+          }
           results.push({
             lineId: poLineIds?.[productIndex],
             productVariantVendorId: product.productVariantVendorId,
@@ -1870,14 +1881,12 @@ async function processAdpiaOrder(
             success: false,
             message: findResult.message,
           });
-          // 옵션 실패로 추적 및 saveOrderResults 호출
           if (findResult.message?.includes("옵션")) {
             optionFailedProducts.push({
               productVariantVendorId: product.productVariantVendorId,
               reason: findResult.message,
             });
           }
-          // 실패해도 saveOrderResults 호출 (해당 상품만)
           await saveOrderResults(authToken, {
             purchaseOrderId,
             products: [],

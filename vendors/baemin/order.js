@@ -38,6 +38,7 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
+  createNeedsManagerVerification,
 } = require("../../lib/graphql-client");
 const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
 const { findDaumFrameViaCDP, cleanupCDPFrame, searchAddressInFrame, selectAddressResult } = require("../../lib/daum-address");
@@ -2885,7 +2886,16 @@ async function processBaeminOrder(
                 actualQuantity,
               );
               if (!optionResult.success) {
-                console.log(`[baemin] 옵션 선택 실패: ${optionResult.reason}`);
+                console.log(`[baemin] ⚠️ 옵션 선택 실패 → 담당자 확인 필요: ${optionResult.reason}`);
+                try {
+                  await createNeedsManagerVerification(authToken, [{
+                    productVariantVendorId: product.productVariantVendorId,
+                    purchaseOrderId,
+                    reason: `옵션 선택 실패: ${product.productSku} (${product.productName}) - ${optionResult.reason}`,
+                  }]);
+                } catch (e) {
+                  console.log(`[baemin] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+                }
                 groupOptionFailed.push({
                   productVariantVendorId: product.productVariantVendorId,
                   reason: optionResult.reason,

@@ -38,6 +38,7 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
+  createNeedsManagerVerification,
 } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
 const {
@@ -861,20 +862,23 @@ async function processNapkinOrder(
       // productUrl이 없으면 스킵
       if (!product.productUrl) {
         console.log(
-          `[napkin] ❌ 상품 URL이 없음 - 스킵: ${product.productName}`,
+          `[napkin] ⚠️ 상품 URL이 없음 → 담당자 확인 필요: ${product.productName}`,
         );
-        errorCollector.addError(
-          ORDER_STEPS.PRODUCT_ACCESS,
-          ERROR_CODES.PRODUCT_NOT_FOUND,
-          `상품 URL이 없음: ${product.productName}`,
-          { productSku: product.productSku, lineId },
-        );
+        try {
+          await createNeedsManagerVerification(authToken, [{
+            productVariantVendorId: product.productVariantVendorId,
+            purchaseOrderId,
+            reason: `상품 URL 없음: ${product.productSku} (${product.productName})`,
+          }]);
+        } catch (e) {
+          console.log(`[napkin] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+        }
         results.push({
           success: false,
           productName: product.productName,
           productSku: product.productSku,
           lineId,
-          purchaseOrderId: product.purchaseOrderId, // 개별 상품의 발주 ID
+          purchaseOrderId: product.purchaseOrderId,
           message: "상품 URL 없음",
         });
         continue;
@@ -926,22 +930,22 @@ async function processNapkinOrder(
             product.vendorPriceExcludeVat,
           );
           if (!optionResult.success) {
-            errorCollector.addError(
-              ORDER_STEPS.ADD_TO_CART,
-              null,
-              optionResult.message,
-              {
-                purchaseOrderId,
-                purchaseOrderLineId: lineId,
+            console.log(`[napkin] ⚠️ 옵션 선택 실패 → 담당자 확인 필요: ${optionResult.message}`);
+            try {
+              await createNeedsManagerVerification(authToken, [{
                 productVariantVendorId: product.productVariantVendorId,
-              },
-            );
+                purchaseOrderId,
+                reason: `옵션 선택 실패: ${product.productSku} (${product.productName}) - ${optionResult.message}`,
+              }]);
+            } catch (e) {
+              console.log(`[napkin] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+            }
             results.push({
               lineId,
               productName: product.productName,
               productSku: product.productSku,
               productVariantVendorId: product.productVariantVendorId,
-              purchaseOrderId: product.purchaseOrderId, // 개별 상품의 발주 ID
+              purchaseOrderId: product.purchaseOrderId,
               success: false,
               message: optionResult.message,
             });
