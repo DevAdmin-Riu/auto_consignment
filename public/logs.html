@@ -75,12 +75,52 @@
       const files = await res.json();
       const select = document.getElementById('logFile');
       select.innerHTML = '<option value="">로그 파일 선택</option>';
+
+      // 카테고리별 한글 이름 매핑
+      const categoryMap = {
+        'order-out': '📦 주문 로그',
+        'order-error': '❌ 주문 에러',
+        'tracking-out': '🚚 송장조회 로그',
+        'tracking-error': '❌ 송장조회 에러',
+        'pm2-logrotate': '⚙️ 시스템',
+      };
+
+      // 날짜 추출
+      function getLabel(name, size) {
+        const dateMatch = name.match(/__(\d{4}-\d{2}-\d{2})/);
+        const date = dateMatch ? dateMatch[1] : '현재';
+        const sizeKB = (size / 1024).toFixed(0);
+
+        for (const [key, label] of Object.entries(categoryMap)) {
+          if (name.startsWith(key)) {
+            return `${label} (${date}) — ${sizeKB}KB`;
+          }
+        }
+        return `${name} (${sizeKB}KB)`;
+      }
+
+      // 카테고리별 그룹핑
+      const groups = {};
       files.forEach(f => {
-        const opt = document.createElement('option');
-        opt.value = f.name;
-        opt.textContent = `${f.name} (${(f.size / 1024).toFixed(0)}KB)`;
-        select.appendChild(opt);
+        let category = '기타';
+        for (const key of Object.keys(categoryMap)) {
+          if (f.name.startsWith(key)) { category = categoryMap[key]; break; }
+        }
+        if (!groups[category]) groups[category] = [];
+        groups[category].push(f);
       });
+
+      for (const [category, categoryFiles] of Object.entries(groups)) {
+        const optgroup = document.createElement('optgroup');
+        optgroup.label = category;
+        categoryFiles.forEach(f => {
+          const opt = document.createElement('option');
+          opt.value = f.name;
+          opt.textContent = getLabel(f.name, f.size);
+          optgroup.appendChild(opt);
+        });
+        select.appendChild(optgroup);
+      }
     }
 
     // 로그 파일 로드
