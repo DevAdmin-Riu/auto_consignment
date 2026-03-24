@@ -54,6 +54,11 @@
       <option value="GraphQL">GraphQL</option>
       <option value="tracking">송장조회</option>
     </select>
+    <select id="env">
+      <option value="">전체 환경</option>
+      <option value="production">🟢 프로덕션</option>
+      <option value="local">🔵 로컬</option>
+    </select>
     <input type="text" id="keyword" placeholder="키워드 검색 (PO번호, 에러 등)" style="min-width: 250px;">
     <button onclick="search()">검색</button>
     <button class="error-btn" id="errorToggle" onclick="toggleError()">에러만</button>
@@ -135,12 +140,50 @@
       renderLines(allLines);
     }
 
+    // 환경별 로그 블록 분리 (프로덕션/로컬은 GraphQL URL로 구분)
+    function splitByEnv(lines) {
+      const blocks = []; // { env: 'production'|'local', startIdx, endIdx }
+      let currentEnv = null;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (line.includes('api.pojangboss.com')) {
+          currentEnv = 'production';
+        } else if (line.includes('localhost:8080') || line.includes('trycloudflare.com') || line.includes('stage-api.pojangboss.com')) {
+          currentEnv = 'local';
+        }
+      }
+      return currentEnv; // 파일 단위로 판단 (마지막 감지된 환경)
+    }
+
     // 검색
     function search() {
       const vendor = document.getElementById('vendor').value;
       const keyword = document.getElementById('keyword').value.trim();
+      const envFilter = document.getElementById('env').value;
 
       let filtered = allLines;
+
+      // 환경 필터 (로그 라인 주변의 URL로 판단)
+      if (envFilter) {
+        const prodKeywords = ['api.pojangboss.com'];
+        const localKeywords = ['localhost:8080', 'trycloudflare.com', 'stage-api.pojangboss.com'];
+
+        // 주문 블록 단위로 환경 태그 부여
+        let currentBlockEnv = null;
+        const lineEnvs = [];
+        for (let i = 0; i < allLines.length; i++) {
+          const line = allLines[i];
+          if (prodKeywords.some(k => line.includes(k))) currentBlockEnv = 'production';
+          else if (localKeywords.some(k => line.includes(k))) currentBlockEnv = 'local';
+          // 새 발주 시작이면 환경 리셋
+          if (line.includes('발주 시작') || line.includes('주문 처리 시작')) currentBlockEnv = null;
+          lineEnvs[i] = currentBlockEnv;
+        }
+
+        // 블록 환경이 매칭되는 라인만 + 환경 미확정(null)은 포함
+        filtered = filtered.filter((l, i) => !lineEnvs[i] || lineEnvs[i] === envFilter);
+      }
 
       if (vendor) {
         filtered = filtered.filter(l => l.toLowerCase().includes(`[${vendor.toLowerCase()}]`));
@@ -172,6 +215,7 @@
     function clearSearch() {
       document.getElementById('vendor').value = '';
       document.getElementById('keyword').value = '';
+      document.getElementById('env').value = '';
       errorOnly = false;
       document.getElementById('errorToggle').classList.remove('active');
       document.getElementById('errorToggle').textContent = '에러만';
