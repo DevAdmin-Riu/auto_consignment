@@ -160,6 +160,20 @@ async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
               `[adpia 송장조회] ${openMallOrderNumber}: 송장번호 링크 없음`,
             );
           }
+
+          // 배송조회 팝업 닫기
+          try {
+            await page.evaluate(() => {
+              const closeImg = document.querySelector('img[src*="close_btn"]');
+              if (closeImg) {
+                const closeLink = closeImg.closest("a") || closeImg.parentElement;
+                if (closeLink) closeLink.click();
+              }
+            });
+            await delay(500);
+          } catch (e) {
+            // 팝업 닫기 실패 무시
+          }
         } else {
           console.log(
             `[adpia 송장조회] ${openMallOrderNumber}: 배송조회 버튼 없음 (발송 전)`,
