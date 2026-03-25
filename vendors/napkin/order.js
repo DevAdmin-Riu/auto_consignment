@@ -988,7 +988,7 @@ async function processNapkinOrder(
           }
         }
 
-        // 3-3.5. 가격 차이 5,000원 초과 또는 추출 실패 → 결제 중단
+        // 3-3.5. 가격 차이 5,000원 초과 또는 추출 실패 → 전체 그룹 결제 중단 (배치 주문)
         const PRICE_DIFF_THRESHOLD = 5000;
         if (priceInfo) {
           const absDiff = Math.abs(priceInfo.difference || 0);
@@ -999,8 +999,13 @@ async function processNapkinOrder(
             console.error(`[napkin] ❌ ${reason}`);
             errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.UNEXPECTED_ERROR, reason,
               { purchaseOrderId, purchaseOrderLineId: lineId, productVariantVendorId: product.productVariantVendorId });
-            results.push({ lineId, productName: product.productName, productSku: product.productSku, success: false, message: reason, priceInfo });
-            continue; // 이 상품 중단, 다음으로
+            await saveOrderResults(authToken, {
+              purchaseOrderId, products: [],
+              priceMismatches: [{ productVariantVendorId: product.productVariantVendorId, vendorPriceExcludeVat: product.vendorPriceExcludeVat, openMallPrice: priceInfo.unitPrice || 0 }],
+              automationErrors: errorCollector.getErrors(),
+              poLineIds, success: false, vendor: "napkin",
+            });
+            return res.json({ success: false, vendor: vendor.name, error: reason });
           }
         }
 
