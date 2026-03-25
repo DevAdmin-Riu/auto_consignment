@@ -37,6 +37,7 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
+  createAutomationErrors,
   createNeedsManagerVerification,
 } = require("../../lib/graphql-client");
 const { getEnv } = require("../config");
@@ -2046,22 +2047,28 @@ async function processNaverOrder(
       await clearCart(page);
       steps.push({ step: "clear_cart", success: true });
     } catch (cartError) {
+      console.error("[naver] ❌ 장바구니 비우기 실패:", cartError.message);
       errorCollector.addError(
         ORDER_STEPS.CART_CLEARING,
-        ERROR_CODES.CART_CLEAR_FAILED,
-        cartError.message,
+        ERROR_CODES.CLICK_FAILED,
+        `장바구니 비우기 실패: ${cartError.message}`,
         { purchaseOrderId },
       );
-      steps.push({
-        step: "clear_cart",
+      await saveOrderResults(authToken, {
+        purchaseOrderId,
+        products: [],
+        automationErrors: errorCollector.getErrors(),
+        poLineIds,
         success: false,
-        error: cartError.message,
+        vendor: "naver",
       });
-      // 장바구니 비우기 실패해도 계속 진행 (치명적이지 않음)
-      console.log(
-        "[naver] 장바구니 비우기 실패, 계속 진행:",
-        cartError.message,
-      );
+      return res.json({
+        success: false,
+        message: `장바구니 비우기 실패: ${cartError.message}`,
+        steps,
+        purchaseOrderId,
+        automationErrors: errorCollector.getErrors(),
+      });
     }
 
     // 3. 각 상품 처리 (장바구니에 담기)
@@ -2101,22 +2108,31 @@ async function processNaverOrder(
           optionFailed: result.optionFailed || false,
         });
       } catch (error) {
-        console.error(`[naver] 상품 처리 실패:`, error.message);
+        console.error(`[naver] ❌ 상품 처리 실패 → 전체 그룹 중단:`, error.message);
         errorCollector.addError(
           ORDER_STEPS.ADD_TO_CART,
-          null, // 에러 메시지에서 추론
-          error.message,
+          null,
+          `상품 처리 실패로 그룹 중단: ${product.productName} - ${error.message}`,
           {
             purchaseOrderId,
             purchaseOrderLineId: product.purchaseOrderLineId,
             productVariantVendorId: product.productVariantVendorId,
           },
         );
-        steps.push({
-          step: `product_${i + 1}`,
-          productName: product.productName,
+        await saveOrderResults(authToken, {
+          purchaseOrderId,
+          products: [],
+          automationErrors: errorCollector.getErrors(),
+          poLineIds,
           success: false,
-          error: error.message,
+          vendor: "naver",
+        });
+        return res.json({
+          success: false,
+          message: `상품 처리 실패: ${product.productName} - ${error.message}`,
+          steps,
+          purchaseOrderId,
+          automationErrors: errorCollector.getErrors(),
         });
       }
     }
@@ -2302,8 +2318,28 @@ async function processNaverOrder(
       await delay(3000);
       steps.push({ step: "order_button", success: true });
     } else {
-      console.log("[naver] 주문하기 버튼 없음");
-      steps.push({ step: "order_button", success: false });
+      console.error("[naver] ❌ 주문하기 버튼 못 찾음 → 중단");
+      errorCollector.addError(
+        ORDER_STEPS.ORDER_PLACEMENT,
+        ERROR_CODES.ELEMENT_NOT_FOUND,
+        "주문하기 버튼을 찾을 수 없음",
+        { purchaseOrderId },
+      );
+      await saveOrderResults(authToken, {
+        purchaseOrderId,
+        products: [],
+        automationErrors: errorCollector.getErrors(),
+        poLineIds,
+        success: false,
+        vendor: "naver",
+      });
+      return res.json({
+        success: false,
+        message: "주문하기 버튼을 찾을 수 없음",
+        steps,
+        purchaseOrderId,
+        automationErrors: errorCollector.getErrors(),
+      });
     }
 
     // 5. 배송지 선택 + 검증 (최대 3회 재시도)
@@ -2660,6 +2696,16 @@ async function processNaverOrder(
           }
         }
 
+        if (!orderNumber) {
+          console.error("[naver] ⚠️ 결제 완료, 주문번호 수동 확인 필요");
+          errorCollector.addError(
+            ORDER_STEPS.ORDER_CONFIRMATION,
+            ERROR_CODES.ELEMENT_NOT_FOUND,
+            `결제 완료, 주문번호 추출 실패 - 수동 확인 필요 (URL: ${page.url()})`,
+            { purchaseOrderId },
+          );
+        }
+
         steps.push({
           step: "order_complete",
           success: !!orderNumber,
@@ -2722,7 +2768,19 @@ async function processNaverOrder(
           ]);
           alertPaymentParsingFailed({ vendor: "네이버", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualPaymentAmount, parsingDetail: paymentParsingDetail });
         } catch (e) {
-          console.log("[naver] 결제 로그 저장 실패 (무시):", e.message);
+          console.error("[naver] ⚠️ 결제 로그 저장 실패:", e.message);
+          try {
+            await createAutomationErrors(authToken, [{
+              vendor: "naver",
+              automationType: "ORDER",
+              step: "SAVE_RESULTS",
+              errorCode: "UNEXPECTED_ERROR",
+              errorMessage: `결제 로그 저장 실패: ${e.message}`,
+              purchaseOrderId,
+            }]);
+          } catch (e2) {
+            console.error("[naver] 결제 로그 에러 기록도 실패:", e2.message);
+          }
         }
 
         // dialog 핸들러 제거 (다른 협력사와 충돌 방지)

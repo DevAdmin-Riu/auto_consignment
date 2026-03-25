@@ -41,6 +41,7 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
+  createAutomationErrors,
 } = require("../../lib/graphql-client");
 const Tesseract = require("tesseract.js");
 const sharp = require("sharp");
@@ -139,8 +140,11 @@ async function processCoupangOrder(
       detail: clearResult,
     });
   } catch (e) {
-    console.log("[coupang] 장바구니 비우기 실패:", e.message);
-    steps.push({ step: "clear_cart", success: false, error: e.message });
+    console.error("[coupang] ❌ 장바구니 비우기 실패:", e.message);
+    errorCollector.addError(ORDER_STEPS.CART_CLEARING, ERROR_CODES.CLICK_FAILED,
+      `장바구니 비우기 실패: ${e.message}`, { purchaseOrderId });
+    await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "coupang" });
+    return res.json({ success: false, vendor: vendor.name, error: `장바구니 비우기 실패: ${e.message}` });
   }
 
   // 장바구니 담기 재시도 루프 (수량 불일치 시 재시도)
@@ -387,34 +391,22 @@ async function processCoupangOrder(
             unitPrice: productUnitPrice || 0,
           });
         } else {
-          steps.push({
-            step: `product_${productIndex + 1}_cart`,
-            success: false,
-            error: "버튼을 찾을 수 없음",
-          });
-          errorCollector.addError(
-            ORDER_STEPS.ADD_TO_CART,
-            ERROR_CODES.ELEMENT_NOT_FOUND,
-            "장바구니 버튼을 찾을 수 없음",
-            {
-              purchaseOrderId,
-              purchaseOrderLineId: poLineIds?.[productIndex],
-              productVariantVendorId: product.productVariantVendorId,
-            },
-          );
+          console.error(`[coupang] ❌ 상품 ${productIndex + 1} 장바구니 버튼 못 찾음 → 전체 중단`);
+          errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.ELEMENT_NOT_FOUND,
+            `장바구니 버튼을 찾을 수 없음: ${product.productName}`,
+            { purchaseOrderId, purchaseOrderLineId: poLineIds?.[productIndex], productVariantVendorId: product.productVariantVendorId });
+          await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "coupang" });
+          return res.json({ success: false, vendor: vendor.name, error: `장바구니 버튼 못 찾음: ${product.productName}` });
         }
       } catch (e) {
-        console.log(`[coupang] 상품 ${productIndex + 1} 처리 실패:`, e.message);
-        steps.push({
-          step: `product_${productIndex + 1}_error`,
-          success: false,
-          error: e.message,
-        });
-        errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, e.message, {
+        console.error(`[coupang] ❌ 상품 ${productIndex + 1} 처리 실패 → 전체 중단:`, e.message);
+        errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, `상품 처리 실패: ${product.productName} - ${e.message}`, {
           purchaseOrderId,
           purchaseOrderLineId: poLineIds?.[productIndex],
           productVariantVendorId: product.productVariantVendorId,
         });
+        await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "coupang" });
+        return res.json({ success: false, vendor: vendor.name, error: `상품 처리 실패: ${product.productName} - ${e.message}` });
       }
     }
 
@@ -1248,7 +1240,13 @@ async function processCoupangOrder(
   }));
 
   // saveOrderResults 호출
+  const orderNumber = paymentStep?.orderNumber || null;
   if (isPaymentComplete) {
+    if (!orderNumber) {
+      console.error("[coupang] ⚠️ 결제 완료, 주문번호 수동 확인 필요");
+      errorCollector.addError(ORDER_STEPS.ORDER_CONFIRMATION, ERROR_CODES.ELEMENT_NOT_FOUND,
+        `결제 완료, 주문번호 추출 실패 - 수동 확인 필요`, { purchaseOrderId });
+    }
     await saveOrderResults(authToken, {
       purchaseOrderId,
       products: productResults.map((p) => ({
@@ -1273,14 +1271,20 @@ async function processCoupangOrder(
         {
           vendor: "coupang",  // TODO:DEPLOY - 배포 후 제거
           purchaseOrderId,
-          openMallOrderNumber: finalOrderNumber || null,
+          openMallOrderNumber: orderNumber,
           paymentAmount: actualPaymentAmount,
           paymentCard: "BC",
         },
       ]);
-      alertPaymentParsingFailed({ vendor: "쿠팡", purchaseOrderId, openMallOrderNumber: finalOrderNumber, paymentAmount: actualPaymentAmount, parsingDetail: paymentParsingDetail });
+      alertPaymentParsingFailed({ vendor: "쿠팡", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualPaymentAmount, parsingDetail: paymentParsingDetail });
     } catch (e) {
-      console.log("[coupang] 결제 로그 저장 실패 (무시):", e.message);
+      console.error("[coupang] ⚠️ 결제 로그 저장 실패:", e.message);
+      try {
+        await createAutomationErrors(authToken, [{
+          vendor: "coupang", automationType: "ORDER", step: "SAVE_RESULTS",
+          errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId,
+        }]);
+      } catch (e2) { console.error("[coupang] 에러 기록도 실패:", e2.message); }
     }
   } else {
     await saveOrderResults(authToken, {
