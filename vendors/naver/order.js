@@ -462,12 +462,37 @@ async function handleCustomsCode(page) {
  */
 async function getProductPrice(page) {
   try {
+    // 1. 옵션 선택 후 "총 상품 금액" 에서 추출 (가장 정확)
+    const totalInfo = await page.evaluate(() => {
+      // 총 금액
+      const totalPriceEl = document.querySelector("span.odm2nQMro3");
+      // 총 수량 ("총 수량 4개" 형태)
+      const totalQtyEl = document.querySelector("em.BRHn9VBk8s");
+
+      if (totalPriceEl) {
+        const totalPrice = parseInt((totalPriceEl.textContent || "").replace(/[^0-9]/g, ""), 10) || 0;
+        let totalQty = 1;
+        if (totalQtyEl) {
+          const qtyMatch = (totalQtyEl.textContent || "").match(/(\d+)/);
+          if (qtyMatch) totalQty = parseInt(qtyMatch[1], 10) || 1;
+        }
+        return { totalPrice, totalQty };
+      }
+      return null;
+    });
+
+    if (totalInfo && totalInfo.totalPrice > 0) {
+      const unitPrice = Math.round(totalInfo.totalPrice / totalInfo.totalQty);
+      console.log(`[naver] 총 상품 금액: ${totalInfo.totalPrice}원 / ${totalInfo.totalQty}개 = 단가 ${unitPrice}원`);
+      return unitPrice;
+    }
+
+    // 2. 폴백: 기본 상품 가격 셀렉터
     const priceText = await page.$eval(SELECTORS.product.productPrice, (el) =>
       el.textContent.trim(),
     );
-    // "6,500" → 6500
     const price = parseInt(priceText.replace(/[^0-9]/g, ""), 10);
-    console.log(`[naver] 상품 가격: ${priceText} → ${price}원`);
+    console.log(`[naver] 기본 상품 가격 (폴백): ${priceText} → ${price}원`);
     return price;
   } catch (error) {
     console.error("[naver] 가격 추출 실패:", error.message);
