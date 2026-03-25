@@ -1659,18 +1659,25 @@ async function processProduct(page, product) {
   const addedToCart = await addToCart(page);
 
   // 6. 가격 비교 (위탁가와 오픈몰 가격)
-  // 부가세(10%) 추가하여 예상 단가 계산 (VAT 포함)
+  // openMallQtyPerUnit 적용: 오픈몰 단가 × 배수 = 실제 비교 가격
   const vendorPriceExcludeVat = product.vendorPriceExcludeVat || 0;
   const expectedPrice = Math.round(vendorPriceExcludeVat * 1.1); // VAT 포함
+  const qtyPerUnitForPrice = product.openMallQtyPerUnit || 1;
+  const openMallTotalPrice = openMallPrice * qtyPerUnitForPrice; // 오픈몰 단가 × 배수
   let priceMismatch = false;
   if (openMallPrice && expectedPrice > 0) {
-    if (openMallPrice !== expectedPrice) {
+    if (qtyPerUnitForPrice > 1) {
       console.log(
-        `[naver] ⚠️ 가격 불일치: 오픈몰 ${openMallPrice}원 vs 예상가 ${expectedPrice}원 (VAT별도 ${vendorPriceExcludeVat}원)`,
+        `[naver] 배수주문 가격 비교: 오픈몰 ${openMallPrice}원 × ${qtyPerUnitForPrice} = ${openMallTotalPrice}원 vs 예상가 ${expectedPrice}원`,
+      );
+    }
+    if (openMallTotalPrice !== expectedPrice) {
+      console.log(
+        `[naver] ⚠️ 가격 불일치: 오픈몰 ${openMallTotalPrice}원 vs 예상가 ${expectedPrice}원 (VAT별도 ${vendorPriceExcludeVat}원)`,
       );
       priceMismatch = true;
     } else {
-      console.log(`[naver] ✅ 가격 일치: ${openMallPrice}원`);
+      console.log(`[naver] ✅ 가격 일치: ${openMallTotalPrice}원`);
     }
   }
 
