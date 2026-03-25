@@ -464,19 +464,29 @@ async function getProductPrice(page) {
   try {
     // 1. 옵션 선택 후 "총 상품 금액" 에서 추출 (가장 정확)
     const totalInfo = await page.evaluate(() => {
-      // 총 금액
-      const totalPriceEl = document.querySelector("span.odm2nQMro3");
-      // 총 수량 ("총 수량 4개" 형태)
-      const totalQtyEl = document.querySelector("em.BRHn9VBk8s");
+      // "총 상품 금액" 텍스트를 가진 요소 찾기 → 같은 컨테이너의 금액 추출
+      const allStrongs = document.querySelectorAll("strong");
+      for (const el of allStrongs) {
+        if ((el.textContent || "").includes("총 상품 금액")) {
+          const container = el.closest("div");
+          if (container) {
+            // 금액: strong 안의 span에서 숫자 추출
+            const priceStrong = container.querySelector("strong:last-of-type");
+            const priceSpan = priceStrong?.querySelector("span");
+            const priceText = priceSpan?.textContent || priceStrong?.textContent || "";
+            const totalPrice = parseInt(priceText.replace(/[^0-9]/g, ""), 10) || 0;
 
-      if (totalPriceEl) {
-        const totalPrice = parseInt((totalPriceEl.textContent || "").replace(/[^0-9]/g, ""), 10) || 0;
-        let totalQty = 1;
-        if (totalQtyEl) {
-          const qtyMatch = (totalQtyEl.textContent || "").match(/(\d+)/);
-          if (qtyMatch) totalQty = parseInt(qtyMatch[1], 10) || 1;
+            // 수량: "총 수량 N개"
+            const qtyEl = container.querySelector("em");
+            let totalQty = 1;
+            if (qtyEl) {
+              const qtyMatch = (qtyEl.textContent || "").match(/(\d+)/);
+              if (qtyMatch) totalQty = parseInt(qtyMatch[1], 10) || 1;
+            }
+
+            if (totalPrice > 0) return { totalPrice, totalQty };
+          }
         }
-        return { totalPrice, totalQty };
       }
       return null;
     });
