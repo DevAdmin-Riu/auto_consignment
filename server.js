@@ -360,7 +360,18 @@ async function handleProductSearchOrder(
       );
 
     case "wowpress":
-      return await processWowpressOrder(res, page, vendor, { browser });
+      return await processWowpressOrder(
+        res,
+        page,
+        vendor,
+        {
+          browser,
+          products,
+          poLineIds,
+          purchaseOrderId,
+        },
+        authToken,
+      );
 
     case "swadpia":
       return await processSwadpiaOrder(

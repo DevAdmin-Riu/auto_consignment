@@ -277,7 +277,13 @@ async function payOutstanding(page, browser, vendor) {
 
 // ==================== 메인 처리 ====================
 
-async function processWowpressOrder(res, page, vendor, { browser }) {
+async function processWowpressOrder(
+  res,
+  page,
+  vendor,
+  { browser, products = [], poLineIds = [], purchaseOrderId },
+  authToken,
+) {
   console.log("\n[wowpress] ===== 와우프레스 결제 시작 =====");
 
   try {
@@ -294,8 +300,52 @@ async function processWowpressOrder(res, page, vendor, { browser }) {
     // 2. 미납금 결제
     const payResult = await payOutstanding(page, browser, vendor);
 
+    if (!payResult.success) {
+      return res.json({
+        success: false,
+        vendor: vendor.name,
+        message: payResult.message,
+      });
+    }
+
+    // 3. 결제 성공 → 대행접수 + 출고처리 → 결제 로그 생성
+    if (products.length > 0 && authToken) {
+      // 3-1. 대행접수 + 출고처리
+      console.log(
+        `[wowpress] 대행접수 + 출고처리 시작 (${products.length}건)`,
+      );
+      const graphqlClient = require("../../lib/graphql-client");
+      await graphqlClient.saveOrderResults(authToken, {
+        purchaseOrderId,
+        products,
+        poLineIds,
+        success: true,
+        vendor: "wowpress",
+      });
+      console.log("[wowpress] 대행접수 + 출고처리 완료");
+
+      // 3-2. 상품별 결제 로그 생성
+      for (const product of products) {
+        const ordnum = product.openMallOrderNumber;
+        if (!ordnum) continue;
+
+        try {
+          await graphqlClient.callGraphQL(authToken, `
+            mutation WowPressCreatePaymentLog($ordnum: String!, $purchaseOrderId: ID!) {
+              wowPressCreatePaymentLog(ordnum: $ordnum, purchaseOrderId: $purchaseOrderId) {
+                result
+              }
+            }
+          `, { ordnum, purchaseOrderId });
+          console.log(`[wowpress] 결제 로그 생성: ${ordnum}`);
+        } catch (e) {
+          console.log(`[wowpress] 결제 로그 생성 실패 (무시): ${ordnum} - ${e.message}`);
+        }
+      }
+    }
+
     return res.json({
-      success: payResult.success,
+      success: true,
       vendor: vendor.name,
       message: payResult.message,
     });
