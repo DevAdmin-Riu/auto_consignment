@@ -2237,6 +2237,22 @@ async function processNaverOrder(
           continue;
         }
 
+        // 배송지 변경 후 추가배송비 alert 처리 (제주 ↔ 일반 전환 시)
+        console.log("[naver] 배송지 변경 후 추가배송비 alert 대기...");
+        let alertDetected = false;
+        const dialogHandler = async (dialog) => {
+          console.log(`[naver] alert 감지: "${dialog.message().substring(0, 100)}"`);
+          await dialog.accept();
+          alertDetected = true;
+          console.log("[naver] ✅ alert 확인 클릭 완료");
+        };
+        page.on("dialog", dialogHandler);
+        await delay(3000);
+        page.off("dialog", dialogHandler);
+        if (!alertDetected) {
+          console.log("[naver] 추가배송비 alert 없음 (정상)");
+        }
+
         // 카카오 배송지 결제 전 검증 비활성화 (네이버/카카오 주소 구조 차이로 오탐 발생)
         console.log("[naver] 배송지 검증 스킵 (카카오 비활성화)");
         addressVerified = true;
