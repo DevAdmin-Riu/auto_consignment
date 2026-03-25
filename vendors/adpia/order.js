@@ -1875,6 +1875,7 @@ async function processAdpiaOrder(
 
       let vendorOrderNumber = null;
       let orderSuccess = false;
+      let currentStep = ORDER_STEPS.ADD_TO_CART;
 
       try {
         // 2-1. 장바구니 비우기 (이전 상품 잔여분 제거)
@@ -1953,6 +1954,7 @@ async function processAdpiaOrder(
         };
 
         // 2-4. 주문 페이지에서 처리 (수량 입력, 파일 업로드, 장바구니 담기)
+        currentStep = ORDER_STEPS.ADD_TO_CART;
         const downloadedFile = downloadedFiles.find(
           (f) => f.productSku === product.productSku,
         );
@@ -2073,6 +2075,7 @@ async function processAdpiaOrder(
         }
 
         // 2-5. 장바구니 → 주문서 이동
+        currentStep = ORDER_STEPS.ORDER_PLACEMENT;
         const orderFormResult = await goToOrderForm(page);
         if (!orderFormResult.success) {
           console.log("[adpia] 주문서 이동 실패:", orderFormResult.message);
@@ -2111,6 +2114,7 @@ async function processAdpiaOrder(
         }
 
         // 2-6. 배송지 입력 + 결제 (ISP 결제창 미출현 시 최대 5회 재시도)
+        currentStep = ORDER_STEPS.PAYMENT;
         if (shippingInfo) {
           const MAX_ISP_RETRY = 5;
           let ispRetryCount = 0;
@@ -2214,6 +2218,7 @@ async function processAdpiaOrder(
         }
 
         // 2-8. 결과 저장 및 saveOrderResults 호출
+        currentStep = ORDER_STEPS.SAVE_RESULTS;
         orderSuccess = !!vendorOrderNumber;
         const resultEntry = {
           lineId: poLineIds?.[productIndex],
@@ -2330,18 +2335,8 @@ async function processAdpiaOrder(
           }
         }
       } catch (error) {
-        console.error(`[adpia] 상품 처리 에러:`, error.message);
-        // 에러 메시지로 step 추정
-        const errorMsg = error.message || "";
-        let errorStep = ORDER_STEPS.ADD_TO_CART;
-        if (errorMsg.includes("결제") || errorMsg.includes("Shinhan") || errorMsg.includes("ISP") || errorMsg.includes("payment")) {
-          errorStep = ORDER_STEPS.PAYMENT;
-        } else if (errorMsg.includes("배송") || errorMsg.includes("주소") || errorMsg.includes("address")) {
-          errorStep = ORDER_STEPS.ORDER_PLACEMENT;
-        } else if (errorMsg.includes("로그인") || errorMsg.includes("login")) {
-          errorStep = ORDER_STEPS.LOGIN;
-        }
-        errorCollector.addError(errorStep, null, error.message, {
+        console.error(`[adpia] 상품 처리 에러 (step: ${currentStep}):`, error.message);
+        errorCollector.addError(currentStep, null, error.message, {
           purchaseOrderId,
           purchaseOrderLineId: poLineIds?.[productIndex],
           productVariantVendorId: product.productVariantVendorId,
