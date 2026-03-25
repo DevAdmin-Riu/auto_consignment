@@ -47,7 +47,10 @@ async function login(page, vendor) {
 
   console.log("[wowpress] 로그인 시작...");
   // 메인 페이지 먼저 접근
-  await page.goto("https://wowpress.co.kr", { waitUntil: "networkidle2", timeout: 30000 });
+  await page.goto("https://wowpress.co.kr", {
+    waitUntil: "networkidle2",
+    timeout: 30000,
+  });
   await delay(2000);
   // 로그인 페이지로 이동
   await page.goto(URLS.login, { waitUntil: "networkidle2", timeout: 30000 });
@@ -57,14 +60,26 @@ async function login(page, vendor) {
   console.log("[wowpress] 현재 URL:", page.url());
 
   // evaluate로 직접 아이디/비밀번호 입력 + 로그인 클릭
-  await page.evaluate((userId, password) => {
-    const uid = document.querySelector('#authUid');
-    const pw = document.querySelector('#authPw');
-    if (uid) { uid.value = ''; uid.value = userId; uid.dispatchEvent(new Event('input', { bubbles: true })); }
-    if (pw) { pw.value = ''; pw.value = password; pw.dispatchEvent(new Event('input', { bubbles: true })); }
-    const btn = document.querySelector('.memberlog_login');
-    if (btn) btn.click();
-  }, vendor.userId, vendor.password);
+  await page.evaluate(
+    (userId, password) => {
+      const uid = document.querySelector("#authUid");
+      const pw = document.querySelector("#authPw");
+      if (uid) {
+        uid.value = "";
+        uid.value = userId;
+        uid.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      if (pw) {
+        pw.value = "";
+        pw.value = password;
+        pw.dispatchEvent(new Event("input", { bubbles: true }));
+      }
+      const btn = document.querySelector(".memberlog_login");
+      if (btn) btn.click();
+    },
+    vendor.userId,
+    vendor.password,
+  );
   console.log("[wowpress] 아이디/비밀번호 입력 + 로그인 버튼 클릭");
 
   await page
@@ -95,7 +110,9 @@ async function payOutstanding(page, browser, vendor) {
   await delay(2000);
 
   // 미납금이 있는지 확인 - #btn_etcpg 버튼 존재 여부로 판단
-  const hasPayBtn = await page.evaluate(() => !!document.querySelector('#btn_etcpg'));
+  const hasPayBtn = await page.evaluate(
+    () => !!document.querySelector("#btn_etcpg"),
+  );
   console.log("[wowpress] 현재 URL:", page.url());
   console.log("[wowpress] 기타결제 버튼 존재:", hasPayBtn);
 
@@ -107,7 +124,7 @@ async function payOutstanding(page, browser, vendor) {
   // 2. 기타결제 버튼 클릭
   console.log("[wowpress] 기타결제 버튼 클릭...");
   await page.evaluate(() => {
-    const btn = document.querySelector('#btn_etcpg');
+    const btn = document.querySelector("#btn_etcpg");
     if (btn) btn.click();
   });
   await delay(2000);
@@ -115,7 +132,7 @@ async function payOutstanding(page, browser, vendor) {
   // 3. 네이버페이 버튼 클릭
   console.log("[wowpress] 네이버페이 버튼 클릭...");
   await page.evaluate(() => {
-    const btn = document.querySelector('#btn_naver');
+    const btn = document.querySelector("#btn_naver");
     if (btn) btn.click();
   });
   await delay(2000);
@@ -129,7 +146,7 @@ async function payOutstanding(page, browser, vendor) {
   console.log(`[wowpress] 현재 페이지 수: ${pagesCountBefore}`);
 
   await page.evaluate(() => {
-    const btn = document.querySelector('.payment_pay');
+    const btn = document.querySelector(".payment_pay");
     if (btn) btn.click();
   });
   console.log("[wowpress] 결제하기 클릭 완료");
@@ -141,7 +158,9 @@ async function payOutstanding(page, browser, vendor) {
   for (let i = 0; i < 20; i++) {
     await delay(500);
     const pagesAfter = await browser.pages();
-    console.log(`[wowpress] 페이지 수 체크 (${i + 1}/20): ${pagesAfter.length}`);
+    console.log(
+      `[wowpress] 페이지 수 체크 (${i + 1}/20): ${pagesAfter.length}`,
+    );
 
     if (pagesAfter.length > pagesCountBefore) {
       naverPayPage = pagesAfter[pagesAfter.length - 1];
@@ -224,7 +243,9 @@ async function payOutstanding(page, browser, vendor) {
       return { clicked: false };
     });
     if (agreeClicked.clicked) {
-      console.log(`[wowpress] 동의하고 결제하기 클릭 (텍스트): "${agreeClicked.text}"`);
+      console.log(
+        `[wowpress] 동의하고 결제하기 클릭 (텍스트): "${agreeClicked.text}"`,
+      );
     } else {
       console.log("[wowpress] 동의하고 결제하기 버튼 없음");
     }
@@ -247,7 +268,10 @@ async function payOutstanding(page, browser, vendor) {
 
   if (!pinResult.success) {
     console.log("[wowpress] PIN 입력 실패:", pinResult.reason || "알 수 없음");
-    return { success: false, message: `PIN 입력 실패: ${pinResult.reason || "알 수 없음"}` };
+    return {
+      success: false,
+      message: `PIN 입력 실패: ${pinResult.reason || "알 수 없음"}`,
+    };
   }
 
   console.log("[wowpress] PIN 입력 완료!");
@@ -308,38 +332,44 @@ async function processWowpressOrder(
       });
     }
 
-    // 3. 결제 성공 → 대행접수 + 출고처리 → 결제 로그 생성
+    // 3. 결제 성공 → 발주접수 + 출고처리 + 결제내역 (백엔드 일괄 처리)
     if (products.length > 0 && authToken) {
-      // 3-1. 대행접수 + 출고처리
-      console.log(
-        `[wowpress] 대행접수 + 출고처리 시작 (${products.length}건)`,
-      );
       const graphqlClient = require("../../lib/graphql-client");
-      await graphqlClient.saveOrderResults(authToken, {
-        purchaseOrderId,
-        products,
-        poLineIds,
-        success: true,
-        vendor: "wowpress",
-      });
-      console.log("[wowpress] 대행접수 + 출고처리 완료");
 
-      // 3-2. 상품별 결제 로그 생성
-      for (const product of products) {
-        const ordnum = product.openMallOrderNumber;
+      // ordnum별로 그룹핑 (같은 ordnum에 여러 poLineId가 매핑될 수 있음)
+      const ordnumMap = new Map();
+      for (let i = 0; i < products.length; i++) {
+        const ordnum = products[i].openMallOrderNumber;
         if (!ordnum) continue;
+        if (!ordnumMap.has(ordnum)) {
+          ordnumMap.set(ordnum, []);
+        }
+        if (poLineIds[i]) {
+          ordnumMap.get(ordnum).push(poLineIds[i]);
+        }
+      }
 
+      for (const [ordnum, lineIds] of ordnumMap) {
         try {
-          await graphqlClient.callGraphQL(authToken, `
-            mutation WowPressCreatePaymentLog($ordnum: String!, $purchaseOrderId: ID!) {
-              wowPressCreatePaymentLog(ordnum: $ordnum, purchaseOrderId: $purchaseOrderId) {
+          console.log(
+            `[wowpress] 발주접수 + 출고 + 결제내역 처리: ${ordnum} (${lineIds.length}건)`,
+          );
+          await graphqlClient.callGraphQL(
+            authToken,
+            `
+            mutation WowPressCreatePaymentLog($ordnum: String!, $purchaseOrderId: ID!, $purchaseOrderLineIds: [ID!]!) {
+              wowPressCreatePaymentLog(ordnum: $ordnum, purchaseOrderId: $purchaseOrderId, purchaseOrderLineIds: $purchaseOrderLineIds) {
                 result
               }
             }
-          `, { ordnum, purchaseOrderId });
-          console.log(`[wowpress] 결제 로그 생성: ${ordnum}`);
+          `,
+            { ordnum, purchaseOrderId, purchaseOrderLineIds: lineIds },
+          );
+          console.log(`[wowpress] ✅ ${ordnum} 처리 완료`);
         } catch (e) {
-          console.log(`[wowpress] 결제 로그 생성 실패 (무시): ${ordnum} - ${e.message}`);
+          console.log(
+            `[wowpress] ❌ ${ordnum} 처리 실패: ${e.message}`,
+          );
         }
       }
     }
