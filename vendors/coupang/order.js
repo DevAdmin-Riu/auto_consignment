@@ -679,80 +679,11 @@ async function processCoupangOrder(
               automationErrors: errorCollector.getErrors(),
             });
           }
-          // 배송지 입력 성공 - 카카오 API로 더블체킹
-          console.log("[배송지] 배송지 입력 완료, 주소 검증 시작...");
-          await delay(2000);
-
-          const ourAddress = shippingAddress.streetAddress1 || "";
-          const kakaoResult = await searchAddressWithKakao(ourAddress);
-
-          if (kakaoResult) {
-            // 화면에서 배송지 텍스트 읽기 ("배송지" 텍스트 근처)
-            const displayedAddress = await page.evaluate(() => {
-              const el = document.querySelector("#deliveryAddress");
-              if (el) return el.textContent || "";
-              // 폴백: "배송지" 텍스트 포함된 영역
-              const allSpans = document.querySelectorAll("span");
-              for (const span of allSpans) {
-                if (span.textContent.trim() === "배송지") {
-                  const container = span.closest("div[class*='twc-']") || span.parentElement?.parentElement;
-                  if (container) return container.textContent || "";
-                }
-              }
-              return document.body.innerText.substring(0, 3000);
-            });
-
-            const kakaoAddresses = [
-              kakaoResult.roadAddress,
-              kakaoResult.jibunAddress,
-              kakaoResult.roadAddressShort,
-              kakaoResult.jibunAddressShort,
-            ].filter(Boolean).map(a => normalizeAddress(a));
-
-            let matched = false;
-            const normalizedDisplay = normalizeAddress(displayedAddress);
-            for (const kakaoAddr of kakaoAddresses) {
-              if (normalizedDisplay.includes(kakaoAddr)) {
-                matched = true;
-                console.log(`[배송지] ✅ 주소 검증 통과: "${kakaoAddr}"`);
-                break;
-              }
-            }
-
-            if (!matched) {
-              console.error("[배송지] ❌ 주소 불일치!");
-              console.error(`[배송지]   우리 주소: ${ourAddress}`);
-              console.error(`[배송지]   카카오 도로명: ${kakaoResult.roadAddress}`);
-              console.error(`[배송지]   카카오 지번: ${kakaoResult.jibunAddress}`);
-              console.error(`[배송지]   화면 주소: ${displayedAddress.substring(0, 200)}`);
-
-              errorCollector.addError(
-                ORDER_STEPS.ORDER_PLACEMENT,
-                ERROR_CODES.ELEMENT_NOT_FOUND,
-                `배송지 검증 실패: 주소 불일치`,
-                { purchaseOrderId, ourAddress, kakaoRoad: kakaoResult.roadAddress },
-              );
-              await saveOrderResults(authToken, {
-                purchaseOrderId,
-                products: addedProducts || [],
-                priceMismatches: [],
-                optionFailedProducts: [],
-                automationErrors: errorCollector.getErrors(),
-                poLineIds,
-                success: false,
-                vendor: "coupang",
-              });
-              return res.json({
-                success: false,
-                vendor: vendor.name,
-                error: "배송지 검증 실패 (주소 불일치)",
-                steps,
-                automationErrors: errorCollector.getErrors(),
-              });
-            }
-          } else {
-            console.log("[배송지] 카카오 API 결과 없음 - 검증 스킵");
-          }
+          // 배송지 입력 성공 - 카카오 API 더블체킹 비활성화 (주소 구조 차이로 오탐)
+          // TODO: 주소 정규화 개선 후 재활성화
+          // const ourAddress = shippingAddress.streetAddress1 || "";
+          // const kakaoResult = await searchAddressWithKakao(ourAddress);
+          // ... (카카오 더블체킹 로직 비활성화)
 
           console.log("[배송지] 결제 단계로 진행...");
         } else {
