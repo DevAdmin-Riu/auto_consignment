@@ -3011,13 +3011,13 @@ async function processBaeminOrder(
               console.log(`[baemin] ✅ 가격 일치: ${openMallUnitPrice}원`);
             }
 
-            // 가격 차이 5,000원 초과 또는 가격 추출 실패 → 결제 중단
+            // 가격 차이 5,000원 초과 또는 가격 추출 실패 → 그룹 전체 결제 중단
             const PRICE_DIFF_THRESHOLD = 5000;
             const priceDiff = openMallUnitPrice && expectedPrice > 0 ? Math.abs(openMallUnitPrice - expectedPrice) : 0;
             if (!openMallUnitPrice || (priceDiff > PRICE_DIFF_THRESHOLD)) {
               const reason = !openMallUnitPrice
-                ? `가격 추출 실패로 결제 중단: ${product.productName}`
-                : `가격 차이 ${priceDiff}원 초과로 결제 중단: 오픈몰 ${openMallUnitPrice}원 vs 시스템 ${expectedPrice}원`;
+                ? `가격 추출 실패로 그룹 결제 중단: ${product.productName}`
+                : `가격 차이 ${priceDiff}원 초과로 그룹 결제 중단: 오픈몰 ${openMallUnitPrice}원 vs 시스템 ${expectedPrice}원`;
               console.error(`[baemin] ❌ ${reason}`);
               errorCollector.addError(
                 ORDER_STEPS.ORDER_PLACEMENT,
@@ -3025,14 +3025,22 @@ async function processBaeminOrder(
                 reason,
                 { purchaseOrderId, productVariantVendorId: product.productVariantVendorId },
               );
-              results.push({
-                lineId: poLineIds?.[idx],
-                productSku: product.productSku,
-                productName: product.productName,
+              // 그룹 전체 실패 처리
+              await saveOrderResults(authToken, {
+                purchaseOrderId,
+                products: [],
+                priceMismatches: openMallUnitPrice ? [{
+                  productVariantVendorId: product.productVariantVendorId,
+                  vendorPriceExcludeVat,
+                  openMallPrice: openMallUnitPrice,
+                }] : [],
+                automationErrors: errorCollector.getErrors(),
+                poLineIds: group.products.map((p) => poLineIds?.[p._originalIndex]).filter(Boolean),
                 success: false,
-                message: reason,
+                vendor: "baemin",
               });
-              continue; // 이 상품 결제 중단, 다음 상품으로
+              groupOrderSuccess = false;
+              break; // 이 그룹 전체 중단
             }
 
             // 장바구니 담기 성공한 상품 기록
