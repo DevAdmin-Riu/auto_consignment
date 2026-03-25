@@ -1785,18 +1785,11 @@ async function fillAddressForm(page, shippingAddress) {
           }
 
           if (searchInput) {
-            // iframe 내의 input에 직접 값 설정 (page.keyboard.type은 메인 페이지에서만 동작)
-            await searchInput.click();
-            console.log("[배송지 디버그] searchInput 클릭 완료");
+            // 검색어 입력 (타이핑 방식)
+            await searchInput.click({ clickCount: 3 });
             await delay(100);
-
-            // 값 직접 설정 및 input 이벤트 발생
-            await searchInput.evaluate((el, val) => {
-              el.value = val;
-              el.dispatchEvent(new Event("input", { bubbles: true }));
-              el.dispatchEvent(new Event("change", { bubbles: true }));
-            }, searchQuery);
-            console.log("[배송지] 주소 검색어 입력:", searchQuery);
+            await searchInput.type(searchQuery, { delay: 30 });
+            console.log("[배송지] 주소 검색어 타이핑:", searchQuery);
             await delay(500);
 
             // 검색 버튼 클릭 (zipcodeFrame 또는 pickerFrame 내에서)
