@@ -988,6 +988,22 @@ async function processNapkinOrder(
           }
         }
 
+        // 3-3.5. 가격 차이 5,000원 초과 또는 추출 실패 → 결제 중단
+        const PRICE_DIFF_THRESHOLD = 5000;
+        if (priceInfo) {
+          const absDiff = Math.abs(priceInfo.difference || 0);
+          if (priceInfo.priceMismatch && (!priceInfo.unitPrice || absDiff > PRICE_DIFF_THRESHOLD)) {
+            const reason = !priceInfo.unitPrice
+              ? `가격 추출 실패로 결제 중단: ${product.productSku}`
+              : `가격 차이 ${absDiff}원 초과로 결제 중단: 냅킨 ${priceInfo.unitPrice}원 vs 시스템 ${priceInfo.expectedUnitPrice}원`;
+            console.error(`[napkin] ❌ ${reason}`);
+            errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.UNEXPECTED_ERROR, reason,
+              { purchaseOrderId, purchaseOrderLineId: lineId, productVariantVendorId: product.productVariantVendorId });
+            results.push({ lineId, productName: product.productName, productSku: product.productSku, success: false, message: reason, priceInfo });
+            continue; // 이 상품 중단, 다음으로
+          }
+        }
+
         // 3-4. 장바구니 담기
         const cartResult = await addToCart(page);
         if (!cartResult.success) {

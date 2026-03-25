@@ -343,6 +343,29 @@ async function processCoupangOrder(
           console.log(`[coupang] 상품 단가 추출 실패 (무시): ${e.message}`);
         }
 
+        // 2-2.6. 가격 차이 체크 (5,000원 초과 시 결제 중단)
+        const PRICE_DIFF_THRESHOLD = 5000;
+        if (product.vendorPriceExcludeVat) {
+          const expectedUnitPrice = Math.round(product.vendorPriceExcludeVat * 1.1);
+          if (!productUnitPrice) {
+            console.error(`[coupang] ❌ 가격 추출 실패: 상품 ${productIndex + 1} (${product.productName})`);
+            errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.UNEXPECTED_ERROR,
+              `가격 추출 실패로 결제 중단: ${product.productName}`,
+              { purchaseOrderId, productVariantVendorId: product.productVariantVendorId });
+            await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "coupang" });
+            return res.json({ success: false, vendor: vendor.name, error: `가격 추출 실패: ${product.productName}` });
+          }
+          const priceDiff = Math.abs(productUnitPrice - expectedUnitPrice);
+          if (priceDiff > PRICE_DIFF_THRESHOLD) {
+            console.error(`[coupang] ❌ 가격 차이 ${priceDiff}원 초과: ${product.productName} (오픈몰 ${productUnitPrice}원 vs 시스템 ${expectedUnitPrice}원)`);
+            errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.UNEXPECTED_ERROR,
+              `가격 차이 ${priceDiff}원 초과로 결제 중단: 오픈몰 ${productUnitPrice}원 vs 시스템 ${expectedUnitPrice}원`,
+              { purchaseOrderId, productVariantVendorId: product.productVariantVendorId });
+            await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "coupang" });
+            return res.json({ success: false, vendor: vendor.name, error: `가격 차이 ${priceDiff}원 초과: ${product.productName}` });
+          }
+        }
+
         // 2-3. 장바구니 담기
         console.log(`[coupang] 상품 ${productIndex + 1}: 장바구니 담기...`);
         const cartBtn = await page.$("button.prod-cart-btn");
