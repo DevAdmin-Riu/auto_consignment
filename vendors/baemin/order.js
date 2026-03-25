@@ -38,6 +38,7 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
+  createAutomationErrors,
   createNeedsManagerVerification,
 } = require("../../lib/graphql-client");
 const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
@@ -2859,7 +2860,15 @@ async function processBaeminOrder(
         }
 
         // 3-1. 장바구니 비우기
-        await clearCart(page);
+        const clearResult = await clearCart(page);
+        if (clearResult && !clearResult.success) {
+          console.error("[baemin] ❌ 장바구니 비우기 실패:", clearResult.message);
+          errorCollector.addError(ORDER_STEPS.CART_CLEARING, ERROR_CODES.CLICK_FAILED,
+            `장바구니 비우기 실패: ${clearResult.message}`, { purchaseOrderId });
+          await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(),
+            poLineIds: group.products.map((p) => poLineIds?.[p._originalIndex]).filter(Boolean), success: false, vendor: "baemin" });
+          continue; // 이 그룹 중단, 다음 그룹으로
+        }
 
         // 3-2. 그룹 내 모든 상품 장바구니 담기
         for (const product of group.products) {
@@ -2918,7 +2927,7 @@ async function processBaeminOrder(
                     reason: `옵션 선택 실패: ${product.productSku} (${product.productName}) - ${optionResult.reason}`,
                   }]);
                 } catch (e) {
-                  console.log(`[baemin] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+                  console.error(`[baemin] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
                 }
                 groupOptionFailed.push({
                   productVariantVendorId: product.productVariantVendorId,
@@ -2954,7 +2963,7 @@ async function processBaeminOrder(
                     reason: `품절/판매중지: ${product.productSku} (${product.productName})`,
                   }]);
                 } catch (e) {
-                  console.log(`[baemin] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+                  console.error(`[baemin] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
                 }
               }
               results.push({
@@ -3366,7 +3375,8 @@ async function processBaeminOrder(
             );
             alertPaymentParsingFailed({ vendor: "배민상회", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: paidAmount, parsingDetail: paymentParsingDetail });
           } catch (e) {
-            console.log("[baemin] 결제 로그 저장 실패 (무시):", e.message);
+            console.error("[baemin] ⚠️ 결제 로그 저장 실패:", e.message);
+          try { await createAutomationErrors(authToken, [{ vendor: "baemin", automationType: "ORDER", step: "SAVE_RESULTS", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error("[baemin] 에러 기록도 실패:", e2.message); }
           }
         }
 

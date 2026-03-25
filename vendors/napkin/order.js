@@ -38,6 +38,7 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
+  createAutomationErrors,
   createNeedsManagerVerification,
 } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
@@ -852,7 +853,14 @@ async function processNapkinOrder(
     console.log("[napkin] AlphaReview 팝업 자동 제거 적용됨 (setInterval)");
 
     // 3. 장바구니 비우기
-    await clearCart(page);
+    const clearResult = await clearCart(page);
+    if (clearResult && !clearResult.success) {
+      console.error("[napkin] ❌ 장바구니 비우기 실패:", clearResult.message);
+      errorCollector.addError(ORDER_STEPS.CART_CLEARING, ERROR_CODES.CLICK_FAILED,
+        `장바구니 비우기 실패: ${clearResult.message}`, { purchaseOrderId });
+      await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "napkin" });
+      return res.json({ success: false, vendor: vendor.name, error: `장바구니 비우기 실패: ${clearResult.message}` });
+    }
 
     const results = [];
 
@@ -878,7 +886,7 @@ async function processNapkinOrder(
             reason: `상품 URL 없음: ${product.productSku} (${product.productName})`,
           }]);
         } catch (e) {
-          console.log(`[napkin] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+          console.error(`[napkin] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
         }
         results.push({
           success: false,
@@ -945,7 +953,7 @@ async function processNapkinOrder(
                 reason: `옵션 선택 실패: ${product.productSku} (${product.productName}) - ${optionResult.message}`,
               }]);
             } catch (e) {
-              console.log(`[napkin] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+              console.error(`[napkin] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
             }
             results.push({
               lineId,
@@ -2227,6 +2235,13 @@ async function processNapkinOrder(
         reason: r.message,
       }));
 
+    // 주문번호 못 찾음 → 결제 후이므로 에러 로그만
+    if (!vendorOrderNumber) {
+      console.error("[napkin] ⚠️ 결제 완료, 주문번호 수동 확인 필요");
+      errorCollector.addError(ORDER_STEPS.ORDER_CONFIRMATION, ERROR_CODES.ELEMENT_NOT_FOUND,
+        `결제 완료, 주문번호 추출 실패 - 수동 확인 필요`, { purchaseOrderId });
+    }
+
     // saveOrderResults 호출 (성공)
     await saveOrderResults(authToken, {
       purchaseOrderId,
@@ -2261,7 +2276,8 @@ async function processNapkinOrder(
       ]);
       alertPaymentParsingFailed({ vendor: "냅킨코리아", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualPaymentAmount, parsingDetail: paymentParsingDetail });
     } catch (e) {
-      console.log("[napkin] 결제 로그 저장 실패 (무시):", e.message);
+      console.error("[napkin] ⚠️ 결제 로그 저장 실패:", e.message);
+      try { await createAutomationErrors(authToken, [{ vendor: "napkin", automationType: "ORDER", step: "SAVE_RESULTS", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error("[napkin] 에러 기록도 실패:", e2.message); }
     }
 
     // dialog 핸들러 제거 (다른 협력사와 충돌 방지)

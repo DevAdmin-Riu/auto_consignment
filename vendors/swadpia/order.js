@@ -45,6 +45,7 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
+  createAutomationErrors,
   createNeedsManagerVerification,
 } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
@@ -1797,7 +1798,7 @@ async function processSwadpiaOrder(
             reason: `디자인 파일 URL 없음: ${product.productSku} (${product.productName})`,
           }]);
         } catch (e) {
-          console.log(`[swadpia] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+          console.error(`[swadpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
         }
         skippedProducts.push(product.productSku);
         continue;
@@ -1824,7 +1825,7 @@ async function processSwadpiaOrder(
             reason: `디자인 파일 다운로드 실패: ${product.productSku} - ${err.message}`,
           }]);
         } catch (e) {
-          console.log(`[swadpia] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+          console.error(`[swadpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
         }
         skippedProducts.push(product.productSku);
         continue;
@@ -1862,7 +1863,14 @@ async function processSwadpiaOrder(
 
     // 2. 장바구니 비우기
     console.log("[swadpia] 장바구니 비우기...");
-    await clearCart(page);
+    const clearResult = await clearCart(page);
+    if (clearResult === false) {
+      console.error("[swadpia] ❌ 장바구니 비우기 실패");
+      errorCollector.addError(ORDER_STEPS.CART_CLEARING, ERROR_CODES.CLICK_FAILED,
+        "장바구니 비우기 실패", { purchaseOrderId });
+      await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "swadpia" });
+      return res.json({ success: false, vendor: vendor.name, error: "장바구니 비우기 실패" });
+    }
 
     // 3. 옵션 목록 페이지로 이동
     console.log("[swadpia] 옵션 목록 페이지로 이동...");
@@ -2055,6 +2063,12 @@ async function processSwadpiaOrder(
 
     // saveOrderResults 호출
     if (orderResult?.success) {
+      // 주문번호 못 찾음 → 결제 후이므로 에러 로그만
+      if (!orderResult?.vendorOrderNumber) {
+        console.error("[swadpia] ⚠️ 결제 완료, 주문번호 수동 확인 필요");
+        errorCollector.addError(ORDER_STEPS.ORDER_CONFIRMATION, ERROR_CODES.ELEMENT_NOT_FOUND,
+          `결제 완료, 주문번호 추출 실패 - 수동 확인 필요`, { purchaseOrderId });
+      }
       // 성공: 결제 완료
       await saveOrderResults(authToken, {
         purchaseOrderId,
@@ -2089,7 +2103,8 @@ async function processSwadpiaOrder(
         ]);
         alertPaymentParsingFailed({ vendor: "성원애드피아", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualAmount, parsingDetail: paymentParsingDetail });
       } catch (e) {
-        console.log("[swadpia] 결제 로그 저장 실패 (무시):", e.message);
+        console.error("[swadpia] ⚠️ 결제 로그 저장 실패:", e.message);
+        try { await createAutomationErrors(authToken, [{ vendor: "swadpia", automationType: "ORDER", step: "SAVE_RESULTS", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error("[swadpia] 에러 기록도 실패:", e2.message); }
       }
     } else {
       // 실패: 장바구니 검증 실패 또는 결제 실패

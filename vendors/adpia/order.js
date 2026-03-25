@@ -47,6 +47,7 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
+  createAutomationErrors,
   createNeedsManagerVerification,
 } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
@@ -1797,7 +1798,7 @@ async function processAdpiaOrder(
             reason: `디자인 파일 URL 없음: ${product.productSku} (${product.productName})`,
           }]);
         } catch (e) {
-          console.log(`[adpia] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+          console.error(`[adpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
         }
         skippedProducts.push(product.productSku);
         continue;
@@ -1819,7 +1820,7 @@ async function processAdpiaOrder(
             reason: `디자인 파일 다운로드 실패: ${product.productSku} - ${err.message}`,
           }]);
         } catch (e) {
-          console.log(`[adpia] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+          console.error(`[adpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
         }
         skippedProducts.push(product.productSku);
         continue;
@@ -1879,7 +1880,13 @@ async function processAdpiaOrder(
 
       try {
         // 2-1. 장바구니 비우기 (이전 상품 잔여분 제거)
-        await clearCart(page);
+        const clearResult = await clearCart(page);
+        if (clearResult && !clearResult.success) {
+          console.error("[adpia] ❌ 장바구니 비우기 실패:", clearResult.message);
+          errorCollector.addError(ORDER_STEPS.CART_CLEARING, ERROR_CODES.CLICK_FAILED,
+            `장바구니 비우기 실패: ${clearResult.message}`, { purchaseOrderId });
+          continue; // 이 상품 중단, 다음 상품으로 (개별 주문)
+        }
 
         // 2-2. 제품코드로 상품 찾기 (favor 페이지에서)
         const findResult = await findProductByCode(page, product.productSku);
@@ -1894,7 +1901,7 @@ async function processAdpiaOrder(
             }]);
             console.log(`[adpia] 담당자 확인 필요 저장: ${findResult.message}`);
           } catch (e) {
-            console.log(`[adpia] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+            console.error(`[adpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
           }
           results.push({
             lineId: poLineIds?.[productIndex],
@@ -2034,7 +2041,7 @@ async function processAdpiaOrder(
               }]);
               console.log("[adpia] 담당자 확인 필요 저장 완료");
             } catch (e) {
-              console.log(`[adpia] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+              console.error(`[adpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
             }
           }
           // 에러 로그 기록
@@ -2349,7 +2356,8 @@ async function processAdpiaOrder(
             console.log(`[adpia] 결제 로그 저장: ${paymentAmount}원`);
             alertPaymentParsingFailed({ vendor: "애드피아몰", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: paymentAmount, parsingDetail: { 단가계산: fromCalc, 주문서: fromPage } });
           } catch (e) {
-            console.log(`[adpia] 결제 로그 저장 실패 (무시): ${e.message}`);
+            console.error(`[adpia] ⚠️ 결제 로그 저장 실패: ${e.message}`);
+          try { await createAutomationErrors(authToken, [{ vendor: "adpia", automationType: "ORDER", step: "SAVE_RESULTS", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error("[adpia] 에러 기록도 실패:", e2.message); }
           }
         }
       } catch (error) {
