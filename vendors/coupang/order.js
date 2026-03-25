@@ -1171,6 +1171,19 @@ async function processCoupangOrder(
             }: 쿠팡 ${coupangUnitPrice}원, 협력사 ${expectedUnitPrice}원 (오차: ${priceDifference}원)`,
           );
         }
+      } else {
+        console.error(`[coupang] ❌ 가격 추출 실패: 상품 ${i + 1} 단가를 찾을 수 없음 (URL: ${product.productUrl})`);
+        priceMismatch = {
+          detected: true,
+          productName: product.productName || `상품 ${i + 1}`,
+          productUrl: product.productUrl,
+          coupangPrice: 0,
+          expectedPrice: expectedUnitPrice,
+          vendorPriceExcludeVat: product.vendorPriceExcludeVat,
+          quantity: quantity,
+          difference: -expectedUnitPrice,
+          message: `가격 추출 실패: 단가를 찾을 수 없음`,
+        };
       }
     }
 

@@ -1700,7 +1700,10 @@ async function processProduct(page, product) {
   const ourQuantity = product.quantity || 1;
   const openMallUnitPrice = Math.round(openMallPrice / ourQuantity); // 총액 ÷ 우리 수량
   let priceMismatch = false;
-  if (openMallPrice && expectedPrice > 0) {
+  if (!openMallPrice) {
+    console.error(`[naver] ❌ 가격 추출 실패: 총 상품 금액을 찾을 수 없음 (URL: ${product.productUrl})`);
+    priceMismatch = true; // 가격 못 읽으면 불일치로 기록
+  } else if (expectedPrice > 0) {
     if (ourQuantity > 1) {
       console.log(`[naver] 가격 비교: 총액 ${openMallPrice}원 / 우리수량 ${ourQuantity} = 단가 ${openMallUnitPrice}원`);
     }

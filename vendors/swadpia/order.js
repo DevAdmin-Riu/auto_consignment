@@ -499,7 +499,21 @@ async function verifySwadpiaCartItems(page, expectedProducts) {
       const expectedPrice = Math.round(vendorPriceExcludeVat * 1.1); // VAT 포함
       const openMallPrice = cartItem.unitPrice; // 성원애드피아 현재 가격 (VAT 포함)
 
-      if (expectedPrice > 0 && openMallPrice !== expectedPrice) {
+      if (!openMallPrice) {
+        console.error(`[swadpia] ❌ 가격 추출 실패: ${matchedExpected.productSku} 단가를 찾을 수 없음`);
+        priceMismatches.push({
+          purchaseOrderLineId: matchedExpected.lineId || null,
+          productVariantVendorId: matchedExpected.productVariantVendorId || null,
+          productCode: matchedExpected.productSku,
+          productName: cartItem.name,
+          quantity: cartItem.quantity,
+          openMallPrice: 0,
+          expectedPrice: expectedPrice,
+          vendorPriceExcludeVat: vendorPriceExcludeVat,
+          difference: -expectedPrice,
+          differencePercent: "-100",
+        });
+      } else if (expectedPrice > 0 && openMallPrice !== expectedPrice) {
         const priceDiff = openMallPrice - expectedPrice;
         const priceDiffPercent = ((priceDiff / expectedPrice) * 100).toFixed(2);
         priceMismatches.push({

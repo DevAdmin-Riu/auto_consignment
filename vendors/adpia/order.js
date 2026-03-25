@@ -1934,12 +1934,16 @@ async function processAdpiaOrder(
         const openMallPrice = findResult.price; // 오픈몰 가격 (VAT 포함)
         const expectedPrice = product.vendorPriceExcludeVat; // 시스템 가격 (VAT 제외)
 
+        if (!openMallPrice) {
+          console.error(`[adpia] ❌ 가격 추출 실패: ${product.productSku} 가격을 찾을 수 없음`);
+        }
+
         // 가격 비교 로직
-        const openMallPriceExcludeVat = Math.round(openMallPrice / 1.1); // VAT 제외 가격
+        const openMallPriceExcludeVat = openMallPrice ? Math.round(openMallPrice / 1.1) : 0;
         const priceDifference = Math.abs(
           openMallPriceExcludeVat - expectedPrice,
         );
-        const priceMismatch = expectedPrice > 0 && priceDifference > 10; // 10원 이상 차이나면 불일치
+        const priceMismatch = !openMallPrice || (expectedPrice > 0 && priceDifference > 10);
 
         console.log(
           `[adpia] 가격 비교: 오픈몰=${openMallPrice}(VAT제외=${openMallPriceExcludeVat}) vs 시스템=${expectedPrice}, 차이=${priceDifference}원, 불일치=${priceMismatch}`,

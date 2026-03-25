@@ -561,6 +561,13 @@ async function setQuantityAndGetPrice(
     } else {
       priceInfo = { unitPrice, totalPrice };
     }
+  } else {
+    console.error(`[napkin] ❌ 가격 추출 실패: 가격 입력 필드를 찾을 수 없음 (셀렉터: ${priceSelector})`);
+    priceInfo = {
+      unitPrice: 0,
+      totalPrice: 0,
+      priceMismatch: true,
+    };
   }
 
   return priceInfo;

@@ -3001,9 +3001,10 @@ async function processBaeminOrder(
                 openMallPrice: openMallUnitPrice,
               });
             } else if (!openMallUnitPrice) {
-              console.log(
-                `[baemin] 가격 비교 스킵: 오픈몰 가격 추출 실패 (null)`,
+              console.error(
+                `[baemin] ❌ 가격 추출 실패: 총 상품금액을 찾을 수 없음 (URL: ${product.productUrl})`,
               );
+              priceMismatch = true;
             } else if (expectedPrice <= 0) {
               console.log(`[baemin] 가격 비교 스킵: 시스템가 0원 이하`);
             } else {
