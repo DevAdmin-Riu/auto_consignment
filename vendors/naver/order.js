@@ -2215,7 +2215,7 @@ async function processNaverOrder(
             );
             await saveOrderResults(authToken, {
               purchaseOrderId,
-              products: addedProducts,
+              products: [],
               priceMismatches: [],
               optionFailedProducts: [],
               automationErrors: errorCollector.getErrors(),
