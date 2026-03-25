@@ -482,9 +482,8 @@ async function getProductPrice(page) {
     });
 
     if (totalInfo && totalInfo.totalPrice > 0) {
-      const unitPrice = Math.round(totalInfo.totalPrice / totalInfo.totalQty);
-      console.log(`[naver] 총 상품 금액: ${totalInfo.totalPrice}원 / ${totalInfo.totalQty}개 = 단가 ${unitPrice}원`);
-      return unitPrice;
+      console.log(`[naver] 총 상품 금액: ${totalInfo.totalPrice}원 (수량 ${totalInfo.totalQty}개)`);
+      return totalInfo.totalPrice;
     }
 
     // 2. 폴백: 기본 상품 가격 셀렉터
@@ -1684,25 +1683,24 @@ async function processProduct(page, product) {
   const addedToCart = await addToCart(page);
 
   // 6. 가격 비교 (위탁가와 오픈몰 가격)
-  // openMallQtyPerUnit 적용: 오픈몰 단가 × 배수 = 실제 비교 가격
+  // openMallPrice = 네이버 "총 상품 금액" (배수수량 × 우리수량 포함된 총액)
+  // 우리 수량으로 나눠서 단가 비교 (시스템 단가는 배수수량 적용된 1개 가격)
   const vendorPriceExcludeVat = product.vendorPriceExcludeVat || 0;
   const expectedPrice = Math.round(vendorPriceExcludeVat * 1.1); // VAT 포함
-  const qtyPerUnitForPrice = product.openMallQtyPerUnit || 1;
-  const openMallTotalPrice = openMallPrice * qtyPerUnitForPrice; // 오픈몰 단가 × 배수
+  const ourQuantity = product.quantity || 1;
+  const openMallUnitPrice = Math.round(openMallPrice / ourQuantity); // 총액 ÷ 우리 수량
   let priceMismatch = false;
   if (openMallPrice && expectedPrice > 0) {
-    if (qtyPerUnitForPrice > 1) {
-      console.log(
-        `[naver] 배수주문 가격 비교: 오픈몰 ${openMallPrice}원 × ${qtyPerUnitForPrice} = ${openMallTotalPrice}원 vs 예상가 ${expectedPrice}원`,
-      );
+    if (ourQuantity > 1) {
+      console.log(`[naver] 가격 비교: 총액 ${openMallPrice}원 / 우리수량 ${ourQuantity} = 단가 ${openMallUnitPrice}원`);
     }
-    if (openMallTotalPrice !== expectedPrice) {
+    if (openMallUnitPrice !== expectedPrice) {
       console.log(
-        `[naver] ⚠️ 가격 불일치: 오픈몰 ${openMallTotalPrice}원 vs 예상가 ${expectedPrice}원 (VAT별도 ${vendorPriceExcludeVat}원)`,
+        `[naver] ⚠️ 가격 불일치: 오픈몰 단가 ${openMallUnitPrice}원 vs 예상가 ${expectedPrice}원 (VAT별도 ${vendorPriceExcludeVat}원)`,
       );
       priceMismatch = true;
     } else {
-      console.log(`[naver] ✅ 가격 일치: ${openMallTotalPrice}원`);
+      console.log(`[naver] ✅ 가격 일치: ${openMallUnitPrice}원`);
     }
   }
 
