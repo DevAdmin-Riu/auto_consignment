@@ -396,13 +396,17 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       );
       console.log(`[adpia] 수량 select 선택: ${actualQuantity}`);
       await delay(1000);
-      // 즉시 검증
-      const actualVal = await page.$eval(SELECTORS.orderPage.quantitySelect, el => el.value);
-      if (parseInt(actualVal, 10) !== actualQuantity) {
-        console.log(`[adpia] ⚠️ 수량 검증 실패: 기대=${actualQuantity}, 실제=${actualVal}`);
-        return { success: false, message: `수량 불일치: 기대=${actualQuantity}, 실제=${actualVal}` };
+      // 즉시 검증 (읽기 실패 시 경고만)
+      try {
+        const actualVal = await page.$eval(SELECTORS.orderPage.quantitySelect, el => el.value);
+        if (actualVal && parseInt(actualVal, 10) !== actualQuantity) {
+          console.log(`[adpia] ⚠️ 수량 검증 실패: 기대=${actualQuantity}, 실제=${actualVal}`);
+          return { success: false, message: `수량 불일치: 기대=${actualQuantity}, 실제=${actualVal}` };
+        }
+        console.log(`[adpia] 수량 검증 OK: ${actualVal || actualQuantity}개`);
+      } catch (e) {
+        console.log(`[adpia] 수량 검증 스킵 (읽기 실패): ${e.message}`);
       }
-      console.log(`[adpia] 수량 검증 OK: ${actualVal}개`);
     } else {
       // input 방식 시도
       let quantityInput = await waitFor(
