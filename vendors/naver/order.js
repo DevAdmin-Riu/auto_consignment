@@ -2715,7 +2715,7 @@ async function processNaverOrder(
             await createAutomationErrors(authToken, [{
               vendor: "naver",
               automationType: "ORDER",
-              step: "SAVE_RESULTS",
+              step: "ORDER_CONFIRMATION",
               errorCode: "UNEXPECTED_ERROR",
               errorMessage: `결제 로그 저장 실패: ${e.message}`,
               purchaseOrderId,

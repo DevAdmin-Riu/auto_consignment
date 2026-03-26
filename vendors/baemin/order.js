@@ -3376,7 +3376,7 @@ async function processBaeminOrder(
             alertPaymentParsingFailed({ vendor: "배민상회", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: paidAmount, parsingDetail: paymentParsingDetail });
           } catch (e) {
             console.error("[baemin] ⚠️ 결제 로그 저장 실패:", e.message);
-          try { await createAutomationErrors(authToken, [{ vendor: "baemin", automationType: "ORDER", step: "SAVE_RESULTS", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error("[baemin] 에러 기록도 실패:", e2.message); }
+          try { await createAutomationErrors(authToken, [{ vendor: "baemin", automationType: "ORDER", step: "ORDER_CONFIRMATION", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error("[baemin] 에러 기록도 실패:", e2.message); }
           }
         }
 

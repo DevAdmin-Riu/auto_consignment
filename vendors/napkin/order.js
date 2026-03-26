@@ -2277,7 +2277,7 @@ async function processNapkinOrder(
       alertPaymentParsingFailed({ vendor: "냅킨코리아", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualPaymentAmount, parsingDetail: paymentParsingDetail });
     } catch (e) {
       console.error("[napkin] ⚠️ 결제 로그 저장 실패:", e.message);
-      try { await createAutomationErrors(authToken, [{ vendor: "napkin", automationType: "ORDER", step: "SAVE_RESULTS", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error("[napkin] 에러 기록도 실패:", e2.message); }
+      try { await createAutomationErrors(authToken, [{ vendor: "napkin", automationType: "ORDER", step: "ORDER_CONFIRMATION", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error("[napkin] 에러 기록도 실패:", e2.message); }
     }
 
     // dialog 핸들러 제거 (다른 협력사와 충돌 방지)

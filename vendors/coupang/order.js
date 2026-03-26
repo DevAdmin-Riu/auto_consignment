@@ -1281,7 +1281,7 @@ async function processCoupangOrder(
       console.error("[coupang] ⚠️ 결제 로그 저장 실패:", e.message);
       try {
         await createAutomationErrors(authToken, [{
-          vendor: "coupang", automationType: "ORDER", step: "SAVE_RESULTS",
+          vendor: "coupang", automationType: "ORDER", step: "ORDER_CONFIRMATION",
           errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId,
         }]);
       } catch (e2) { console.error("[coupang] 에러 기록도 실패:", e2.message); }

@@ -2104,7 +2104,7 @@ async function processSwadpiaOrder(
         alertPaymentParsingFailed({ vendor: "성원애드피아", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualAmount, parsingDetail: paymentParsingDetail });
       } catch (e) {
         console.error("[swadpia] ⚠️ 결제 로그 저장 실패:", e.message);
-        try { await createAutomationErrors(authToken, [{ vendor: "swadpia", automationType: "ORDER", step: "SAVE_RESULTS", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error("[swadpia] 에러 기록도 실패:", e2.message); }
+        try { await createAutomationErrors(authToken, [{ vendor: "swadpia", automationType: "ORDER", step: "ORDER_CONFIRMATION", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error("[swadpia] 에러 기록도 실패:", e2.message); }
       }
     } else {
       // 실패: 장바구니 검증 실패 또는 결제 실패
