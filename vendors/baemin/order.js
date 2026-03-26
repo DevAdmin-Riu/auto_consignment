@@ -3087,7 +3087,7 @@ async function processBaeminOrder(
               ...product,
               openMallPrice,
               vendorPriceExcludeVat,
-              totalOptionPrice,
+              totalOptionPrice: optionResult.totalOptionPrice || 0,
               selectedOptions: optionResult.selectedOptions || [],
               priceMismatch,
             });
