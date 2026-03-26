@@ -2352,13 +2352,13 @@ async function processAdpiaOrder(
               {
                 vendor: "adpia",  // TODO:DEPLOY - 배포 후 제거
                 purchaseOrderId: purchaseOrderId,
-                openMallOrderNumber: orderNumber || null,
+                openMallOrderNumber: vendorOrderNumber || null,
                 paymentAmount: paymentAmount,
                 paymentCard: "SHINHAN",
               },
             ]);
             console.log(`[adpia] 결제 로그 저장: ${paymentAmount}원`);
-            alertPaymentParsingFailed({ vendor: "애드피아몰", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: paymentAmount, parsingDetail: { 단가계산: fromCalc, 주문서: fromPage } });
+            alertPaymentParsingFailed({ vendor: "애드피아몰", purchaseOrderId, openMallOrderNumber: vendorOrderNumber, paymentAmount: paymentAmount, parsingDetail: { 단가계산: fromCalc, 주문서: fromPage } });
           } catch (e) {
             console.error(`[adpia] ⚠️ 결제 로그 저장 실패: ${e.message}`);
           try { await createAutomationErrors(authToken, [{ vendor: "adpia", automationType: "ORDER", step: "ORDER_CONFIRMATION", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error("[adpia] 에러 기록도 실패:", e2.message); }
