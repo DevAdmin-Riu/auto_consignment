@@ -564,9 +564,49 @@ app.get("/logs", (req, res) => {
   res.sendFile(pathModule.join(__dirname, "public", "logs.html"));
 });
 
+// /logs/live → 실시간 로그 UI
+app.get("/logs/live", (req, res) => {
+  res.sendFile(pathModule.join(__dirname, "public", "logs-live.html"));
+});
+
 // ==================== 서버 시작 ====================
 const PORT = process.env.PORT || 3002;
-app.listen(PORT, () => {
+const http = require("http");
+const server = http.createServer(app);
+
+// WebSocket 서버 (실시간 로그)
+const { WebSocketServer } = require("ws");
+const wss = new WebSocketServer({ server, path: "/ws/logs" });
+const { spawn } = require("child_process");
+
+wss.on("connection", (ws) => {
+  console.log("[WebSocket] 로그 클라이언트 연결됨");
+
+  // PM2 로그를 tail로 스트리밍
+  const logProcess = spawn("npx", ["pm2", "logs", "--raw", "--lines", "100"], {
+    shell: true,
+    env: { ...process.env },
+  });
+
+  logProcess.stdout.on("data", (data) => {
+    if (ws.readyState === 1) ws.send(data.toString());
+  });
+
+  logProcess.stderr.on("data", (data) => {
+    if (ws.readyState === 1) ws.send(data.toString());
+  });
+
+  ws.on("close", () => {
+    console.log("[WebSocket] 로그 클라이언트 연결 해제");
+    logProcess.kill();
+  });
+
+  ws.on("error", () => {
+    logProcess.kill();
+  });
+});
+
+server.listen(PORT, () => {
   console.log(`\n====================================`);
   console.log(`협력사 자동 발주 서버 (리팩토링 버전)`);
   console.log(`====================================`);
