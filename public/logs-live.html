@@ -81,6 +81,7 @@
     <button id="btnPause">일시정지</button>
     <button id="btnClear">지우기</button>
     <input type="text" id="filter" placeholder="필터 (키워드)">
+    <button id="btnSearch">검색</button>
     <button id="btnError" class="">에러만</button>
     <button id="btnAutoScroll" class="active">자동 스크롤</button>
     <div class="status">
@@ -235,10 +236,14 @@
       btnAutoScroll.classList.toggle('active', autoScroll);
     });
 
+    document.getElementById('btnSearch').addEventListener('click', renderAll);
+    filterInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') renderAll();
+    });
     let filterTimeout;
     filterInput.addEventListener('input', () => {
       clearTimeout(filterTimeout);
-      filterTimeout = setTimeout(renderAll, 300);
+      filterTimeout = setTimeout(renderAll, 500);
     });
 
     connect();
