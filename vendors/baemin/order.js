@@ -2890,6 +2890,36 @@ async function processBaeminOrder(
               continue;
             }
 
+            // 품절 체크 (상품 페이지 진입 후 즉시)
+            const isOutOfStock = await page.evaluate(() => {
+              const bodyText = document.body?.innerText || "";
+              if (bodyText.includes("현재 품절된 상품입니다") || bodyText.includes("품절")) {
+                const disabledBtn = document.querySelector('button[disabled]');
+                if (disabledBtn && disabledBtn.textContent.includes("품절")) return true;
+              }
+              return false;
+            });
+            if (isOutOfStock) {
+              console.log(`[baemin] ⚠️ 품절 상품 → 담당자 확인 필요: ${product.productSku}`);
+              try {
+                await createNeedsManagerVerification(authToken, [{
+                  productVariantVendorId: product.productVariantVendorId,
+                  purchaseOrderId,
+                  reason: `품절: ${product.productSku} (${product.productName})`,
+                }]);
+              } catch (e) {
+                console.error(`[baemin] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
+              }
+              results.push({
+                lineId: poLineIds?.[idx],
+                productSku: product.productSku,
+                productName: product.productName,
+                success: false,
+                message: "품절",
+              });
+              continue;
+            }
+
             // 쿠폰 다운로드 (있으면)
             await downloadCoupons(page);
 
