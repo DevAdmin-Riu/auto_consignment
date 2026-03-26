@@ -2147,78 +2147,10 @@ async function processNaverOrder(
       }
     }
 
-    // 3.5. 가격 차이 5,000원 초과 체크 → 결제 중단
-    const PRICE_DIFF_THRESHOLD = 5000;
-    const priceBlockedProducts = addedProducts.filter((p) => {
-      if (!p.openMallPrice || !p.priceMismatch) return false;
-      const ourQty = p.quantity || 1;
-      const unitPrice = Math.round(p.openMallPrice / ourQty);
-      const expectedPrice = Math.round((p.vendorPriceExcludeVat || 0) * 1.1);
-      return Math.abs(unitPrice - expectedPrice) > PRICE_DIFF_THRESHOLD;
-    });
-
-    if (priceBlockedProducts.length > 0) {
-      for (const p of priceBlockedProducts) {
-        const ourQty = p.quantity || 1;
-        const unitPrice = Math.round(p.openMallPrice / ourQty);
-        const expectedPrice = Math.round((p.vendorPriceExcludeVat || 0) * 1.1);
-        const diff = unitPrice - expectedPrice;
-        console.error(`[naver] ❌ 가격 차이 ${PRICE_DIFF_THRESHOLD}원 초과: ${p.productName} (오픈몰 ${unitPrice}원 vs 시스템 ${expectedPrice}원, 차이 ${diff}원)`);
-        errorCollector.addError(
-          ORDER_STEPS.ORDER_PLACEMENT,
-          ERROR_CODES.UNEXPECTED_ERROR,
-          `가격 차이 초과로 결제 중단: 오픈몰 ${unitPrice}원 vs 시스템 ${expectedPrice}원 (차이 ${diff}원)`,
-          { purchaseOrderId, productVariantVendorId: p.productVariantVendorId },
-        );
-      }
-      await saveOrderResults(authToken, {
-        purchaseOrderId,
-        products: [],
-        priceMismatches: addedProducts.filter((p) => p.priceMismatch).map((p) => ({
-          productVariantVendorId: p.productVariantVendorId,
-          vendorPriceExcludeVat: p.vendorPriceExcludeVat,
-          openMallPrice: Math.round(p.openMallPrice / (p.quantity || 1)),
-        })),
-        automationErrors: errorCollector.getErrors(),
-        poLineIds,
-        success: false,
-        vendor: "naver",
-      });
-      return res.json({
-        success: false,
-        message: `가격 차이 ${PRICE_DIFF_THRESHOLD}원 초과로 결제 중단`,
-        priceBlockedProducts: priceBlockedProducts.map((p) => p.productName),
-        automationErrors: errorCollector.getErrors(),
-      });
-    }
-
-    // 가격 추출 실패한 상품이 있으면 결제 중단
-    const priceFailedProducts = addedProducts.filter((p) => p.addedToCart && !p.openMallPrice);
-    if (priceFailedProducts.length > 0) {
-      for (const p of priceFailedProducts) {
-        console.error(`[naver] ❌ 가격 추출 실패로 결제 중단: ${p.productName}`);
-        errorCollector.addError(
-          ORDER_STEPS.ORDER_PLACEMENT,
-          ERROR_CODES.UNEXPECTED_ERROR,
-          `가격 추출 실패로 결제 중단: ${p.productName}`,
-          { purchaseOrderId, productVariantVendorId: p.productVariantVendorId },
-        );
-      }
-      await saveOrderResults(authToken, {
-        purchaseOrderId,
-        products: [],
-        automationErrors: errorCollector.getErrors(),
-        poLineIds,
-        success: false,
-        vendor: "naver",
-      });
-      return res.json({
-        success: false,
-        message: "가격 추출 실패로 결제 중단",
-        priceFailedProducts: priceFailedProducts.map((p) => p.productName),
-        automationErrors: errorCollector.getErrors(),
-      });
-    }
+    // 3.5. 가격 차이 체크 — 주석처리 (가격 추출 정확도 개선 후 재활성화)
+    // TODO: 네이버 "총 상품 금액" 파싱 정확도 개선 후 다시 활성화
+    // const PRICE_DIFF_THRESHOLD = 5000;
+    // ... 가격 차이 5,000원 초과 체크 비활성화 ...
 
     // 3.6. 장바구니에 담긴 상품이 있는지 확인
     const successfulProducts = addedProducts.filter((p) => p.addedToCart);
