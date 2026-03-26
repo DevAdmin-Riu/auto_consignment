@@ -465,35 +465,45 @@ async function getProductPrice(page) {
   try {
     // 1. 옵션 선택 후 "총 상품 금액" 에서 추출 (가장 정확)
     const totalInfo = await page.evaluate(() => {
-      // "총 상품 금액" 텍스트를 가진 요소 찾기 → 같은 컨테이너의 금액 추출
-      const allStrongs = document.querySelectorAll("strong");
-      for (const el of allStrongs) {
-        if ((el.textContent || "").includes("총 상품 금액")) {
-          const container = el.closest("div");
-          if (container) {
-            // 금액: strong 안의 span에서 숫자 추출
-            const priceStrong = container.querySelector("strong:last-of-type");
-            const priceSpan = priceStrong?.querySelector("span");
-            const priceText = priceSpan?.textContent || priceStrong?.textContent || "";
-            const totalPrice = parseInt(priceText.replace(/[^0-9]/g, ""), 10) || 0;
+      // 페이지 전체 텍스트에서 "총 상품 금액" 근처의 금액 추출
+      const allElements = document.querySelectorAll("*");
+      for (const el of allElements) {
+        // 자식 없이 직접 "총 상품 금액" 텍스트를 가진 요소만
+        if (el.children.length > 3) continue;
+        const text = (el.textContent || "").trim();
+        if (!text.includes("총 상품 금액")) continue;
+
+        // 상위 컨테이너에서 금액 패턴 찾기 (여러 레벨 탐색)
+        let container = el.parentElement;
+        for (let i = 0; i < 5 && container; i++) {
+          const containerText = container.textContent || "";
+
+          // "총 상품 금액" 뒤에 나오는 첫 번째 금액 추출
+          const priceMatch = containerText.match(/총 상품 금액[\s\S]*?([\d,]+)원/);
+          if (priceMatch) {
+            const totalPrice = parseInt(priceMatch[1].replace(/,/g, ""), 10) || 0;
 
             // 수량: "총 수량 N개"
-            const qtyEl = container.querySelector("em");
             let totalQty = 1;
-            if (qtyEl) {
-              const qtyMatch = (qtyEl.textContent || "").match(/(\d+)/);
-              if (qtyMatch) totalQty = parseInt(qtyMatch[1], 10) || 1;
-            }
+            const qtyMatch = containerText.match(/총 수량\s*(\d+)/);
+            if (qtyMatch) totalQty = parseInt(qtyMatch[1], 10) || 1;
 
-            if (totalPrice > 0) return { totalPrice, totalQty };
+            if (totalPrice > 0) {
+              return { totalPrice, totalQty, debug: containerText.substring(0, 200) };
+            }
           }
+          container = container.parentElement;
         }
+        break; // 첫 번째 매칭된 요소만 처리
       }
       return null;
     });
 
     if (totalInfo && totalInfo.totalPrice > 0) {
       console.log(`[naver] 총 상품 금액: ${totalInfo.totalPrice}원 (수량 ${totalInfo.totalQty}개)`);
+      if (totalInfo.debug) {
+        console.log(`[naver] 가격 추출 컨텍스트: "${totalInfo.debug}"`);
+      }
       return totalInfo.totalPrice;
     }
 
