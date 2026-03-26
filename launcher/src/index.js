@@ -659,11 +659,25 @@ async function updateWorkflowVendors(id, vendors) {
   codeNode.parameters.jsCode = updatedCode;
 
   // 워크플로우 저장 (PUT) - n8n API가 허용하는 필드만 전송
+  // settings에서 허용된 필드만 추출 (n8n이 additional properties 거부)
+  const allowedSettings = {};
+  const allowedKeys = [
+    "executionOrder", "errorWorkflow", "timezone", "saveDataErrorExecution",
+    "saveDataSuccessExecution", "saveManualExecutions", "saveExecutionProgress",
+    "executionTimeout", "callerPolicy",
+  ];
+  if (workflow.settings) {
+    for (const key of allowedKeys) {
+      if (workflow.settings[key] !== undefined) {
+        allowedSettings[key] = workflow.settings[key];
+      }
+    }
+  }
   const updateBody = {
     name: workflow.name,
     nodes: workflow.nodes,
     connections: workflow.connections,
-    settings: workflow.settings || {},
+    settings: allowedSettings,
   };
   await n8nApiRequest("PUT", `/workflows/${id}`, updateBody);
   sendLog("system", `[시스템] 워크플로우 #${id} 협력사 필터 적용 완료`);
