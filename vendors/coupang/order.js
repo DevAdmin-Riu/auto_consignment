@@ -369,6 +369,8 @@ async function processCoupangOrder(
             quantity,
             vendorItemId: vendorItemIdMatch ? vendorItemIdMatch[1] : null,
             unitPrice: productUnitPrice || 0,
+            vendorPriceExcludeVat: product.vendorPriceExcludeVat || 0,
+            productVariantVendorId: product.productVariantVendorId || null,
           });
         } else {
           console.error(`[coupang] ❌ 상품 ${productIndex + 1} 장바구니 버튼 못 찾음 → 전체 중단`);
@@ -519,7 +521,51 @@ async function processCoupangOrder(
         continue; // while 루프 재시도
       }
 
-      // 검증 성공
+      // 검증 성공 — 장바구니 가격 비교 (5,000원 초과 시 STOP)
+      if (cartVerification.matchedItems) {
+        const PRICE_DIFF_THRESHOLD = 5000;
+        for (const matched of cartVerification.matchedItems) {
+          if (matched.price > 0) {
+            const ap = addedProducts.find(p => p.vendorItemId === matched.vendorItemId);
+            if (ap && ap.vendorPriceExcludeVat) {
+              const openMallPrice = matched.price; // 장바구니 단가 (VAT 포함)
+              const systemPrice = Math.round(ap.vendorPriceExcludeVat * 1.1); // 시스템가 VAT 포함
+              const priceDiff = openMallPrice - systemPrice;
+
+              if (Math.abs(priceDiff) > PRICE_DIFF_THRESHOLD) {
+                const errorMessage = `가격 차이 초과로 결제 중단: 오픈몰 ${openMallPrice}원 vs 시스템 ${systemPrice}원 (차이 ${priceDiff}원) - ${ap.productName}`;
+                console.log(`[coupang] ⚠️ ${errorMessage}`);
+                errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.UNEXPECTED_ERROR, errorMessage, {
+                  purchaseOrderId,
+                  productVariantVendorId: ap.productVariantVendorId,
+                });
+                await saveOrderResults(authToken, {
+                  purchaseOrderId,
+                  products: [],
+                  priceMismatches: [],
+                  optionFailedProducts: [],
+                  automationErrors: errorCollector.getErrors(),
+                  poLineIds,
+                  success: false,
+                  vendor: "coupang",
+                });
+                return res.json({ success: false, error: errorMessage });
+              }
+
+              // 불일치는 있지만 5,000원 이하 → 기록만
+              if (Math.abs(priceDiff) > 10) {
+                priceMismatches.push({
+                  productVariantVendorId: ap.productVariantVendorId,
+                  vendorPriceExcludeVat: ap.vendorPriceExcludeVat,
+                  openMallPrice: openMallPrice,
+                });
+                console.log(`[coupang] 가격 불일치 기록: 오픈몰 ${openMallPrice}원 vs 시스템 ${systemPrice}원 (차이 ${priceDiff}원)`);
+              }
+            }
+          }
+        }
+      }
+
       cartVerified = true;
     } catch (e) {
       console.log("[coupang] 장바구니 검증 실패:", e.message);
