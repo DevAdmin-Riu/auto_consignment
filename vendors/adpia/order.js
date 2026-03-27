@@ -58,6 +58,7 @@ const { searchAddressWithKakao, normalizeAddress } = require("../../lib/address-
 const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
 const https = require("https");
 const http = require("http");
+const { checkPrice } = require("../../lib/price-check");
 
 // 임시 파일 저장 경로
 const TEMP_DIR = path.join(__dirname, "../../temp");
@@ -1949,15 +1950,13 @@ async function processAdpiaOrder(
           console.error(`[adpia] ❌ 가격 추출 실패: ${product.productSku} 가격을 찾을 수 없음`);
         }
 
-        // 가격 비교 로직
+        // 가격 비교 로직 (checkPrice 사용)
+        const priceResult = checkPrice(openMallPrice, expectedPrice);
         const openMallPriceExcludeVat = openMallPrice ? Math.round(openMallPrice / 1.1) : 0;
-        const priceDifference = Math.abs(
-          openMallPriceExcludeVat - expectedPrice,
-        );
-        const priceMismatch = !openMallPrice || (expectedPrice > 0 && priceDifference > 10);
+        const priceMismatch = priceResult.isExtractionFailure || priceResult.hasMismatch || priceResult.shouldStop;
 
         console.log(
-          `[adpia] 가격 비교: 오픈몰=${openMallPrice}(VAT제외=${openMallPriceExcludeVat}) vs 시스템=${expectedPrice}, 차이=${priceDifference}원, 불일치=${priceMismatch}`,
+          `[adpia] 가격 비교: 오픈몰=${openMallPrice}(VAT제외=${openMallPriceExcludeVat}) vs 시스템=${priceResult.systemPriceWithVat}원(VAT별도=${expectedPrice}), 차이=${priceResult.priceDiff}원, 불일치=${priceMismatch}`,
         );
 
         const priceInfo = {
@@ -1968,18 +1967,31 @@ async function processAdpiaOrder(
           difference: openMallPriceExcludeVat - expectedPrice,
         };
 
-        // 가격 추출 실패 또는 5,000원 초과 차이 → 결제 중단
-        const PRICE_DIFF_THRESHOLD = 5000;
-        const absDiff = Math.abs(openMallPriceExcludeVat - expectedPrice);
-        if (!openMallPrice || (expectedPrice > 0 && absDiff > PRICE_DIFF_THRESHOLD)) {
-          const reason = !openMallPrice
-            ? `가격 추출 실패로 결제 중단: ${product.productSku}`
-            : `가격 차이 ${absDiff}원 초과로 결제 중단: 오픈몰 ${openMallPriceExcludeVat}원 vs 시스템 ${expectedPrice}원 (VAT별도)`;
-          console.error(`[adpia] ❌ ${reason}`);
-          errorCollector.addError(currentStep, ERROR_CODES.UNEXPECTED_ERROR, reason,
-            { purchaseOrderId, productVariantVendorId: product.productVariantVendorId });
-          results.push({ lineId: poLineIds?.[productIndex], productSku: product.productSku, productName: product.productName, success: false, message: reason, priceInfo });
-          continue; // 이 상품 중단, 다음 상품으로
+        // 가격 체크: 오픈몰이 더 비싸면 STOP, 오픈몰이 더 싸면 진행
+        if (priceResult.shouldStop) {
+          if (priceResult.isExtractionFailure) {
+            const reason = `가격 추출 실패로 결제 중단: ${product.productSku}`;
+            console.error(`[adpia] ❌ ${reason}`);
+            errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, reason, {
+              purchaseOrderId,
+              productVariantVendorId: product.productVariantVendorId,
+            });
+            results.push({ lineId: poLineIds?.[productIndex], productSku: product.productSku, productName: product.productName, success: false, message: reason, priceInfo });
+          } else {
+            const reason = `가격 차이 초과로 결제 중단: ${priceResult.reason}`;
+            console.error(`[adpia] ❌ ${reason}`);
+            try {
+              await createNeedsManagerVerification(authToken, [{
+                purchaseOrderId,
+                productVariantVendorId: product.productVariantVendorId,
+                reason,
+              }]);
+            } catch (e) {
+              console.error(`[adpia] 담당자 확인 필요 저장 실패: ${e.message}`);
+            }
+            results.push({ lineId: poLineIds?.[productIndex], productSku: product.productSku, productName: product.productName, success: false, message: reason, priceInfo });
+          }
+          continue;
         }
 
         // 2-4. 주문 페이지에서 처리 (수량 입력, 파일 업로드, 장바구니 담기)

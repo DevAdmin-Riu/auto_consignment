@@ -54,6 +54,7 @@ const { getEnv } = require("../config");
 const { searchAddressInFrame, selectAddressResult } = require("../../lib/daum-address");
 const { searchAddressWithKakao, normalizeAddress } = require("../../lib/address-verify");
 const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
+const { checkPrice } = require("../../lib/price-check");
 
 // 임시 파일 저장 경로
 const TEMP_DIR = path.join(__dirname, "../../temp");
@@ -1918,31 +1919,36 @@ async function processSwadpiaOrder(
           cartVerification.unexpectedItems.length > 0;
 
         if (!needsRetry) {
-          // 가격 차이 5,000원 초과 체크
-          const PRICE_DIFF_THRESHOLD = 5000;
-          const bigPriceDiffs = (cartVerification.priceMismatches || []).filter(
-            (pm) => Math.abs(pm.difference || 0) > PRICE_DIFF_THRESHOLD || !pm.openMallPrice,
-          );
-          if (bigPriceDiffs.length > 0) {
-            for (const pm of bigPriceDiffs) {
-              const reason = !pm.openMallPrice
-                ? `가격 추출 실패로 결제 중단: ${pm.productCode}`
-                : `가격 차이 ${Math.abs(pm.difference)}원 초과로 결제 중단: 오픈몰 ${pm.openMallPrice}원 vs 시스템 ${pm.expectedPrice}원`;
-              console.error(`[swadpia] ❌ ${reason}`);
-              errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, ERROR_CODES.UNEXPECTED_ERROR, reason,
-                { purchaseOrderId, productVariantVendorId: pm.productVariantVendorId });
+          // 가격 체크 (checkPrice 사용)
+          let priceStopRequired = false;
+          for (const pm of (cartVerification.priceMismatches || [])) {
+            const priceResult = checkPrice(pm.openMallPrice, pm.vendorPriceExcludeVat);
+            if (priceResult.shouldStop) {
+              if (priceResult.isExtractionFailure) {
+                const reason = `가격 추출 실패로 결제 중단: ${pm.productCode}`;
+                console.error(`[swadpia] ❌ ${reason}`);
+                errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, reason, {
+                  purchaseOrderId,
+                  productVariantVendorId: pm.productVariantVendorId,
+                });
+              } else {
+                const reason = `가격 차이 초과로 결제 중단: ${priceResult.reason}`;
+                console.error(`[swadpia] ❌ ${reason}`);
+                try {
+                  await createNeedsManagerVerification(authToken, [{
+                    purchaseOrderId,
+                    productVariantVendorId: pm.productVariantVendorId,
+                    reason,
+                  }]);
+                } catch (e) {
+                  console.error(`[swadpia] 담당자 확인 필요 저장 실패: ${e.message}`);
+                }
+              }
+              priceStopRequired = true;
             }
-            await saveOrderResults(authToken, {
-              purchaseOrderId, products: [],
-              priceMismatches: cartVerification.priceMismatches.map((pm) => ({
-                productVariantVendorId: pm.productVariantVendorId,
-                vendorPriceExcludeVat: pm.vendorPriceExcludeVat,
-                openMallPrice: pm.openMallPrice,
-              })),
-              automationErrors: errorCollector.getErrors(),
-              poLineIds, success: false, vendor: "swadpia",
-            });
-            return res.json({ success: false, vendor: vendor.name, error: `가격 차이 ${PRICE_DIFF_THRESHOLD}원 초과로 결제 중단` });
+          }
+          if (priceStopRequired) {
+            return res.json({ success: false, vendor: vendor.name, error: `가격 차이 초과로 결제 중단` });
           }
           console.log("[swadpia] 장바구니 검증 통과");
           break; // 검증 통과, 루프 종료

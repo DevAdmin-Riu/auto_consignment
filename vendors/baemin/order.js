@@ -44,6 +44,7 @@ const {
 const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
 const { findDaumFrameViaCDP, cleanupCDPFrame, searchAddressInFrame, selectAddressResult } = require("../../lib/daum-address");
 const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
+const { checkPrice } = require("../../lib/price-check");
 
 // ==================== 셀렉터 정의 ====================
 
@@ -3009,29 +3010,51 @@ async function processBaeminOrder(
 
             console.log(`[baemin] 장바구니 담기 성공: ${product.productName}`);
 
-            // 가격 비교
+            // 가격 비교 (checkPrice 사용)
             // openMallPrice = "총 상품금액" (옵션 합산 × 수량 포함)
             // 우리 수량으로 나눠서 단가 비교 (시스템 단가는 배수수량 적용된 1개 가격)
             const ourQuantity = product.quantity || 1;
             const openMallUnitPrice = openMallPrice ? Math.round(openMallPrice / ourQuantity) : null;
             const vendorPriceExcludeVat = product.vendorPriceExcludeVat || 0;
-            const expectedPrice = Math.round(vendorPriceExcludeVat * 1.1);
             let priceMismatch = false;
 
             if (ourQuantity > 1) {
               console.log(`[baemin] 가격 비교: 총액 ${openMallPrice}원 / 우리수량 ${ourQuantity} = 단가 ${openMallUnitPrice}원`);
             }
+
+            const priceResult = checkPrice(openMallUnitPrice, vendorPriceExcludeVat);
             console.log(
-              `[baemin] 가격 비교: 오픈몰 단가=${openMallUnitPrice}원, 예상가=${expectedPrice}원 (시스템 VAT별도=${vendorPriceExcludeVat})`,
+              `[baemin] 가격 비교: 오픈몰 단가=${openMallUnitPrice}원, 시스템=${priceResult.systemPriceWithVat}원 (VAT별도=${vendorPriceExcludeVat})`,
             );
 
-            if (
-              openMallUnitPrice &&
-              expectedPrice > 0 &&
-              openMallUnitPrice !== expectedPrice
-            ) {
+            if (priceResult.shouldStop) {
+              if (priceResult.isExtractionFailure) {
+                console.error(`[baemin] ❌ 가격 추출 실패: 총 상품금액을 찾을 수 없음 (URL: ${product.productUrl})`);
+                errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, `가격 추출 실패 - ${product.productName}`, {
+                  purchaseOrderId,
+                  productVariantVendorId: product.productVariantVendorId,
+                });
+              } else {
+                const reason = `가격 차이 초과로 그룹 결제 중단: ${priceResult.reason}`;
+                console.error(`[baemin] ❌ ${reason}`);
+                try {
+                  await createNeedsManagerVerification(authToken, [{
+                    purchaseOrderId,
+                    productVariantVendorId: product.productVariantVendorId,
+                    reason,
+                  }]);
+                } catch (e) {
+                  console.error(`[baemin] 담당자 확인 필요 저장 실패: ${e.message}`);
+                }
+              }
+              priceMismatch = true;
+              groupOrderSuccess = false;
+              break;
+            }
+
+            if (priceResult.hasMismatch) {
               console.log(
-                `[baemin] ⚠️ 가격 불일치 감지: 오픈몰 ${openMallUnitPrice}원 vs 시스템 ${expectedPrice}원 (차이: ${openMallUnitPrice - expectedPrice}원)`,
+                `[baemin] ⚠️ 가격 불일치 감지: 오픈몰 ${openMallUnitPrice}원 vs 시스템 ${priceResult.systemPriceWithVat}원 (차이: ${priceResult.priceDiff}원)`,
               );
               priceMismatch = true;
               groupPriceMismatches.push({
@@ -3039,47 +3062,10 @@ async function processBaeminOrder(
                 vendorPriceExcludeVat,
                 openMallPrice: openMallUnitPrice,
               });
-            } else if (!openMallUnitPrice) {
-              console.error(
-                `[baemin] ❌ 가격 추출 실패: 총 상품금액을 찾을 수 없음 (URL: ${product.productUrl})`,
-              );
-              priceMismatch = true;
-            } else if (expectedPrice <= 0) {
+            } else if (vendorPriceExcludeVat <= 0) {
               console.log(`[baemin] 가격 비교 스킵: 시스템가 0원 이하`);
             } else {
               console.log(`[baemin] ✅ 가격 일치: ${openMallUnitPrice}원`);
-            }
-
-            // 가격 차이 5,000원 초과 또는 가격 추출 실패 → 그룹 전체 결제 중단
-            const PRICE_DIFF_THRESHOLD = 5000;
-            const priceDiff = openMallUnitPrice && expectedPrice > 0 ? Math.abs(openMallUnitPrice - expectedPrice) : 0;
-            if (!openMallUnitPrice || (priceDiff > PRICE_DIFF_THRESHOLD)) {
-              const reason = !openMallUnitPrice
-                ? `가격 추출 실패로 그룹 결제 중단: ${product.productName}`
-                : `가격 차이 ${priceDiff}원 초과로 그룹 결제 중단: 오픈몰 ${openMallUnitPrice}원 vs 시스템 ${expectedPrice}원`;
-              console.error(`[baemin] ❌ ${reason}`);
-              errorCollector.addError(
-                ORDER_STEPS.ORDER_PLACEMENT,
-                ERROR_CODES.UNEXPECTED_ERROR,
-                reason,
-                { purchaseOrderId, productVariantVendorId: product.productVariantVendorId },
-              );
-              // 그룹 전체 실패 처리
-              await saveOrderResults(authToken, {
-                purchaseOrderId,
-                products: [],
-                priceMismatches: openMallUnitPrice ? [{
-                  productVariantVendorId: product.productVariantVendorId,
-                  vendorPriceExcludeVat,
-                  openMallPrice: openMallUnitPrice,
-                }] : [],
-                automationErrors: errorCollector.getErrors(),
-                poLineIds: group.products.map((p) => poLineIds?.[p._originalIndex]).filter(Boolean),
-                success: false,
-                vendor: "baemin",
-              });
-              groupOrderSuccess = false;
-              break; // 이 그룹 전체 중단
             }
 
             // 장바구니 담기 성공한 상품 기록

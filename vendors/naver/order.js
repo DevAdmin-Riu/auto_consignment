@@ -25,6 +25,7 @@
  */
 
 const { login } = require("./login");
+const { checkPrice } = require("../../lib/price-check");
 const Tesseract = require("tesseract.js");
 const sharp = require("sharp");
 const path = require("path");
@@ -1560,6 +1561,15 @@ async function selectDeliveryAddress(page, shippingAddress) {
 async function addToCart(page) {
   console.log("[naver] 장바구니 담기...");
 
+  // alert 감지 준비
+  let alertMessage = null;
+  const dialogHandler = async (dialog) => {
+    alertMessage = dialog.message();
+    console.log(`[naver] 장바구니 담기 alert 감지: "${alertMessage}"`);
+    await dialog.accept();
+  };
+  page.on("dialog", dialogHandler);
+
   // 장바구니 버튼 클릭 (data 속성 + 텍스트 폴백)
   const cartClicked = await page.evaluate(() => {
     // 1) data-shp-area="pcs.cart" 속성으로 찾기 (가장 정확)
@@ -1581,15 +1591,22 @@ async function addToCart(page) {
   });
 
   if (!cartClicked) {
+    page.off("dialog", dialogHandler);
     console.log("[naver] 장바구니 버튼 없음");
-    return false;
+    return { success: false, error: "장바구니 버튼 없음" };
   }
 
   console.log(`[naver] 장바구니 버튼 클릭 (${cartClicked})`);
-  await delay(1000);
-  // 모달/레이어 무시 - 다음 상품 페이지로 직접 goto 하므로 처리 불필요
+  await delay(1500);
+  page.off("dialog", dialogHandler);
 
-  return true;
+  // alert이 떴으면 실패
+  if (alertMessage) {
+    console.log(`[naver] ❌ 장바구니 담기 실패 (alert): ${alertMessage}`);
+    return { success: false, error: alertMessage };
+  }
+
+  return { success: true };
 }
 
 /**
@@ -1661,9 +1678,6 @@ async function processProduct(page, product) {
 
   await delay(1000);
 
-  // 3.5. 가격 추출 (옵션 선택 후)
-  const openMallPrice = await getProductPrice(page);
-
   // 4. 수량 설정 (옵션에서 수량 처리 안 한 경우에만)
   if (!optionResult.quantityHandled) {
     console.log(`[naver] 수량 설정: ${actualQuantity}개`);
@@ -1700,8 +1714,25 @@ async function processProduct(page, product) {
     }
   }
 
+  // 4.6. 가격 추출 (옵션 선택 + 수량 설정 완료 후 — 총 상품 금액이 정확한 시점)
+  await delay(500);
+  const openMallPrice = await getProductPrice(page);
+
   // 5. 장바구니에 담기
-  const addedToCart = await addToCart(page);
+  const cartResult = await addToCart(page);
+
+  if (!cartResult.success) {
+    console.log(`[naver] ❌ 장바구니 담기 실패: ${cartResult.error}`);
+    return {
+      success: false,
+      productName,
+      quantity,
+      openMallPrice: null,
+      priceMismatch: false,
+      cartFailed: true,
+      cartFailReason: cartResult.error,
+    };
+  }
 
   // 6. 가격 비교 (위탁가와 오픈몰 가격)
   // openMallPrice = 네이버 "총 상품 금액" (배수수량 × 우리수량 포함된 총액)
@@ -1730,11 +1761,11 @@ async function processProduct(page, product) {
 
   console.log("[naver] 장바구니 담기 완료");
   return {
-    success: addedToCart,
+    success: true,
     productName,
     quantity,
     openMallPrice,
-    vendorPriceExcludeVat, // 협력사 매입가 (VAT 별도)
+    vendorPriceExcludeVat,
     priceMismatch,
   };
 }
@@ -2015,6 +2046,7 @@ async function processNaverOrder(
 ) {
   const steps = [];
   const addedProducts = [];
+  const priceMismatches = [];
   const errorCollector = createOrderErrorCollector("naver");
 
   try {
@@ -2103,6 +2135,41 @@ async function processNaverOrder(
           continue; // 다음 상품으로
         }
 
+        // 장바구니 담기 실패 (alert 등) → 담당자 확인 + 에러 로그 + 전체 그룹 중단
+        if (result.cartFailed) {
+          const reason = result.cartFailReason || "장바구니 담기 실패";
+          console.error(`[naver] ❌ 장바구니 담기 실패로 전체 그룹 중단: ${reason}`);
+          try {
+            await createNeedsManagerVerification(authToken, [{
+              productVariantVendorId: product.productVariantVendorId,
+              purchaseOrderId,
+              reason: `장바구니 담기 실패: ${reason}`,
+            }]);
+          } catch (e) {
+            console.error(`[naver] 담당자 확인 필요 저장 실패: ${e.message}`);
+          }
+          errorCollector.addError(
+            ORDER_STEPS.ADD_TO_CART,
+            ERROR_CODES.CLICK_FAILED,
+            `장바구니 담기 실패 (alert): ${reason}`,
+            { purchaseOrderId, productVariantVendorId: product.productVariantVendorId },
+          );
+          await saveOrderResults(authToken, {
+            purchaseOrderId,
+            products: [],
+            automationErrors: errorCollector.getErrors(),
+            poLineIds,
+            success: false,
+            vendor: "naver",
+          });
+          return res.json({
+            success: false,
+            message: `장바구니 담기 실패: ${reason}`,
+            steps,
+            purchaseOrderId,
+          });
+        }
+
         addedProducts.push({
           ...product,
           openMallPrice: result.openMallPrice,
@@ -2147,10 +2214,44 @@ async function processNaverOrder(
       }
     }
 
-    // 3.5. 가격 차이 체크 — 주석처리 (가격 추출 정확도 개선 후 재활성화)
-    // TODO: 네이버 "총 상품 금액" 파싱 정확도 개선 후 다시 활성화
-    // const PRICE_DIFF_THRESHOLD = 5000;
-    // ... 가격 차이 5,000원 초과 체크 비활성화 ...
+    // 3.5. 가격 차이 체크 — 오픈몰이 5,000원 이상 비싸면 STOP
+    for (const ap of addedProducts) {
+      if (!ap.addedToCart || !ap.openMallPrice || !ap.vendorPriceExcludeVat) continue;
+      const ourQuantity = ap.quantity || 1;
+      const openMallUnitPrice = Math.round(ap.openMallPrice / ourQuantity);
+      const priceResult = checkPrice(openMallUnitPrice, ap.vendorPriceExcludeVat);
+
+      if (priceResult.shouldStop) {
+        if (priceResult.isExtractionFailure) {
+          errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, `가격 추출 실패 - ${ap.productName}`, {
+            purchaseOrderId,
+            productVariantVendorId: ap.productVariantVendorId,
+          });
+        } else {
+          const reason = `가격 차이 초과로 결제 중단: ${priceResult.reason} - ${ap.productName}`;
+          console.error(`[naver] ❌ ${reason}`);
+          try {
+            await createNeedsManagerVerification(authToken, [{
+              purchaseOrderId,
+              productVariantVendorId: ap.productVariantVendorId,
+              reason,
+            }]);
+          } catch (e) {
+            console.error(`[naver] 담당자 확인 필요 저장 실패: ${e.message}`);
+          }
+        }
+        return res.json({ success: false, error: priceResult.reason });
+      }
+
+      if (priceResult.hasMismatch) {
+        priceMismatches.push({
+          productVariantVendorId: ap.productVariantVendorId,
+          vendorPriceExcludeVat: ap.vendorPriceExcludeVat,
+          openMallPrice: openMallUnitPrice,
+        });
+        console.log(`[naver] 가격 불일치 기록: 오픈몰 ${openMallUnitPrice}원 vs 시스템 ${priceResult.systemPriceWithVat}원 (차이 ${priceResult.priceDiff}원)`);
+      }
+    }
 
     // 3.6. 장바구니에 담긴 상품이 있는지 확인
     const successfulProducts = addedProducts.filter((p) => p.addedToCart);

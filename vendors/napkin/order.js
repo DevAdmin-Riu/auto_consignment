@@ -56,6 +56,7 @@ const {
   selectAddressResult,
 } = require("../../lib/daum-address");
 const { searchAddressWithKakao, normalizeAddress } = require("../../lib/address-verify"); // eslint-disable-line
+const { checkPrice } = require("../../lib/price-check");
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -996,24 +997,32 @@ async function processNapkinOrder(
           }
         }
 
-        // 3-3.5. 가격 차이 5,000원 초과 또는 추출 실패 → 전체 그룹 결제 중단 (배치 주문)
-        const PRICE_DIFF_THRESHOLD = 5000;
+        // 3-3.5. 가격 체크 (checkPrice 사용)
         if (priceInfo) {
-          const absDiff = Math.abs(priceInfo.difference || 0);
-          if (priceInfo.priceMismatch && (!priceInfo.unitPrice || absDiff > PRICE_DIFF_THRESHOLD)) {
-            const reason = !priceInfo.unitPrice
-              ? `가격 추출 실패로 결제 중단: ${product.productSku}`
-              : `가격 차이 ${absDiff}원 초과로 결제 중단: 냅킨 ${priceInfo.unitPrice}원 vs 시스템 ${priceInfo.expectedUnitPrice}원`;
-            console.error(`[napkin] ❌ ${reason}`);
-            errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.UNEXPECTED_ERROR, reason,
-              { purchaseOrderId, purchaseOrderLineId: lineId, productVariantVendorId: product.productVariantVendorId });
-            await saveOrderResults(authToken, {
-              purchaseOrderId, products: [],
-              priceMismatches: [{ productVariantVendorId: product.productVariantVendorId, vendorPriceExcludeVat: product.vendorPriceExcludeVat, openMallPrice: priceInfo.unitPrice || 0 }],
-              automationErrors: errorCollector.getErrors(),
-              poLineIds, success: false, vendor: "napkin",
-            });
-            return res.json({ success: false, vendor: vendor.name, error: reason });
+          const priceResult = checkPrice(priceInfo.unitPrice, product.vendorPriceExcludeVat);
+          if (priceResult.shouldStop) {
+            if (priceResult.isExtractionFailure) {
+              const reason = `가격 추출 실패로 결제 중단: ${product.productSku}`;
+              console.error(`[napkin] ❌ ${reason}`);
+              errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, reason, {
+                purchaseOrderId,
+                productVariantVendorId: product.productVariantVendorId,
+              });
+              return res.json({ success: false, vendor: vendor.name, error: reason });
+            } else {
+              const reason = `가격 차이 초과로 결제 중단: ${priceResult.reason}`;
+              console.error(`[napkin] ❌ ${reason}`);
+              try {
+                await createNeedsManagerVerification(authToken, [{
+                  purchaseOrderId,
+                  productVariantVendorId: product.productVariantVendorId,
+                  reason,
+                }]);
+              } catch (e) {
+                console.error(`[napkin] 담당자 확인 필요 저장 실패: ${e.message}`);
+              }
+              return res.json({ success: false, vendor: vendor.name, error: reason });
+            }
           }
         }
 

@@ -42,6 +42,7 @@ const {
   saveOrderResults,
   createPaymentLogs,
   createAutomationErrors,
+  createNeedsManagerVerification,
 } = require("../../lib/graphql-client");
 const Tesseract = require("tesseract.js");
 const sharp = require("sharp");
@@ -49,6 +50,7 @@ const path = require("path");
 const fs = require("fs");
 const { searchAddressWithKakao, normalizeAddress } = require("../../lib/address-verify");
 const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
+const { checkPrice } = require("../../lib/price-check");
 
 /**
  * Access Denied 감지 + 쿠키 삭제 + 재시도
@@ -369,6 +371,8 @@ async function processCoupangOrder(
             quantity,
             vendorItemId: vendorItemIdMatch ? vendorItemIdMatch[1] : null,
             unitPrice: productUnitPrice || 0,
+            vendorPriceExcludeVat: product.vendorPriceExcludeVat || 0,
+            productVariantVendorId: product.productVariantVendorId || null,
           });
         } else {
           console.error(`[coupang] ❌ 상품 ${productIndex + 1} 장바구니 버튼 못 찾음 → 전체 중단`);
@@ -519,7 +523,50 @@ async function processCoupangOrder(
         continue; // while 루프 재시도
       }
 
-      // 검증 성공
+      // 검증 성공 — 장바구니 가격 비교 (checkPrice)
+      if (cartVerification.matchedItems) {
+        for (const matched of cartVerification.matchedItems) {
+          if (matched.price > 0) {
+            const ap = addedProducts.find(p => p.vendorItemId === matched.vendorItemId);
+            if (ap && ap.vendorPriceExcludeVat) {
+              const openMallPrice = matched.price; // 장바구니 단가 (VAT 포함)
+              const priceResult = checkPrice(openMallPrice, ap.vendorPriceExcludeVat);
+
+              if (priceResult.shouldStop) {
+                if (priceResult.isExtractionFailure) {
+                  errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, `가격 추출 실패 - ${ap.productName}`, {
+                    purchaseOrderId,
+                    productVariantVendorId: ap.productVariantVendorId,
+                  });
+                } else {
+                  const reason = `가격 차이 초과로 결제 중단: ${priceResult.reason} - ${ap.productName}`;
+                  console.log(`[coupang] ⚠️ ${reason}`);
+                  try {
+                    await createNeedsManagerVerification(authToken, [{
+                      purchaseOrderId,
+                      productVariantVendorId: ap.productVariantVendorId,
+                      reason,
+                    }]);
+                  } catch (e) {
+                    console.error(`[coupang] 담당자 확인 필요 저장 실패: ${e.message}`);
+                  }
+                }
+                return res.json({ success: false, error: priceResult.reason });
+              }
+
+              if (priceResult.hasMismatch) {
+                priceMismatches.push({
+                  productVariantVendorId: ap.productVariantVendorId,
+                  vendorPriceExcludeVat: ap.vendorPriceExcludeVat,
+                  openMallPrice: openMallPrice,
+                });
+                console.log(`[coupang] 가격 불일치 기록: 오픈몰 ${openMallPrice}원 vs 시스템 ${priceResult.systemPriceWithVat}원 (차이 ${priceResult.priceDiff}원)`);
+              }
+            }
+          }
+        }
+      }
+
       cartVerified = true;
     } catch (e) {
       console.log("[coupang] 장바구니 검증 실패:", e.message);
