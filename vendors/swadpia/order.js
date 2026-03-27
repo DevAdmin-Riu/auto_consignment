@@ -45,6 +45,7 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
+  createAutomationErrors,
   createNeedsManagerVerification,
 } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
@@ -218,7 +219,10 @@ const SELECTORS = {
     price: "td:nth-child(8) b", // 금액 (예: "22,660원")
     // 전체 선택 체크박스
     selectAllCheckbox: "#cart_all_check",
-    // 장바구니 비우기 버튼 (선택 상품 삭제)
+    // 장바구니 전체 비우기 버튼
+    deleteAllBtn:
+      'a[onclick*="cartAllDelete"]',
+    // 선택 상품 삭제 버튼 (폴백)
     deleteSelectedBtn:
       'a[onclick*="cartSelDelete"]',
     // 전체 주문하기 버튼
@@ -292,32 +296,36 @@ async function clearCart(page) {
       return true;
     }
 
-    console.log(`[swadpia] 장바구니 상품 ${cartRows.length}개 일괄 삭제 중...`);
+    console.log(`[swadpia] 장바구니 상품 ${cartRows.length}개 삭제 중...`);
 
-    // 1. 전체 선택 체크박스 클릭
-    const selectAllCheckbox = await page.$(
-      SELECTORS.cartPage.selectAllCheckbox,
-    );
-    if (selectAllCheckbox) {
-      await selectAllCheckbox.click();
-      await new Promise((resolve) => setTimeout(resolve, 500));
-    }
-
-    // 2. confirm/alert 창 자동 확인 처리
+    // confirm/alert 창 자동 확인 처리
     const dialogHandler = async (dialog) => {
       console.log("[swadpia] Dialog:", dialog.type(), dialog.message());
-      await dialog.accept(); // 확인 버튼 클릭
+      await dialog.accept();
     };
     page.on("dialog", dialogHandler);
 
-    // 3. 선택 상품 삭제 버튼 클릭
-    const deleteBtn = await page.$(SELECTORS.cartPage.deleteSelectedBtn);
-    if (deleteBtn) {
-      await deleteBtn.click();
+    // 장바구니 전체 비우기 (cartAllDelete) 우선 사용
+    const deleteAllBtn = await page.$(SELECTORS.cartPage.deleteAllBtn);
+    if (deleteAllBtn) {
+      await deleteAllBtn.click();
+      console.log("[swadpia] 장바구니 전체 비우기 클릭");
       await new Promise((resolve) => setTimeout(resolve, 2000));
+    } else {
+      // 폴백: 전체 선택 후 선택 삭제
+      console.log("[swadpia] 전체 비우기 버튼 없음, 선택 삭제 폴백...");
+      const selectAllCheckbox = await page.$(SELECTORS.cartPage.selectAllCheckbox);
+      if (selectAllCheckbox) {
+        await selectAllCheckbox.click();
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      const deleteBtn = await page.$(SELECTORS.cartPage.deleteSelectedBtn);
+      if (deleteBtn) {
+        await deleteBtn.click();
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+      }
     }
 
-    // 4. dialog 핸들러 제거
     page.off("dialog", dialogHandler);
 
     console.log("[swadpia] 장바구니 비우기 완료");
@@ -492,7 +500,21 @@ async function verifySwadpiaCartItems(page, expectedProducts) {
       const expectedPrice = Math.round(vendorPriceExcludeVat * 1.1); // VAT 포함
       const openMallPrice = cartItem.unitPrice; // 성원애드피아 현재 가격 (VAT 포함)
 
-      if (expectedPrice > 0 && openMallPrice !== expectedPrice) {
+      if (!openMallPrice) {
+        console.error(`[swadpia] ❌ 가격 추출 실패: ${matchedExpected.productSku} 단가를 찾을 수 없음`);
+        priceMismatches.push({
+          purchaseOrderLineId: matchedExpected.lineId || null,
+          productVariantVendorId: matchedExpected.productVariantVendorId || null,
+          productCode: matchedExpected.productSku,
+          productName: cartItem.name,
+          quantity: cartItem.quantity,
+          openMallPrice: 0,
+          expectedPrice: expectedPrice,
+          vendorPriceExcludeVat: vendorPriceExcludeVat,
+          difference: -expectedPrice,
+          differencePercent: "-100",
+        });
+      } else if (expectedPrice > 0 && openMallPrice !== expectedPrice) {
         const priceDiff = openMallPrice - expectedPrice;
         const priceDiffPercent = ((priceDiff / expectedPrice) * 100).toFixed(2);
         priceMismatches.push({
@@ -765,7 +787,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
 
               // 담당자 휴대폰 번호 입력
               const proofPhone =
-                getEnv("SWADPIA_PROOF_PHONE") || "010-8405-1314";
+                getEnv("SWADPIA_PROOF_PHONE") || "010-7769-2905";
               const phoneParts = proofPhone.split("-");
               if (phoneParts.length === 3) {
                 const [hp1, hp2, hp3] = phoneParts;
@@ -1776,7 +1798,7 @@ async function processSwadpiaOrder(
             reason: `디자인 파일 URL 없음: ${product.productSku} (${product.productName})`,
           }]);
         } catch (e) {
-          console.log(`[swadpia] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+          console.error(`[swadpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
         }
         skippedProducts.push(product.productSku);
         continue;
@@ -1803,7 +1825,7 @@ async function processSwadpiaOrder(
             reason: `디자인 파일 다운로드 실패: ${product.productSku} - ${err.message}`,
           }]);
         } catch (e) {
-          console.log(`[swadpia] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+          console.error(`[swadpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
         }
         skippedProducts.push(product.productSku);
         continue;
@@ -1841,7 +1863,14 @@ async function processSwadpiaOrder(
 
     // 2. 장바구니 비우기
     console.log("[swadpia] 장바구니 비우기...");
-    await clearCart(page);
+    const clearResult = await clearCart(page);
+    if (clearResult === false) {
+      console.error("[swadpia] ❌ 장바구니 비우기 실패");
+      errorCollector.addError(ORDER_STEPS.CART_CLEARING, ERROR_CODES.CLICK_FAILED,
+        "장바구니 비우기 실패", { purchaseOrderId });
+      await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "swadpia" });
+      return res.json({ success: false, vendor: vendor.name, error: "장바구니 비우기 실패" });
+    }
 
     // 3. 옵션 목록 페이지로 이동
     console.log("[swadpia] 옵션 목록 페이지로 이동...");
@@ -1889,7 +1918,33 @@ async function processSwadpiaOrder(
           cartVerification.unexpectedItems.length > 0;
 
         if (!needsRetry) {
-          console.log("[swadpia] 장바구니 검증 통과 (가격 불일치는 경고만)");
+          // 가격 차이 5,000원 초과 체크
+          const PRICE_DIFF_THRESHOLD = 5000;
+          const bigPriceDiffs = (cartVerification.priceMismatches || []).filter(
+            (pm) => Math.abs(pm.difference || 0) > PRICE_DIFF_THRESHOLD || !pm.openMallPrice,
+          );
+          if (bigPriceDiffs.length > 0) {
+            for (const pm of bigPriceDiffs) {
+              const reason = !pm.openMallPrice
+                ? `가격 추출 실패로 결제 중단: ${pm.productCode}`
+                : `가격 차이 ${Math.abs(pm.difference)}원 초과로 결제 중단: 오픈몰 ${pm.openMallPrice}원 vs 시스템 ${pm.expectedPrice}원`;
+              console.error(`[swadpia] ❌ ${reason}`);
+              errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, ERROR_CODES.UNEXPECTED_ERROR, reason,
+                { purchaseOrderId, productVariantVendorId: pm.productVariantVendorId });
+            }
+            await saveOrderResults(authToken, {
+              purchaseOrderId, products: [],
+              priceMismatches: cartVerification.priceMismatches.map((pm) => ({
+                productVariantVendorId: pm.productVariantVendorId,
+                vendorPriceExcludeVat: pm.vendorPriceExcludeVat,
+                openMallPrice: pm.openMallPrice,
+              })),
+              automationErrors: errorCollector.getErrors(),
+              poLineIds, success: false, vendor: "swadpia",
+            });
+            return res.json({ success: false, vendor: vendor.name, error: `가격 차이 ${PRICE_DIFF_THRESHOLD}원 초과로 결제 중단` });
+          }
+          console.log("[swadpia] 장바구니 검증 통과");
           break; // 검증 통과, 루프 종료
         }
 
@@ -2008,6 +2063,12 @@ async function processSwadpiaOrder(
 
     // saveOrderResults 호출
     if (orderResult?.success) {
+      // 주문번호 못 찾음 → 결제 후이므로 에러 로그만
+      if (!orderResult?.vendorOrderNumber) {
+        console.error("[swadpia] ⚠️ 결제 완료, 주문번호 수동 확인 필요");
+        errorCollector.addError(ORDER_STEPS.ORDER_CONFIRMATION, ERROR_CODES.ELEMENT_NOT_FOUND,
+          `결제 완료, 주문번호 추출 실패 - 수동 확인 필요`, { purchaseOrderId });
+      }
       // 성공: 결제 완료
       await saveOrderResults(authToken, {
         purchaseOrderId,
@@ -2041,7 +2102,8 @@ async function processSwadpiaOrder(
         ]);
         alertPaymentParsingFailed({ vendor: "성원애드피아", purchaseOrderId, openMallOrderNumber: orderResult?.vendorOrderNumber, paymentAmount: actualAmount, parsingDetail: paymentParsingDetail });
       } catch (e) {
-        console.log("[swadpia] 결제 로그 저장 실패 (무시):", e.message);
+        console.error("[swadpia] ⚠️ 결제 로그 저장 실패:", e.message);
+        try { await createAutomationErrors(authToken, [{ vendor: "swadpia", automationType: "ORDER", step: "ORDER_CONFIRMATION", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error("[swadpia] 에러 기록도 실패:", e2.message); }
       }
     } else {
       // 실패: 장바구니 검증 실패 또는 결제 실패

@@ -47,6 +47,7 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
+  createAutomationErrors,
   createNeedsManagerVerification,
 } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
@@ -395,13 +396,17 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       );
       console.log(`[adpia] 수량 select 선택: ${actualQuantity}`);
       await delay(1000);
-      // 즉시 검증
-      const actualVal = await page.$eval(SELECTORS.orderPage.quantitySelect, el => el.value);
-      if (parseInt(actualVal, 10) !== actualQuantity) {
-        console.log(`[adpia] ⚠️ 수량 검증 실패: 기대=${actualQuantity}, 실제=${actualVal}`);
-        return { success: false, message: `수량 불일치: 기대=${actualQuantity}, 실제=${actualVal}` };
+      // 즉시 검증 (읽기 실패 시 경고만)
+      try {
+        const actualVal = await page.$eval(SELECTORS.orderPage.quantitySelect, el => el.value);
+        if (actualVal && parseInt(actualVal, 10) !== actualQuantity) {
+          console.log(`[adpia] ⚠️ 수량 검증 실패: 기대=${actualQuantity}, 실제=${actualVal}`);
+          return { success: false, message: `수량 불일치: 기대=${actualQuantity}, 실제=${actualVal}` };
+        }
+        console.log(`[adpia] 수량 검증 OK: ${actualVal || actualQuantity}개`);
+      } catch (e) {
+        console.log(`[adpia] 수량 검증 스킵 (읽기 실패): ${e.message}`);
       }
-      console.log(`[adpia] 수량 검증 OK: ${actualVal}개`);
     } else {
       // input 방식 시도
       let quantityInput = await waitFor(
@@ -571,9 +576,20 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
           modalFoundEarly = true;
           break;
         } else if (modalText.includes("실패")) {
-          // 업로드 실패 모달 → 닫고 장바구니 버튼 재클릭
+          // 업로드 실패 모달 → 3초 대기 후 닫고 장바구니 버튼 재클릭
+          await delay(3000); // 모달 내용 확인 대기
+          // 대기 후 모달 텍스트 재확인 (업로드 완료로 바뀔 수 있음)
+          const recheckedText = await page.evaluate(() => {
+            const content = document.querySelector(".ajs-modal .ajs-content");
+            return content ? content.textContent?.trim() || "" : "";
+          });
+          if (recheckedText.includes("장바구니")) {
+            console.log("[adpia] 파일 업로드 완료 (대기 후 장바구니 모달 감지)");
+            modalFoundEarly = true;
+            break;
+          }
           uploadRetryCount++;
-          console.log(`[adpia] ❌ 파일 업로드 실패 (${uploadRetryCount}/3) - 장바구니 버튼 재클릭`);
+          console.log(`[adpia] ❌ 파일 업로드 실패 (${uploadRetryCount}/3): "${recheckedText}"`);
           await page.evaluate(() => {
             const btn = document.querySelector(".ajs-modal button.ajs-button.btn_orange");
             if (btn) btn.click();
@@ -581,7 +597,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
           await delay(2000);
           if (uploadRetryCount >= 3) {
             console.error("[adpia] 파일 업로드 3회 실패 - 중단");
-            return { success: false, message: "파일 업로드 3회 실패" };
+            return { success: false, message: `파일 업로드 3회 실패: ${product.productSku} (${product.productName}) - 파일 형식 또는 용량 확인 필요`, needsManagerVerification: true };
           }
           // 장바구니 담기 버튼 다시 클릭
           const retryBtn = await page.$(SELECTORS.orderPage.addToCartBtn);
@@ -591,7 +607,18 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
           }
           await delay(3000);
         } else {
-          console.log(`[adpia] 모달 감지되었으나 업로드 완료가 아님: "${modalText}" → 확인 후 계속 대기`);
+          // 빈 모달이나 알 수 없는 모달 → 3초 대기 후 재확인
+          await delay(3000);
+          const recheckedText2 = await page.evaluate(() => {
+            const content = document.querySelector(".ajs-modal .ajs-content");
+            return content ? content.textContent?.trim() || "" : "";
+          });
+          if (recheckedText2.includes("장바구니")) {
+            console.log("[adpia] 파일 업로드 완료 (빈 모달 대기 후 장바구니 감지)");
+            modalFoundEarly = true;
+            break;
+          }
+          console.log(`[adpia] 모달 감지되었으나 업로드 완료가 아님: "${recheckedText2}" → 확인 후 계속 대기`);
           await page.evaluate(() => {
             const btn = document.querySelector(".ajs-modal button.ajs-button.btn_orange");
             if (btn) btn.click();
@@ -1775,7 +1802,7 @@ async function processAdpiaOrder(
             reason: `디자인 파일 URL 없음: ${product.productSku} (${product.productName})`,
           }]);
         } catch (e) {
-          console.log(`[adpia] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+          console.error(`[adpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
         }
         skippedProducts.push(product.productSku);
         continue;
@@ -1797,7 +1824,7 @@ async function processAdpiaOrder(
             reason: `디자인 파일 다운로드 실패: ${product.productSku} - ${err.message}`,
           }]);
         } catch (e) {
-          console.log(`[adpia] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+          console.error(`[adpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
         }
         skippedProducts.push(product.productSku);
         continue;
@@ -1853,15 +1880,33 @@ async function processAdpiaOrder(
 
       let vendorOrderNumber = null;
       let orderSuccess = false;
+      let currentStep = ORDER_STEPS.ADD_TO_CART;
 
       try {
         // 2-1. 장바구니 비우기 (이전 상품 잔여분 제거)
-        await clearCart(page);
+        const clearResult = await clearCart(page);
+        if (clearResult && !clearResult.success) {
+          console.error("[adpia] ❌ 장바구니 비우기 실패:", clearResult.message);
+          errorCollector.addError(ORDER_STEPS.CART_CLEARING, ERROR_CODES.CLICK_FAILED,
+            `장바구니 비우기 실패: ${clearResult.message}`, { purchaseOrderId });
+          continue; // 이 상품 중단, 다음 상품으로 (개별 주문)
+        }
 
         // 2-2. 제품코드로 상품 찾기 (favor 페이지에서)
         const findResult = await findProductByCode(page, product.productSku);
 
         if (!findResult.success) {
+          // 상품 못찾음 / 옵션 실패 → 담당자 확인 필요
+          try {
+            await createNeedsManagerVerification(authToken, [{
+              productVariantVendorId: product.productVariantVendorId,
+              purchaseOrderId,
+              reason: findResult.message || `상품 처리 실패: ${product.productSku}`,
+            }]);
+            console.log(`[adpia] 담당자 확인 필요 저장: ${findResult.message}`);
+          } catch (e) {
+            console.error(`[adpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
+          }
           results.push({
             lineId: poLineIds?.[productIndex],
             productVariantVendorId: product.productVariantVendorId,
@@ -1870,14 +1915,12 @@ async function processAdpiaOrder(
             success: false,
             message: findResult.message,
           });
-          // 옵션 실패로 추적 및 saveOrderResults 호출
           if (findResult.message?.includes("옵션")) {
             optionFailedProducts.push({
               productVariantVendorId: product.productVariantVendorId,
               reason: findResult.message,
             });
           }
-          // 실패해도 saveOrderResults 호출 (해당 상품만)
           await saveOrderResults(authToken, {
             purchaseOrderId,
             products: [],
@@ -1902,12 +1945,16 @@ async function processAdpiaOrder(
         const openMallPrice = findResult.price; // 오픈몰 가격 (VAT 포함)
         const expectedPrice = product.vendorPriceExcludeVat; // 시스템 가격 (VAT 제외)
 
+        if (!openMallPrice) {
+          console.error(`[adpia] ❌ 가격 추출 실패: ${product.productSku} 가격을 찾을 수 없음`);
+        }
+
         // 가격 비교 로직
-        const openMallPriceExcludeVat = Math.round(openMallPrice / 1.1); // VAT 제외 가격
+        const openMallPriceExcludeVat = openMallPrice ? Math.round(openMallPrice / 1.1) : 0;
         const priceDifference = Math.abs(
           openMallPriceExcludeVat - expectedPrice,
         );
-        const priceMismatch = expectedPrice > 0 && priceDifference > 10; // 10원 이상 차이나면 불일치
+        const priceMismatch = !openMallPrice || (expectedPrice > 0 && priceDifference > 10);
 
         console.log(
           `[adpia] 가격 비교: 오픈몰=${openMallPrice}(VAT제외=${openMallPriceExcludeVat}) vs 시스템=${expectedPrice}, 차이=${priceDifference}원, 불일치=${priceMismatch}`,
@@ -1921,7 +1968,22 @@ async function processAdpiaOrder(
           difference: openMallPriceExcludeVat - expectedPrice,
         };
 
+        // 가격 추출 실패 또는 5,000원 초과 차이 → 결제 중단
+        const PRICE_DIFF_THRESHOLD = 5000;
+        const absDiff = Math.abs(openMallPriceExcludeVat - expectedPrice);
+        if (!openMallPrice || (expectedPrice > 0 && absDiff > PRICE_DIFF_THRESHOLD)) {
+          const reason = !openMallPrice
+            ? `가격 추출 실패로 결제 중단: ${product.productSku}`
+            : `가격 차이 ${absDiff}원 초과로 결제 중단: 오픈몰 ${openMallPriceExcludeVat}원 vs 시스템 ${expectedPrice}원 (VAT별도)`;
+          console.error(`[adpia] ❌ ${reason}`);
+          errorCollector.addError(currentStep, ERROR_CODES.UNEXPECTED_ERROR, reason,
+            { purchaseOrderId, productVariantVendorId: product.productVariantVendorId });
+          results.push({ lineId: poLineIds?.[productIndex], productSku: product.productSku, productName: product.productName, success: false, message: reason, priceInfo });
+          continue; // 이 상품 중단, 다음 상품으로
+        }
+
         // 2-4. 주문 페이지에서 처리 (수량 입력, 파일 업로드, 장바구니 담기)
+        currentStep = ORDER_STEPS.ADD_TO_CART;
         const downloadedFile = downloadedFiles.find(
           (f) => f.productSku === product.productSku,
         );
@@ -1973,6 +2035,26 @@ async function processAdpiaOrder(
 
         // 장바구니 담기 실패 시
         if (!orderPageResult.success) {
+          // 담당자 확인 필요 플래그 처리
+          if (orderPageResult.needsManagerVerification) {
+            try {
+              await createNeedsManagerVerification(authToken, [{
+                productVariantVendorId: product.productVariantVendorId,
+                purchaseOrderId,
+                reason: orderPageResult.message || `주문 실패: ${product.productSku}`,
+              }]);
+              console.log("[adpia] 담당자 확인 필요 저장 완료");
+            } catch (e) {
+              console.error(`[adpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
+            }
+          }
+          // 에러 로그 기록
+          errorCollector.addError(
+            ORDER_STEPS.ADD_TO_CART,
+            ERROR_CODES.ELEMENT_NOT_FOUND,
+            orderPageResult.message || `주문 실패: ${product.productSku}`,
+            { purchaseOrderId, productVariantVendorId: product.productVariantVendorId },
+          );
           results.push({
             lineId: poLineIds?.[productIndex],
             productVariantVendorId: product.productVariantVendorId,
@@ -2022,6 +2104,7 @@ async function processAdpiaOrder(
         }
 
         // 2-5. 장바구니 → 주문서 이동
+        currentStep = ORDER_STEPS.ORDER_PLACEMENT;
         const orderFormResult = await goToOrderForm(page);
         if (!orderFormResult.success) {
           console.log("[adpia] 주문서 이동 실패:", orderFormResult.message);
@@ -2060,6 +2143,7 @@ async function processAdpiaOrder(
         }
 
         // 2-6. 배송지 입력 + 결제 (ISP 결제창 미출현 시 최대 5회 재시도)
+        currentStep = ORDER_STEPS.PAYMENT;
         if (shippingInfo) {
           const MAX_ISP_RETRY = 5;
           let ispRetryCount = 0;
@@ -2163,6 +2247,7 @@ async function processAdpiaOrder(
         }
 
         // 2-8. 결과 저장 및 saveOrderResults 호출
+        currentStep = ORDER_STEPS.SAVE_RESULTS;
         orderSuccess = !!vendorOrderNumber;
         const resultEntry = {
           lineId: poLineIds?.[productIndex],
@@ -2265,6 +2350,7 @@ async function processAdpiaOrder(
           try {
             await createPaymentLogs(authToken, [
               {
+                vendor: "adpia",  // TODO:DEPLOY - 배포 후 제거
                 purchaseOrderId: purchaseOrderId,
                 openMallOrderNumber: vendorOrderNumber || null,
                 paymentAmount: paymentAmount,
@@ -2274,22 +2360,13 @@ async function processAdpiaOrder(
             console.log(`[adpia] 결제 로그 저장: ${paymentAmount}원`);
             alertPaymentParsingFailed({ vendor: "애드피아몰", purchaseOrderId, openMallOrderNumber: vendorOrderNumber, paymentAmount: paymentAmount, parsingDetail: { 단가계산: fromCalc, 주문서: fromPage } });
           } catch (e) {
-            console.log(`[adpia] 결제 로그 저장 실패 (무시): ${e.message}`);
+            console.error(`[adpia] ⚠️ 결제 로그 저장 실패: ${e.message}`);
+          try { await createAutomationErrors(authToken, [{ vendor: "adpia", automationType: "ORDER", step: "ORDER_CONFIRMATION", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error("[adpia] 에러 기록도 실패:", e2.message); }
           }
         }
       } catch (error) {
-        console.error(`[adpia] 상품 처리 에러:`, error.message);
-        // 에러 메시지로 step 추정
-        const errorMsg = error.message || "";
-        let errorStep = ORDER_STEPS.ADD_TO_CART;
-        if (errorMsg.includes("결제") || errorMsg.includes("Shinhan") || errorMsg.includes("ISP") || errorMsg.includes("payment")) {
-          errorStep = ORDER_STEPS.PAYMENT;
-        } else if (errorMsg.includes("배송") || errorMsg.includes("주소") || errorMsg.includes("address")) {
-          errorStep = ORDER_STEPS.ORDER_PLACEMENT;
-        } else if (errorMsg.includes("로그인") || errorMsg.includes("login")) {
-          errorStep = ORDER_STEPS.LOGIN;
-        }
-        errorCollector.addError(errorStep, null, error.message, {
+        console.error(`[adpia] 상품 처리 에러 (step: ${currentStep}):`, error.message);
+        errorCollector.addError(currentStep, null, error.message, {
           purchaseOrderId,
           purchaseOrderLineId: poLineIds?.[productIndex],
           productVariantVendorId: product.productVariantVendorId,

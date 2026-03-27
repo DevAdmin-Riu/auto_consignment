@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>실시간 로그</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Consolas', 'Monaco', monospace;
+      background: #0d1117;
+      color: #c9d1d9;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      padding: 8px 12px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .toolbar button {
+      padding: 4px 12px;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      background: #21262d;
+      color: #c9d1d9;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .toolbar button:hover { background: #30363d; }
+    .toolbar button.active { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+    .toolbar .status {
+      margin-left: auto;
+      font-size: 12px;
+      color: #8b949e;
+    }
+    .toolbar .status .dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 4px;
+    }
+    .toolbar .status .dot.connected { background: #3fb950; }
+    .toolbar .status .dot.disconnected { background: #f85149; }
+    .toolbar input {
+      padding: 4px 8px;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      background: #0d1117;
+      color: #c9d1d9;
+      font-size: 13px;
+      width: 200px;
+    }
+    #logContainer {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 12px;
+      font-size: 13px;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-all;
+    }
+    .line { padding: 1px 0; }
+    .line:hover { background: #161b22; }
+    .line.error { color: #f85149; }
+    .line.success { color: #3fb950; }
+    .line.warning { color: #d29922; }
+    .line.info { color: #58a6ff; }
+    .line .ts { color: #484f58; }
+    .line .vendor { color: #bc8cff; font-weight: bold; }
+    .highlight { background: #f0883e33; color: #f0883e; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button id="btnPause">일시정지</button>
+    <button id="btnClear">지우기</button>
+    <input type="text" id="filter" placeholder="필터 (키워드)">
+    <button id="btnSearch">검색</button>
+    <button id="btnError" class="">에러만</button>
+    <button id="btnAutoScroll" class="active">자동 스크롤</button>
+    <div class="status">
+      <span class="dot disconnected" id="statusDot"></span>
+      <span id="statusText">연결 중...</span>
+      <span id="lineCount" style="margin-left: 12px;">0줄</span>
+    </div>
+  </div>
+  <div id="logContainer"></div>
+
+  <script>
+    const container = document.getElementById('logContainer');
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    const lineCount = document.getElementById('lineCount');
+    const filterInput = document.getElementById('filter');
+    const btnPause = document.getElementById('btnPause');
+    const btnClear = document.getElementById('btnClear');
+    const btnError = document.getElementById('btnError');
+    const btnAutoScroll = document.getElementById('btnAutoScroll');
+
+    let paused = false;
+    let errorOnly = false;
+    let autoScroll = true;
+    let allLines = []; // 원본 로그 보관
+    let buffer = [];
+    let ws;
+
+    function classify(line) {
+      if (line.includes('❌') || line.includes('실패') || line.includes('Error') || line.includes('FAIL') || line.includes('에러')) return 'error';
+      if (line.includes('✅') || line.includes('완료') || line.includes('성공')) return 'success';
+      if (line.includes('⚠️') || line.includes('경고')) return 'warning';
+      if (line.includes('[GraphQL]') || line.includes('[시스템]')) return 'info';
+      return '';
+    }
+
+    function escapeHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    function formatLine(raw) {
+      let html = escapeHtml(raw);
+      html = html.replace(/^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/, '<span class="ts">$1</span>');
+      html = html.replace(/\[(naver|coupang|baemin|napkin|swadpia|adpia|wowpress|GraphQL|Shinhan|tracking|시스템|큐|발주ID)\]/gi, '<span class="vendor">[$1]</span>');
+      const keyword = filterInput.value.trim();
+      if (keyword) {
+        const regex = new RegExp(`(${keyword.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')})`, 'gi');
+        html = html.replace(regex, '<span class="highlight">$1</span>');
+      }
+      return html;
+    }
+
+    function shouldShow(line) {
+      const keyword = filterInput.value.trim().toLowerCase();
+      if (keyword && !line.toLowerCase().includes(keyword)) return false;
+      if (errorOnly && classify(line) !== 'error') return false;
+      return true;
+    }
+
+    function renderAll() {
+      container.innerHTML = '';
+      const visible = allLines.filter(shouldShow).slice(-5000);
+      const fragment = document.createDocumentFragment();
+      for (const line of visible) {
+        const div = document.createElement('div');
+        div.className = `line ${classify(line)}`;
+        div.innerHTML = formatLine(line);
+        fragment.appendChild(div);
+      }
+      container.appendChild(fragment);
+      lineCount.textContent = `${allLines.length}줄 (표시 ${visible.length})`;
+      if (autoScroll) container.scrollTop = container.scrollHeight;
+    }
+
+    function addLine(raw) {
+      const lines = raw.split('\n').filter(l => l.trim());
+      for (const line of lines) {
+        allLines.push(line);
+      }
+      // 최대 10000줄 보관
+      if (allLines.length > 10000) allLines = allLines.slice(-10000);
+
+      // 새 줄만 추가 (전체 재렌더링 안 함)
+      for (const line of lines) {
+        if (!shouldShow(line)) continue;
+        const div = document.createElement('div');
+        div.className = `line ${classify(line)}`;
+        div.innerHTML = formatLine(line);
+        container.appendChild(div);
+      }
+      while (container.children.length > 5000) container.removeChild(container.firstChild);
+      lineCount.textContent = `${allLines.length}줄`;
+      if (autoScroll) container.scrollTop = container.scrollHeight;
+    }
+
+    function flush() {
+      if (paused || buffer.length === 0) return;
+      const data = buffer.join('');
+      buffer = [];
+      addLine(data);
+    }
+
+    function connect() {
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      ws = new WebSocket(`${protocol}//${location.host}/ws/logs`);
+
+      ws.onopen = () => {
+        statusDot.className = 'dot connected';
+        statusText.textContent = '연결됨';
+      };
+
+      ws.onmessage = (e) => {
+        buffer.push(e.data);
+      };
+
+      ws.onclose = () => {
+        statusDot.className = 'dot disconnected';
+        statusText.textContent = '연결 끊김 — 3초 후 재연결';
+        setTimeout(connect, 3000);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+    }
+
+    // 100ms마다 버퍼 플러시 (성능 최적화)
+    setInterval(flush, 100);
+
+    // 버튼 이벤트
+    btnPause.addEventListener('click', () => {
+      paused = !paused;
+      btnPause.textContent = paused ? '재개' : '일시정지';
+      btnPause.classList.toggle('active', paused);
+    });
+
+    btnClear.addEventListener('click', () => {
+      container.innerHTML = '';
+      totalLines = 0;
+      lineCount.textContent = '0줄';
+    });
+
+    btnError.addEventListener('click', () => {
+      errorOnly = !errorOnly;
+      btnError.classList.toggle('active', errorOnly);
+      btnError.textContent = errorOnly ? '에러만 (ON)' : '에러만';
+      renderAll();
+    });
+
+    btnAutoScroll.addEventListener('click', () => {
+      autoScroll = !autoScroll;
+      btnAutoScroll.classList.toggle('active', autoScroll);
+    });
+
+    document.getElementById('btnSearch').addEventListener('click', renderAll);
+    filterInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') renderAll();
+    });
+    let filterTimeout;
+    filterInput.addEventListener('input', () => {
+      clearTimeout(filterTimeout);
+      filterTimeout = setTimeout(renderAll, 500);
+    });
+
+    connect();
+  </script>
+</body>
+</html>

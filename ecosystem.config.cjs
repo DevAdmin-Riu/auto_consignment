@@ -19,6 +19,7 @@ module.exports = {
       autorestart: true,
       watch: false,
       max_memory_restart: "1G",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
     },
     {
       name: "tracking",
@@ -31,6 +32,7 @@ module.exports = {
       autorestart: true,
       watch: false,
       max_memory_restart: "1G",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
     },
   ],
 };

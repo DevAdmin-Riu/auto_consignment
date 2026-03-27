@@ -41,6 +41,7 @@ const {
 const {
   saveOrderResults,
   createPaymentLogs,
+  createAutomationErrors,
 } = require("../../lib/graphql-client");
 const Tesseract = require("tesseract.js");
 const sharp = require("sharp");
@@ -139,8 +140,11 @@ async function processCoupangOrder(
       detail: clearResult,
     });
   } catch (e) {
-    console.log("[coupang] 장바구니 비우기 실패:", e.message);
-    steps.push({ step: "clear_cart", success: false, error: e.message });
+    console.error("[coupang] ❌ 장바구니 비우기 실패:", e.message);
+    errorCollector.addError(ORDER_STEPS.CART_CLEARING, ERROR_CODES.CLICK_FAILED,
+      `장바구니 비우기 실패: ${e.message}`, { purchaseOrderId });
+    await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "coupang" });
+    return res.json({ success: false, vendor: vendor.name, error: `장바구니 비우기 실패: ${e.message}` });
   }
 
   // 장바구니 담기 재시도 루프 (수량 불일치 시 재시도)
@@ -343,6 +347,9 @@ async function processCoupangOrder(
           console.log(`[coupang] 상품 단가 추출 실패 (무시): ${e.message}`);
         }
 
+        // 2-2.6. 가격 차이 체크 — 임시 비활성화 (가격 추출 셀렉터 개선 후 재활성화)
+        // TODO: 쿠팡 상품 페이지 가격 셀렉터 수정 후 다시 활성화
+
         // 2-3. 장바구니 담기
         console.log(`[coupang] 상품 ${productIndex + 1}: 장바구니 담기...`);
         const cartBtn = await page.$("button.prod-cart-btn");
@@ -364,34 +371,22 @@ async function processCoupangOrder(
             unitPrice: productUnitPrice || 0,
           });
         } else {
-          steps.push({
-            step: `product_${productIndex + 1}_cart`,
-            success: false,
-            error: "버튼을 찾을 수 없음",
-          });
-          errorCollector.addError(
-            ORDER_STEPS.ADD_TO_CART,
-            ERROR_CODES.ELEMENT_NOT_FOUND,
-            "장바구니 버튼을 찾을 수 없음",
-            {
-              purchaseOrderId,
-              purchaseOrderLineId: poLineIds?.[productIndex],
-              productVariantVendorId: product.productVariantVendorId,
-            },
-          );
+          console.error(`[coupang] ❌ 상품 ${productIndex + 1} 장바구니 버튼 못 찾음 → 전체 중단`);
+          errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.ELEMENT_NOT_FOUND,
+            `장바구니 버튼을 찾을 수 없음: ${product.productName}`,
+            { purchaseOrderId, purchaseOrderLineId: poLineIds?.[productIndex], productVariantVendorId: product.productVariantVendorId });
+          await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "coupang" });
+          return res.json({ success: false, vendor: vendor.name, error: `장바구니 버튼 못 찾음: ${product.productName}` });
         }
       } catch (e) {
-        console.log(`[coupang] 상품 ${productIndex + 1} 처리 실패:`, e.message);
-        steps.push({
-          step: `product_${productIndex + 1}_error`,
-          success: false,
-          error: e.message,
-        });
-        errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, e.message, {
+        console.error(`[coupang] ❌ 상품 ${productIndex + 1} 처리 실패 → 전체 중단:`, e.message);
+        errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, `상품 처리 실패: ${product.productName} - ${e.message}`, {
           purchaseOrderId,
           purchaseOrderLineId: poLineIds?.[productIndex],
           productVariantVendorId: product.productVariantVendorId,
         });
+        await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "coupang" });
+        return res.json({ success: false, vendor: vendor.name, error: `상품 처리 실패: ${product.productName} - ${e.message}` });
       }
     }
 
@@ -679,80 +674,11 @@ async function processCoupangOrder(
               automationErrors: errorCollector.getErrors(),
             });
           }
-          // 배송지 입력 성공 - 카카오 API로 더블체킹
-          console.log("[배송지] 배송지 입력 완료, 주소 검증 시작...");
-          await delay(2000);
-
-          const ourAddress = shippingAddress.streetAddress1 || "";
-          const kakaoResult = await searchAddressWithKakao(ourAddress);
-
-          if (kakaoResult) {
-            // 화면에서 배송지 텍스트 읽기 ("배송지" 텍스트 근처)
-            const displayedAddress = await page.evaluate(() => {
-              const el = document.querySelector("#deliveryAddress");
-              if (el) return el.textContent || "";
-              // 폴백: "배송지" 텍스트 포함된 영역
-              const allSpans = document.querySelectorAll("span");
-              for (const span of allSpans) {
-                if (span.textContent.trim() === "배송지") {
-                  const container = span.closest("div[class*='twc-']") || span.parentElement?.parentElement;
-                  if (container) return container.textContent || "";
-                }
-              }
-              return document.body.innerText.substring(0, 3000);
-            });
-
-            const kakaoAddresses = [
-              kakaoResult.roadAddress,
-              kakaoResult.jibunAddress,
-              kakaoResult.roadAddressShort,
-              kakaoResult.jibunAddressShort,
-            ].filter(Boolean).map(a => normalizeAddress(a));
-
-            let matched = false;
-            const normalizedDisplay = normalizeAddress(displayedAddress);
-            for (const kakaoAddr of kakaoAddresses) {
-              if (normalizedDisplay.includes(kakaoAddr)) {
-                matched = true;
-                console.log(`[배송지] ✅ 주소 검증 통과: "${kakaoAddr}"`);
-                break;
-              }
-            }
-
-            if (!matched) {
-              console.error("[배송지] ❌ 주소 불일치!");
-              console.error(`[배송지]   우리 주소: ${ourAddress}`);
-              console.error(`[배송지]   카카오 도로명: ${kakaoResult.roadAddress}`);
-              console.error(`[배송지]   카카오 지번: ${kakaoResult.jibunAddress}`);
-              console.error(`[배송지]   화면 주소: ${displayedAddress.substring(0, 200)}`);
-
-              errorCollector.addError(
-                ORDER_STEPS.ORDER_PLACEMENT,
-                ERROR_CODES.ELEMENT_NOT_FOUND,
-                `배송지 검증 실패: 주소 불일치`,
-                { purchaseOrderId, ourAddress, kakaoRoad: kakaoResult.roadAddress },
-              );
-              await saveOrderResults(authToken, {
-                purchaseOrderId,
-                products: addedProducts || [],
-                priceMismatches: [],
-                optionFailedProducts: [],
-                automationErrors: errorCollector.getErrors(),
-                poLineIds,
-                success: false,
-                vendor: "coupang",
-              });
-              return res.json({
-                success: false,
-                vendor: vendor.name,
-                error: "배송지 검증 실패 (주소 불일치)",
-                steps,
-                automationErrors: errorCollector.getErrors(),
-              });
-            }
-          } else {
-            console.log("[배송지] 카카오 API 결과 없음 - 검증 스킵");
-          }
+          // 배송지 입력 성공 - 카카오 API 더블체킹 비활성화 (주소 구조 차이로 오탐)
+          // TODO: 주소 정규화 개선 후 재활성화
+          // const ourAddress = shippingAddress.streetAddress1 || "";
+          // const kakaoResult = await searchAddressWithKakao(ourAddress);
+          // ... (카카오 더블체킹 로직 비활성화)
 
           console.log("[배송지] 결제 단계로 진행...");
         } else {
@@ -1240,6 +1166,19 @@ async function processCoupangOrder(
             }: 쿠팡 ${coupangUnitPrice}원, 협력사 ${expectedUnitPrice}원 (오차: ${priceDifference}원)`,
           );
         }
+      } else {
+        console.error(`[coupang] ❌ 가격 추출 실패: 상품 ${i + 1} 단가를 찾을 수 없음 (URL: ${product.productUrl})`);
+        priceMismatch = {
+          detected: true,
+          productName: product.productName || `상품 ${i + 1}`,
+          productUrl: product.productUrl,
+          coupangPrice: 0,
+          expectedPrice: expectedUnitPrice,
+          vendorPriceExcludeVat: product.vendorPriceExcludeVat,
+          quantity: quantity,
+          difference: -expectedUnitPrice,
+          message: `가격 추출 실패: 단가를 찾을 수 없음`,
+        };
       }
     }
 
@@ -1281,7 +1220,13 @@ async function processCoupangOrder(
   }));
 
   // saveOrderResults 호출
+  const orderNumber = paymentStep?.orderNumber || null;
   if (isPaymentComplete) {
+    if (!orderNumber) {
+      console.error("[coupang] ⚠️ 결제 완료, 주문번호 수동 확인 필요");
+      errorCollector.addError(ORDER_STEPS.ORDER_CONFIRMATION, ERROR_CODES.ELEMENT_NOT_FOUND,
+        `결제 완료, 주문번호 추출 실패 - 수동 확인 필요`, { purchaseOrderId });
+    }
     await saveOrderResults(authToken, {
       purchaseOrderId,
       products: productResults.map((p) => ({
@@ -1304,15 +1249,22 @@ async function processCoupangOrder(
     try {
       await createPaymentLogs(authToken, [
         {
+          vendor: "coupang",  // TODO:DEPLOY - 배포 후 제거
           purchaseOrderId,
-          openMallOrderNumber: paymentStep?.orderNumber || null,
+          openMallOrderNumber: orderNumber,
           paymentAmount: actualPaymentAmount,
           paymentCard: "BC",
         },
       ]);
-      alertPaymentParsingFailed({ vendor: "쿠팡", purchaseOrderId, openMallOrderNumber: paymentStep?.orderNumber, paymentAmount: actualPaymentAmount, parsingDetail: paymentParsingDetail });
+      alertPaymentParsingFailed({ vendor: "쿠팡", purchaseOrderId, openMallOrderNumber: orderNumber, paymentAmount: actualPaymentAmount, parsingDetail: paymentParsingDetail });
     } catch (e) {
-      console.log("[coupang] 결제 로그 저장 실패 (무시):", e.message);
+      console.error("[coupang] ⚠️ 결제 로그 저장 실패:", e.message);
+      try {
+        await createAutomationErrors(authToken, [{
+          vendor: "coupang", automationType: "ORDER", step: "ORDER_CONFIRMATION",
+          errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId,
+        }]);
+      } catch (e2) { console.error("[coupang] 에러 기록도 실패:", e2.message); }
     }
   } else {
     await saveOrderResults(authToken, {
@@ -1853,18 +1805,11 @@ async function fillAddressForm(page, shippingAddress) {
           }
 
           if (searchInput) {
-            // iframe 내의 input에 직접 값 설정 (page.keyboard.type은 메인 페이지에서만 동작)
-            await searchInput.click();
-            console.log("[배송지 디버그] searchInput 클릭 완료");
+            // 검색어 입력 (타이핑 방식)
+            await searchInput.click({ clickCount: 3 });
             await delay(100);
-
-            // 값 직접 설정 및 input 이벤트 발생
-            await searchInput.evaluate((el, val) => {
-              el.value = val;
-              el.dispatchEvent(new Event("input", { bubbles: true }));
-              el.dispatchEvent(new Event("change", { bubbles: true }));
-            }, searchQuery);
-            console.log("[배송지] 주소 검색어 입력:", searchQuery);
+            await searchInput.type(searchQuery, { delay: 30 });
+            console.log("[배송지] 주소 검색어 타이핑:", searchQuery);
             await delay(500);
 
             // 검색 버튼 클릭 (zipcodeFrame 또는 pickerFrame 내에서)

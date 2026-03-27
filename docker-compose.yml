@@ -16,10 +16,12 @@ services:
       # OAuth 콜백 URL (ngrok 사용 시)
       - WEBHOOK_URL=https://f3ae23d2780e.ngrok-free.app/
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false
-      - N8N_ALLOW_ENV_ACCESS=AUTH_TOKEN,GRAPHQL_URL,CONTENT_TYPE,MALL_URL
+      - N8N_ALLOW_ENV_ACCESS=AUTH_TOKEN,GRAPHQL_URL,CONTENT_TYPE,MALL_URL,SMTP_PASSWORD,PO_EMAIL
+      - SMTP_PASSWORD=bllocfrpxobbpfpx
+      - PO_EMAIL=kyungjun0928@riupack.com
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       # Allow external npm modules in Code node
-      - NODE_FUNCTION_ALLOW_EXTERNAL=xlsx,xlsx-js-style,exceljs,axios
+      - NODE_FUNCTION_ALLOW_EXTERNAL=xlsx,xlsx-js-style,exceljs,axios,nodemailer
       # GraphQL API (아래 중 하나 선택)
       # - GRAPHQL_URL=https://settings-themselves-gulf-ink.trycloudflare.com/graphql/ # 로컬
       - GRAPHQL_URL=https://api.pojangboss.com/graphql/ # 프로덕션

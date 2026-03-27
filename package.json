@@ -38,10 +38,12 @@
   "dependencies": {
     "dotenv": "^16.6.1",
     "express": "^5.2.1",
+    "nodemailer": "^8.0.3",
     "puppeteer-real-browser": "^1.4.4",
     "screenshot-desktop": "^1.15.3",
     "sharp": "^0.34.5",
     "tesseract.js": "^6.0.1",
+    "ws": "^8.20.0",
     "xlsx": "^0.18.5"
   }
 }

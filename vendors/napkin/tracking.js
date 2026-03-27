@@ -16,14 +16,8 @@ const {
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // 셀렉터 상수
-const SELECTORS = {
-  // 택배사
-  carrier:
-    "#detailForm > div > div:nth-child(3) > div:nth-child(3) > table > tbody > tr:nth-child(1) > td:nth-child(6) > p:nth-child(2) > a",
-  // 송장번호
-  trackingNumber:
-    "#detailForm > div > div:nth-child(3) > div:nth-child(3) > table > tbody > tr:nth-child(1) > td:nth-child(6) > p:nth-child(3) > a",
-};
+// 셀렉터는 사용하지 않음 — evaluate에서 텍스트 기반으로 추출
+const SELECTORS = {};
 
 /**
  * 냅킨코리아 송장번호 조회
@@ -133,25 +127,48 @@ async function findTrackingNumber(page, openMallOrderNumber) {
     });
     await delay(2000);
 
-    // 2. 택배사 추출
-    let carrier = null;
-    try {
-      carrier = await page.$eval(SELECTORS.carrier, (el) =>
-        el.textContent?.trim(),
-      );
-    } catch (e) {
-      console.log(`[napkin 송장조회] ${openMallOrderNumber}: 택배사 정보 없음`);
-    }
+    // 2. 택배사 + 송장번호 추출 (텍스트 기반)
+    const trackingInfo = await page.evaluate(() => {
+      // "배송완료" 또는 "배송중" 텍스트가 있는 td에서 추출
+      const tds = document.querySelectorAll("td");
+      for (const td of tds) {
+        const statusEl = td.querySelector("p.txtEm");
+        if (!statusEl) continue;
+        const status = statusEl.textContent.trim();
+        if (!status.includes("배송") && !status.includes("발송")) continue;
 
-    // 3. 송장번호 추출
-    let trackingNumber = null;
-    try {
-      trackingNumber = await page.$eval(SELECTORS.trackingNumber, (el) =>
-        el.textContent?.trim(),
-      );
-    } catch (e) {
-      console.log(`[napkin 송장조회] ${openMallOrderNumber}: 송장번호 없음`);
-    }
+        // 같은 td 내 a 태그들에서 택배사/송장번호 추출
+        const links = td.querySelectorAll("p a");
+        let carrier = null;
+        let trackingNumber = null;
+
+        for (const link of links) {
+          const text = link.textContent.trim();
+          const href = link.getAttribute("href") || "";
+          const onclick = link.getAttribute("onclick") || "";
+
+          // delivery_trace 링크 → 택배사명
+          if (href.includes("delivery_trace") && !link.classList.contains("sp-btn")) {
+            carrier = text;
+          }
+          // sp-btn 클래스 or onclick에 delivery_trace → 송장번호
+          if (link.classList.contains("sp-btn") || (onclick.includes("delivery_trace") && /^\d+$/.test(text))) {
+            trackingNumber = text;
+          }
+        }
+
+        if (trackingNumber || carrier) {
+          return { carrier, trackingNumber };
+        }
+      }
+      return { carrier: null, trackingNumber: null };
+    });
+
+    let carrier = trackingInfo.carrier;
+    let trackingNumber = trackingInfo.trackingNumber;
+
+    if (!carrier) console.log(`[napkin 송장조회] ${openMallOrderNumber}: 택배사 정보 없음`);
+    if (!trackingNumber) console.log(`[napkin 송장조회] ${openMallOrderNumber}: 송장번호 없음`);
 
     // 자체배송인 경우 송장번호가 전화번호 형태일 수 있음
     if (carrier === "자체배송" && trackingNumber) {
