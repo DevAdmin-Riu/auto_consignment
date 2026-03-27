@@ -43,6 +43,9 @@ const {
   createPaymentLogs,
   createAutomationErrors,
   createNeedsManagerVerification,
+  updatePoLineFailure,
+  updatePoLineSuccess,
+  updatePoLineN8nInfo,
 } = require("../../lib/graphql-client");
 const Tesseract = require("tesseract.js");
 const sharp = require("sharp");
@@ -145,6 +148,8 @@ async function processCoupangOrder(
     console.error("[coupang] ❌ 장바구니 비우기 실패:", e.message);
     errorCollector.addError(ORDER_STEPS.CART_CLEARING, ERROR_CODES.CLICK_FAILED,
       `장바구니 비우기 실패: ${e.message}`, { purchaseOrderId });
+    // poLine 실패 기록
+    try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: `장바구니 비우기 실패: ${e.message}` }); } } catch (e2) { console.error("[coupang] poLine 실패 기록 에러 (무시):", e2.message); }
     await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "coupang" });
     return res.json({ success: false, vendor: vendor.name, error: `장바구니 비우기 실패: ${e.message}` });
   }
@@ -379,6 +384,8 @@ async function processCoupangOrder(
           errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.ELEMENT_NOT_FOUND,
             `장바구니 버튼을 찾을 수 없음: ${product.productName}`,
             { purchaseOrderId, purchaseOrderLineId: poLineIds?.[productIndex], productVariantVendorId: product.productVariantVendorId });
+          // poLine 실패 기록
+          try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: `장바구니 버튼 못 찾음: ${product.productName}` }); } } catch (e2) { console.error("[coupang] poLine 실패 기록 에러 (무시):", e2.message); }
           await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "coupang" });
           return res.json({ success: false, vendor: vendor.name, error: `장바구니 버튼 못 찾음: ${product.productName}` });
         }
@@ -389,6 +396,8 @@ async function processCoupangOrder(
           purchaseOrderLineId: poLineIds?.[productIndex],
           productVariantVendorId: product.productVariantVendorId,
         });
+        // poLine 실패 기록
+        try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: `상품 처리 실패: ${product.productName} - ${e.message}` }); } } catch (e2) { console.error("[coupang] poLine 실패 기록 에러 (무시):", e2.message); }
         await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "coupang" });
         return res.json({ success: false, vendor: vendor.name, error: `상품 처리 실패: ${product.productName} - ${e.message}` });
       }
@@ -551,6 +560,8 @@ async function processCoupangOrder(
                     console.error(`[coupang] 담당자 확인 필요 저장 실패: ${e.message}`);
                   }
                 }
+                // poLine 가격 차이 초과 기록 (failCount 증가 안함)
+                try { for (const plId of (poLineIds || [])) { await updatePoLineN8nInfo(authToken, plId, { isPriceGapExceeded: true, lastError: `가격 차이 초과: ${priceResult.reason} - ${ap.productName}` }); } } catch (e) { console.error("[coupang] poLine 가격 차이 기록 에러 (무시):", e.message); }
                 return res.json({ success: false, error: priceResult.reason });
               }
 
@@ -585,6 +596,9 @@ async function processCoupangOrder(
     errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, errorMessage, {
       purchaseOrderId,
     });
+    // poLine 실패 기록
+    try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: errorMessage }); } } catch (e) { console.error("[coupang] poLine 실패 기록 에러 (무시):", e.message); }
+
     await saveOrderResults(authToken, {
       purchaseOrderId,
       products: addedProducts || [],
@@ -700,6 +714,9 @@ async function processCoupangOrder(
               "배송지 폼 입력 실패",
               { purchaseOrderId },
             );
+            // poLine 실패 기록
+            try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: "배송지 폼 입력 실패" }); } } catch (e2) { console.error("[coupang] poLine 실패 기록 에러 (무시):", e2.message); }
+
             await saveOrderResults(authToken, {
               purchaseOrderId,
               products: addedProducts || [],
@@ -747,6 +764,9 @@ async function processCoupangOrder(
             shippingError,
             { purchaseOrderId },
           );
+          // poLine 실패 기록
+          try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: shippingError }); } } catch (e2) { console.error("[coupang] poLine 실패 기록 에러 (무시):", e2.message); }
+
           await saveOrderResults(authToken, {
             purchaseOrderId,
             products: addedProducts || [],
@@ -781,6 +801,9 @@ async function processCoupangOrder(
           "배송지 변경 버튼 클릭 실패",
           { purchaseOrderId },
         );
+        // poLine 실패 기록
+        try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: "배송지 변경 버튼 클릭 실패" }); } } catch (e2) { console.error("[coupang] poLine 실패 기록 에러 (무시):", e2.message); }
+
         await saveOrderResults(authToken, {
           purchaseOrderId,
           products: addedProducts || [],
@@ -810,6 +833,9 @@ async function processCoupangOrder(
       errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, e.message, {
         purchaseOrderId,
       });
+      // poLine 실패 기록
+      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: e.message }); } } catch (e2) { console.error("[coupang] poLine 실패 기록 에러 (무시):", e2.message); }
+
       await saveOrderResults(authToken, {
         purchaseOrderId,
         products: addedProducts || [],
@@ -1292,6 +1318,22 @@ async function processCoupangOrder(
       vendor: "coupang",
     });
 
+    // poLine 성공 기록
+    try {
+      for (let i = 0; i < products.length; i++) {
+        const p = products[i];
+        const plId = poLineIds?.[i];
+        if (!plId) continue;
+        const openMallProductId = p.productUrl?.match(/vendorItemId=(\d+)/)?.[1] || null;
+        const openMallOption = p.openMallOptions ? (typeof p.openMallOptions === "string" ? p.openMallOptions : JSON.stringify(p.openMallOptions)) : null;
+        await updatePoLineSuccess(authToken, plId, {
+          openMallProductId,
+          openMallProductName: p.productName || null,
+          openMallOption,
+        });
+      }
+    } catch (e) { console.error("[coupang] poLine 성공 기록 에러 (무시):", e.message); }
+
     // 결제 로그 저장 (파싱 실패 시 0원으로 저장 → 대시보드에서 수동 수정)
     try {
       await createPaymentLogs(authToken, [
@@ -1314,6 +1356,9 @@ async function processCoupangOrder(
       } catch (e2) { console.error("[coupang] 에러 기록도 실패:", e2.message); }
     }
   } else {
+    // poLine 실패 기록
+    try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: "결제 실패" }); } } catch (e) { console.error("[coupang] poLine 실패 기록 에러 (무시):", e.message); }
+
     await saveOrderResults(authToken, {
       purchaseOrderId,
       products: addedProducts || [],

@@ -40,6 +40,9 @@ const {
   createPaymentLogs,
   createAutomationErrors,
   createNeedsManagerVerification,
+  updatePoLineFailure,
+  updatePoLineSuccess,
+  updatePoLineN8nInfo,
 } = require("../../lib/graphql-client");
 const { getEnv } = require("../config");
 const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
@@ -2065,6 +2068,13 @@ async function processNaverOrder(
         { purchaseOrderId },
       );
       steps.push({ step: "login", success: false, error: loginError.message });
+      // poLine 실패 기록
+      try {
+        for (const plId of (poLineIds || [])) {
+          await updatePoLineFailure(authToken, plId, { lastError: `로그인 실패: ${loginError.message}` });
+        }
+      } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
+
       await saveOrderResults(authToken, {
         purchaseOrderId,
         products: [],
@@ -2096,6 +2106,13 @@ async function processNaverOrder(
         `장바구니 비우기 실패: ${cartError.message}`,
         { purchaseOrderId },
       );
+      // poLine 실패 기록
+      try {
+        for (const plId of (poLineIds || [])) {
+          await updatePoLineFailure(authToken, plId, { lastError: `장바구니 비우기 실패: ${cartError.message}` });
+        }
+      } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
+
       await saveOrderResults(authToken, {
         purchaseOrderId,
         products: [],
@@ -2154,6 +2171,13 @@ async function processNaverOrder(
             `장바구니 담기 실패 (alert): ${reason}`,
             { purchaseOrderId, productVariantVendorId: product.productVariantVendorId },
           );
+          // poLine 실패 기록
+          try {
+            for (const plId of (poLineIds || [])) {
+              await updatePoLineFailure(authToken, plId, { lastError: `장바구니 담기 실패: ${reason}` });
+            }
+          } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
+
           await saveOrderResults(authToken, {
             purchaseOrderId,
             products: [],
@@ -2196,6 +2220,13 @@ async function processNaverOrder(
             productVariantVendorId: product.productVariantVendorId,
           },
         );
+        // poLine 실패 기록
+        try {
+          for (const plId of (poLineIds || [])) {
+            await updatePoLineFailure(authToken, plId, { lastError: `상품 처리 실패: ${product.productName} - ${error.message}` });
+          }
+        } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
+
         await saveOrderResults(authToken, {
           purchaseOrderId,
           products: [],
@@ -2240,6 +2271,12 @@ async function processNaverOrder(
             console.error(`[naver] 담당자 확인 필요 저장 실패: ${e.message}`);
           }
         }
+        // poLine 가격 차이 초과 기록 (failCount 증가 안함)
+        try {
+          for (const plId of (poLineIds || [])) {
+            await updatePoLineN8nInfo(authToken, plId, { isPriceGapExceeded: true, lastError: `가격 차이 초과: ${priceResult.reason} - ${ap.productName}` });
+          }
+        } catch (e) { console.error("[naver] poLine 가격 차이 기록 에러 (무시):", e.message); }
         return res.json({ success: false, error: priceResult.reason });
       }
 
@@ -2276,6 +2313,13 @@ async function processNaverOrder(
           );
         });
 
+        // poLine 실패 기록
+        try {
+          for (const plId of (poLineIds || [])) {
+            await updatePoLineFailure(authToken, plId, { lastError: `옵션 선택 실패로 주문 불가 (${optionFailedProducts.length}건)` });
+          }
+        } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
+
         await saveOrderResults(authToken, {
           purchaseOrderId,
           products: addedProducts,
@@ -2306,6 +2350,13 @@ async function processNaverOrder(
           automationErrors: errorCollector.getErrors(),
         });
       }
+
+      // poLine 실패 기록
+      try {
+        for (const plId of (poLineIds || [])) {
+          await updatePoLineFailure(authToken, plId, { lastError: "장바구니에 담긴 상품이 없음" });
+        }
+      } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
 
       await saveOrderResults(authToken, {
         purchaseOrderId,
@@ -2368,6 +2419,13 @@ async function processNaverOrder(
         "주문하기 버튼을 찾을 수 없음",
         { purchaseOrderId },
       );
+      // poLine 실패 기록
+      try {
+        for (const plId of (poLineIds || [])) {
+          await updatePoLineFailure(authToken, plId, { lastError: "주문하기 버튼을 찾을 수 없음" });
+        }
+      } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
+
       await saveOrderResults(authToken, {
         purchaseOrderId,
         products: [],
@@ -2408,6 +2466,13 @@ async function processNaverOrder(
               `배송지 선택 ${MAX_ADDRESS_ATTEMPTS}회 실패: ${addressResult.reason}`,
               { purchaseOrderId },
             );
+            // poLine 실패 기록
+            try {
+              for (const plId of (poLineIds || [])) {
+                await updatePoLineFailure(authToken, plId, { lastError: `배송지 선택 실패: ${addressResult.reason}` });
+              }
+            } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
+
             await saveOrderResults(authToken, {
               purchaseOrderId,
               products: [],
@@ -2461,6 +2526,13 @@ async function processNaverOrder(
           `배송지 검증 ${MAX_ADDRESS_ATTEMPTS}회 실패`,
           { purchaseOrderId },
         );
+        // poLine 실패 기록
+        try {
+          for (const plId of (poLineIds || [])) {
+            await updatePoLineFailure(authToken, plId, { lastError: "배송지 검증 실패 (주소 불일치)" });
+          }
+        } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
+
         await saveOrderResults(authToken, {
           purchaseOrderId,
           products: addedProducts,
@@ -2500,6 +2572,13 @@ async function processNaverOrder(
           `통관 처리 실패: ${customsResult.reason}`,
           { purchaseOrderId },
         );
+        // poLine 실패 기록
+        try {
+          for (const plId of (poLineIds || [])) {
+            await updatePoLineFailure(authToken, plId, { lastError: `통관 처리 실패: ${customsResult.reason}` });
+          }
+        } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
+
         await saveOrderResults(authToken, {
           purchaseOrderId,
           products: addedProducts,
@@ -2631,6 +2710,13 @@ async function processNaverOrder(
           "결제 팝업이 열리지 않음",
           { purchaseOrderId },
         );
+        // poLine 실패 기록
+        try {
+          for (const plId of (poLineIds || [])) {
+            await updatePoLineFailure(authToken, plId, { lastError: "결제 팝업이 열리지 않음" });
+          }
+        } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
+
         await saveOrderResults(authToken, {
           purchaseOrderId,
           products: addedProducts,
@@ -2664,6 +2750,13 @@ async function processNaverOrder(
           "네이버페이 PIN이 설정되지 않음 (NAVER_PAY_PIN)",
           { purchaseOrderId },
         );
+        // poLine 실패 기록
+        try {
+          for (const plId of (poLineIds || [])) {
+            await updatePoLineFailure(authToken, plId, { lastError: "네이버페이 PIN이 설정되지 않음" });
+          }
+        } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
+
         await saveOrderResults(authToken, {
           purchaseOrderId,
           products: addedProducts,
@@ -2798,6 +2891,22 @@ async function processNaverOrder(
           vendor: "naver",
         });
 
+        // poLine 성공 기록
+        try {
+          for (let i = 0; i < addedProducts.length; i++) {
+            const p = addedProducts[i];
+            const plId = poLineIds?.[i];
+            if (!plId) continue;
+            const openMallProductId = p.productUrl?.match(/products\/(\d+)/)?.[1] || null;
+            const openMallOption = p.openMallOptions ? (typeof p.openMallOptions === "string" ? p.openMallOptions : JSON.stringify(p.openMallOptions)) : null;
+            await updatePoLineSuccess(authToken, plId, {
+              openMallProductId,
+              openMallProductName: p.productName || null,
+              openMallOption,
+            });
+          }
+        } catch (e) { console.error("[naver] poLine 성공 기록 에러 (무시):", e.message); }
+
         // 결제 금액 로깅 (파싱 실패 시 0원으로 저장 → 대시보드에서 수동 수정)
         try {
           await createPaymentLogs(authToken, [
@@ -2873,6 +2982,13 @@ async function processNaverOrder(
           "네이버페이 비밀번호 입력 실패",
           { purchaseOrderId },
         );
+        // poLine 실패 기록
+        try {
+          for (const plId of (poLineIds || [])) {
+            await updatePoLineFailure(authToken, plId, { lastError: "네이버페이 비밀번호 입력 실패" });
+          }
+        } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
+
         await saveOrderResults(authToken, {
           purchaseOrderId,
           products: addedProducts,
@@ -2903,6 +3019,13 @@ async function processNaverOrder(
         success: false,
         reason: "button_not_found",
       });
+      // poLine 실패 기록
+      try {
+        for (const plId of (poLineIds || [])) {
+          await updatePoLineFailure(authToken, plId, { lastError: "결제하기 버튼을 찾을 수 없음" });
+        }
+      } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
+
       await saveOrderResults(authToken, {
         purchaseOrderId,
         products: addedProducts,
@@ -2938,6 +3061,13 @@ async function processNaverOrder(
       error.message,
       { purchaseOrderId },
     );
+    // poLine 실패 기록
+    try {
+      for (const plId of (poLineIds || [])) {
+        await updatePoLineFailure(authToken, plId, { lastError: error.message });
+      }
+    } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
+
     await saveOrderResults(authToken, {
       purchaseOrderId,
       products: addedProducts,

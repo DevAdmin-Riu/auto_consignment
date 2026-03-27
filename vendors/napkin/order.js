@@ -40,6 +40,9 @@ const {
   createPaymentLogs,
   createAutomationErrors,
   createNeedsManagerVerification,
+  updatePoLineFailure,
+  updatePoLineSuccess,
+  updatePoLineN8nInfo,
 } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
 const {
@@ -818,6 +821,9 @@ async function processNapkinOrder(
         loginResult.message,
         { purchaseOrderId },
       );
+      // poLine 실패 기록
+      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: `로그인 실패: ${loginResult.message}` }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
+
       await saveOrderResults(authToken, {
         purchaseOrderId,
         products: [],
@@ -859,6 +865,8 @@ async function processNapkinOrder(
       console.error("[napkin] ❌ 장바구니 비우기 실패:", clearResult.message);
       errorCollector.addError(ORDER_STEPS.CART_CLEARING, ERROR_CODES.CLICK_FAILED,
         `장바구니 비우기 실패: ${clearResult.message}`, { purchaseOrderId });
+      // poLine 실패 기록
+      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: `장바구니 비우기 실패: ${clearResult.message}` }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
       await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "napkin" });
       return res.json({ success: false, vendor: vendor.name, error: `장바구니 비우기 실패: ${clearResult.message}` });
     }
@@ -1008,6 +1016,8 @@ async function processNapkinOrder(
                 purchaseOrderId,
                 productVariantVendorId: product.productVariantVendorId,
               });
+              // poLine 가격 추출 실패 기록
+              try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: reason }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
               return res.json({ success: false, vendor: vendor.name, error: reason });
             } else {
               const reason = `가격 차이 초과로 결제 중단: ${priceResult.reason}`;
@@ -1021,6 +1031,8 @@ async function processNapkinOrder(
               } catch (e) {
                 console.error(`[napkin] 담당자 확인 필요 저장 실패: ${e.message}`);
               }
+              // poLine 가격 차이 초과 기록 (failCount 증가 안함)
+              try { for (const plId of (poLineIds || [])) { await updatePoLineN8nInfo(authToken, plId, { isPriceGapExceeded: true, lastError: reason }); } } catch (e) { console.error("[napkin] poLine 가격 차이 기록 에러 (무시):", e.message); }
               return res.json({ success: false, vendor: vendor.name, error: reason });
             }
           }
@@ -1099,6 +1111,9 @@ async function processNapkinOrder(
           purchaseOrderId: r.purchaseOrderId, // 개별 상품의 발주 ID
           reason: r.message,
         }));
+      // poLine 실패 기록
+      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: "모든 상품 처리 실패" }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
+
       await saveOrderResults(authToken, {
         purchaseOrderId,
         products: [],
@@ -2171,6 +2186,9 @@ async function processNapkinOrder(
         "신한카드 결제 실패 (빈 창 등) - 최대 재시도 초과",
         { purchaseOrderId },
       );
+      // poLine 실패 기록
+      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: "신한카드 결제 실패 - 최대 재시도 초과" }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
+
       await saveOrderResults(authToken, {
         purchaseOrderId,
         products: [],
@@ -2272,6 +2290,22 @@ async function processNapkinOrder(
       vendor: "napkin",
     });
 
+    // poLine 성공 기록
+    try {
+      for (let i = 0; i < products.length; i++) {
+        const p = products[i];
+        const plId = poLineIds?.[i];
+        if (!plId) continue;
+        const openMallProductId = p.productUrl?.match(/product_no=(\d+)/)?.[1] || p.productUrl?.match(/\/product\/[^\/]+\/(\d+)/)?.[1] || null;
+        const openMallOption = p.openMallOptions ? (typeof p.openMallOptions === "string" ? p.openMallOptions : JSON.stringify(p.openMallOptions)) : null;
+        await updatePoLineSuccess(authToken, plId, {
+          openMallProductId,
+          openMallProductName: p.productName || null,
+          openMallOption,
+        });
+      }
+    } catch (e) { console.error("[napkin] poLine 성공 기록 에러 (무시):", e.message); }
+
     // 결제 로그 저장 (파싱 실패 시 0원으로 저장 → 대시보드에서 수동 수정)
     try {
       await createPaymentLogs(authToken, [
@@ -2334,6 +2368,9 @@ async function processNapkinOrder(
       delete page._napkinDialogHandler;
       console.log("[napkin] dialog 핸들러 제거 완료 (에러 처리)");
     }
+
+    // poLine 실패 기록
+    try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: error.message }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
 
     await saveOrderResults(authToken, {
       purchaseOrderId,

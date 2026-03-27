@@ -40,6 +40,9 @@ const {
   createPaymentLogs,
   createAutomationErrors,
   createNeedsManagerVerification,
+  updatePoLineFailure,
+  updatePoLineSuccess,
+  updatePoLineN8nInfo,
 } = require("../../lib/graphql-client");
 const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
 const { findDaumFrameViaCDP, cleanupCDPFrame, searchAddressInFrame, selectAddressResult } = require("../../lib/daum-address");
@@ -2734,6 +2737,9 @@ async function processBaeminOrder(
         loginResult.message,
         { purchaseOrderId },
       );
+      // poLine 실패 기록
+      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: `로그인 실패: ${loginResult.message}` }); } } catch (e) { console.error("[baemin] poLine 실패 기록 에러 (무시):", e.message); }
+
       await saveOrderResults(authToken, {
         purchaseOrderId,
         products: [],
@@ -2866,6 +2872,8 @@ async function processBaeminOrder(
           console.error("[baemin] ❌ 장바구니 비우기 실패:", clearResult.message);
           errorCollector.addError(ORDER_STEPS.CART_CLEARING, ERROR_CODES.CLICK_FAILED,
             `장바구니 비우기 실패: ${clearResult.message}`, { purchaseOrderId });
+          // poLine 실패 기록
+          try { for (const p of group.products) { const plId = poLineIds?.[p._originalIndex]; if (plId) await updatePoLineFailure(authToken, plId, { lastError: `장바구니 비우기 실패: ${clearResult.message}` }); } } catch (e) { console.error("[baemin] poLine 실패 기록 에러 (무시):", e.message); }
           await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(),
             poLineIds: group.products.map((p) => poLineIds?.[p._originalIndex]).filter(Boolean), success: false, vendor: "baemin" });
           continue; // 이 그룹 중단, 다음 그룹으로
@@ -2911,6 +2919,8 @@ async function processBaeminOrder(
               } catch (e) {
                 console.error(`[baemin] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
               }
+              // poLine 품절 기록 (failCount 증가 안함)
+              try { const plId = poLineIds?.[idx]; if (plId) await updatePoLineN8nInfo(authToken, plId, { soldOut: true, lastError: `품절: ${product.productSku} (${product.productName})` }); } catch (e) { console.error("[baemin] poLine 품절 기록 에러 (무시):", e.message); }
               results.push({
                 lineId: poLineIds?.[idx],
                 productSku: product.productSku,
@@ -2996,6 +3006,11 @@ async function processBaeminOrder(
                 } catch (e) {
                   console.error(`[baemin] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
                 }
+                // poLine 품절 기록 (failCount 증가 안함)
+                try { const plId = poLineIds?.[idx]; if (plId) await updatePoLineN8nInfo(authToken, plId, { soldOut: true, lastError: `품절/판매중지: ${product.productSku} (${product.productName})` }); } catch (e) { console.error("[baemin] poLine 품절 기록 에러 (무시):", e.message); }
+              } else {
+                // 일반 장바구니 담기 실패
+                try { const plId = poLineIds?.[idx]; if (plId) await updatePoLineFailure(authToken, plId, { lastError: "장바구니 담기 실패" }); } catch (e) { console.error("[baemin] poLine 실패 기록 에러 (무시):", e.message); }
               }
               results.push({
                 lineId: poLineIds?.[idx],
@@ -3049,6 +3064,13 @@ async function processBaeminOrder(
               }
               priceMismatch = true;
               groupOrderSuccess = false;
+              // poLine 가격 차이 초과 기록 (failCount 증가 안함)
+              try {
+                for (const gp of group.products) {
+                  const plId = poLineIds?.[gp._originalIndex];
+                  if (plId) await updatePoLineN8nInfo(authToken, plId, { isPriceGapExceeded: true, lastError: `가격 차이 초과: ${priceResult.reason}` });
+                }
+              } catch (e) { console.error("[baemin] poLine 가격 차이 기록 에러 (무시):", e.message); }
               break;
             }
 
@@ -3107,6 +3129,10 @@ async function processBaeminOrder(
           const failedPoLineIds = group.products
             .map((p) => poLineIds?.[p._originalIndex])
             .filter(Boolean);
+
+          // poLine 실패 기록
+          try { for (const plId of failedPoLineIds) { await updatePoLineFailure(authToken, plId, { lastError: "장바구니에 담긴 상품 없음" }); } } catch (e) { console.error("[baemin] poLine 실패 기록 에러 (무시):", e.message); }
+
           await saveOrderResults(authToken, {
             purchaseOrderId,
             products: [],
@@ -3276,6 +3302,10 @@ async function processBaeminOrder(
           const groupPoLineIds = groupAddedProducts
             .map((p) => poLineIds?.[p._originalIndex])
             .filter(Boolean);
+
+          // poLine 실패 기록
+          try { for (const plId of groupPoLineIds) { await updatePoLineFailure(authToken, plId, { lastError: lastPaymentMessage || "결제 실패" }); } } catch (e) { console.error("[baemin] poLine 실패 기록 에러 (무시):", e.message); }
+
           await saveOrderResults(authToken, {
             purchaseOrderId,
             products: [],
@@ -3373,6 +3403,23 @@ async function processBaeminOrder(
           vendor: "baemin",
         });
 
+        // poLine 성공/실패 기록
+        if (groupOrderSuccess) {
+          try {
+            for (const p of groupAddedProducts) {
+              const plId = poLineIds?.[p._originalIndex];
+              if (!plId) continue;
+              const openMallProductId = p.productUrl?.match(/detail\/(\d+)/)?.[1] || null;
+              const openMallOption = p.openMallOptions ? (typeof p.openMallOptions === "string" ? p.openMallOptions : JSON.stringify(p.openMallOptions)) : null;
+              await updatePoLineSuccess(authToken, plId, {
+                openMallProductId,
+                openMallProductName: p.productName || null,
+                openMallOption,
+              });
+            }
+          } catch (e) { console.error("[baemin] poLine 성공 기록 에러 (무시):", e.message); }
+        }
+
         // 3-9. 결제 로그 저장 - 그룹당 1회
         const paidAmount = paymentResult?.actualPaymentAmount || 0;
         if (groupOrderSuccess) {
@@ -3431,6 +3478,10 @@ async function processBaeminOrder(
         const groupPoLineIds = group.products
           .map((p) => poLineIds?.[p._originalIndex])
           .filter(Boolean);
+
+        // poLine 실패 기록
+        try { for (const plId of groupPoLineIds) { await updatePoLineFailure(authToken, plId, { lastError: groupError.message }); } } catch (e) { console.error("[baemin] poLine 실패 기록 에러 (무시):", e.message); }
+
         await saveOrderResults(authToken, {
           purchaseOrderId,
           products: [],
@@ -3512,6 +3563,9 @@ async function processBaeminOrder(
     errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, error.message, {
       purchaseOrderId,
     });
+    // poLine 실패 기록
+    try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: error.message }); } } catch (e) { console.error("[baemin] poLine 실패 기록 에러 (무시):", e.message); }
+
     await saveOrderResults(authToken, {
       purchaseOrderId,
       products: (allAddedProducts || []).map((p) => ({

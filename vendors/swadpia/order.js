@@ -47,6 +47,9 @@ const {
   createPaymentLogs,
   createAutomationErrors,
   createNeedsManagerVerification,
+  updatePoLineFailure,
+  updatePoLineSuccess,
+  updatePoLineN8nInfo,
 } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
 const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
@@ -1869,6 +1872,8 @@ async function processSwadpiaOrder(
       console.error("[swadpia] ❌ 장바구니 비우기 실패");
       errorCollector.addError(ORDER_STEPS.CART_CLEARING, ERROR_CODES.CLICK_FAILED,
         "장바구니 비우기 실패", { purchaseOrderId });
+      // poLine 실패 기록
+      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: "장바구니 비우기 실패" }); } } catch (e2) { console.error("[swadpia] poLine 실패 기록 에러 (무시):", e2.message); }
       await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "swadpia" });
       return res.json({ success: false, vendor: vendor.name, error: "장바구니 비우기 실패" });
     }
@@ -1948,6 +1953,8 @@ async function processSwadpiaOrder(
             }
           }
           if (priceStopRequired) {
+            // poLine 가격 차이 초과 기록 (failCount 증가 안함)
+            try { for (const plId of (poLineIds || [])) { await updatePoLineN8nInfo(authToken, plId, { isPriceGapExceeded: true, lastError: "가격 차이 초과로 결제 중단" }); } } catch (e) { console.error("[swadpia] poLine 가격 차이 기록 에러 (무시):", e.message); }
             return res.json({ success: false, vendor: vendor.name, error: `가격 차이 초과로 결제 중단` });
           }
           console.log("[swadpia] 장바구니 검증 통과");
@@ -2095,6 +2102,20 @@ async function processSwadpiaOrder(
         vendor: "swadpia",
       });
 
+      // poLine 성공 기록
+      try {
+        for (let i = 0; i < products.length; i++) {
+          const p = products[i];
+          const plId = poLineIds?.[i];
+          if (!plId) continue;
+          await updatePoLineSuccess(authToken, plId, {
+            openMallProductId: p.productSku || null,
+            openMallProductName: p.productName || null,
+            openMallOption: p.openMallOptions ? (typeof p.openMallOptions === "string" ? p.openMallOptions : JSON.stringify(p.openMallOptions)) : null,
+          });
+        }
+      } catch (e) { console.error("[swadpia] poLine 성공 기록 에러 (무시):", e.message); }
+
       // 결제 로그 저장 (파싱 실패 시 0원으로 저장 → 대시보드에서 수동 수정)
       const actualAmount = orderResult?.actualPaymentAmount || 0;
       try {
@@ -2113,6 +2134,9 @@ async function processSwadpiaOrder(
       }
     } else {
       // 실패: 장바구니 검증 실패 또는 결제 실패
+      // poLine 실패 기록
+      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: orderResult?.error || "장바구니 검증 실패 또는 결제 실패" }); } } catch (e) { console.error("[swadpia] poLine 실패 기록 에러 (무시):", e.message); }
+
       await saveOrderResults(authToken, {
         purchaseOrderId,
         products: [],
@@ -2174,6 +2198,9 @@ async function processSwadpiaOrder(
     });
   } catch (error) {
     console.error("[swadpia] 주문 처리 에러:", error);
+
+    // poLine 실패 기록
+    try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: error.message }); } } catch (e) { console.error("[swadpia] poLine 실패 기록 에러 (무시):", e.message); }
 
     // 에러 발생 시에도 임시 파일 정리
     console.log("[swadpia] 임시 파일 정리 (에러)...");
