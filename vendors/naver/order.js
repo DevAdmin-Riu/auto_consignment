@@ -25,6 +25,7 @@
  */
 
 const { login } = require("./login");
+const { checkPrice } = require("../../lib/price-check");
 const Tesseract = require("tesseract.js");
 const sharp = require("sharp");
 const path = require("path");
@@ -2214,37 +2215,41 @@ async function processNaverOrder(
     }
 
     // 3.5. 가격 차이 체크 — 오픈몰이 5,000원 이상 비싸면 STOP
-    const PRICE_DIFF_THRESHOLD = 5000;
     for (const ap of addedProducts) {
       if (!ap.addedToCart || !ap.openMallPrice || !ap.vendorPriceExcludeVat) continue;
       const ourQuantity = ap.quantity || 1;
       const openMallUnitPrice = Math.round(ap.openMallPrice / ourQuantity);
-      const systemPrice = Math.round(ap.vendorPriceExcludeVat * 1.1);
-      const priceDiff = openMallUnitPrice - systemPrice;
+      const priceResult = checkPrice(openMallUnitPrice, ap.vendorPriceExcludeVat);
 
-      if (priceDiff > PRICE_DIFF_THRESHOLD) {
-        const reason = `가격 차이 초과로 결제 중단: 오픈몰 ${openMallUnitPrice}원 vs 시스템 ${systemPrice}원 (차이 +${priceDiff}원) - ${ap.productName}`;
-        console.error(`[naver] ❌ ${reason}`);
-        try {
-          await createNeedsManagerVerification(authToken, [{
+      if (priceResult.shouldStop) {
+        if (priceResult.isExtractionFailure) {
+          errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, `가격 추출 실패 - ${ap.productName}`, {
             purchaseOrderId,
             productVariantVendorId: ap.productVariantVendorId,
-            reason,
-          }]);
-        } catch (e) {
-          console.error(`[naver] 담당자 확인 필요 저장 실패: ${e.message}`);
+          });
+        } else {
+          const reason = `가격 차이 초과로 결제 중단: ${priceResult.reason} - ${ap.productName}`;
+          console.error(`[naver] ❌ ${reason}`);
+          try {
+            await createNeedsManagerVerification(authToken, [{
+              purchaseOrderId,
+              productVariantVendorId: ap.productVariantVendorId,
+              reason,
+            }]);
+          } catch (e) {
+            console.error(`[naver] 담당자 확인 필요 저장 실패: ${e.message}`);
+          }
         }
-        return res.json({ success: false, error: reason });
+        return res.json({ success: false, error: priceResult.reason });
       }
 
-      // 가격 차이 기록 (10원 초과면 기록)
-      if (Math.abs(priceDiff) > 10) {
+      if (priceResult.hasMismatch) {
         priceMismatches.push({
           productVariantVendorId: ap.productVariantVendorId,
           vendorPriceExcludeVat: ap.vendorPriceExcludeVat,
           openMallPrice: openMallUnitPrice,
         });
-        console.log(`[naver] 가격 불일치 기록: 오픈몰 ${openMallUnitPrice}원 vs 시스템 ${systemPrice}원 (차이 ${priceDiff}원)`);
+        console.log(`[naver] 가격 불일치 기록: 오픈몰 ${openMallUnitPrice}원 vs 시스템 ${priceResult.systemPriceWithVat}원 (차이 ${priceResult.priceDiff}원)`);
       }
     }
 
