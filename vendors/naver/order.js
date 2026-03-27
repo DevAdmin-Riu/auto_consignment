@@ -1560,6 +1560,15 @@ async function selectDeliveryAddress(page, shippingAddress) {
 async function addToCart(page) {
   console.log("[naver] 장바구니 담기...");
 
+  // alert 감지 준비
+  let alertMessage = null;
+  const dialogHandler = async (dialog) => {
+    alertMessage = dialog.message();
+    console.log(`[naver] 장바구니 담기 alert 감지: "${alertMessage}"`);
+    await dialog.accept();
+  };
+  page.on("dialog", dialogHandler);
+
   // 장바구니 버튼 클릭 (data 속성 + 텍스트 폴백)
   const cartClicked = await page.evaluate(() => {
     // 1) data-shp-area="pcs.cart" 속성으로 찾기 (가장 정확)
@@ -1581,15 +1590,22 @@ async function addToCart(page) {
   });
 
   if (!cartClicked) {
+    page.off("dialog", dialogHandler);
     console.log("[naver] 장바구니 버튼 없음");
-    return false;
+    return { success: false, error: "장바구니 버튼 없음" };
   }
 
   console.log(`[naver] 장바구니 버튼 클릭 (${cartClicked})`);
-  await delay(1000);
-  // 모달/레이어 무시 - 다음 상품 페이지로 직접 goto 하므로 처리 불필요
+  await delay(1500);
+  page.off("dialog", dialogHandler);
 
-  return true;
+  // alert이 떴으면 실패
+  if (alertMessage) {
+    console.log(`[naver] ❌ 장바구니 담기 실패 (alert): ${alertMessage}`);
+    return { success: false, error: alertMessage };
+  }
+
+  return { success: true };
 }
 
 /**
@@ -1701,7 +1717,20 @@ async function processProduct(page, product) {
   }
 
   // 5. 장바구니에 담기
-  const addedToCart = await addToCart(page);
+  const cartResult = await addToCart(page);
+
+  if (!cartResult.success) {
+    console.log(`[naver] ❌ 장바구니 담기 실패: ${cartResult.error}`);
+    return {
+      success: false,
+      productName,
+      quantity,
+      openMallPrice: null,
+      priceMismatch: false,
+      cartFailed: true,
+      cartFailReason: cartResult.error,
+    };
+  }
 
   // 6. 가격 비교 (위탁가와 오픈몰 가격)
   // openMallPrice = 네이버 "총 상품 금액" (배수수량 × 우리수량 포함된 총액)
@@ -1730,11 +1759,11 @@ async function processProduct(page, product) {
 
   console.log("[naver] 장바구니 담기 완료");
   return {
-    success: addedToCart,
+    success: true,
     productName,
     quantity,
     openMallPrice,
-    vendorPriceExcludeVat, // 협력사 매입가 (VAT 별도)
+    vendorPriceExcludeVat,
     priceMismatch,
   };
 }
@@ -2101,6 +2130,41 @@ async function processNaverOrder(
             console.log(`[naver] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
           }
           continue; // 다음 상품으로
+        }
+
+        // 장바구니 담기 실패 (alert 등) → 담당자 확인 + 에러 로그 + 전체 그룹 중단
+        if (result.cartFailed) {
+          const reason = result.cartFailReason || "장바구니 담기 실패";
+          console.error(`[naver] ❌ 장바구니 담기 실패로 전체 그룹 중단: ${reason}`);
+          try {
+            await createNeedsManagerVerification(authToken, [{
+              productVariantVendorId: product.productVariantVendorId,
+              purchaseOrderId,
+              reason: `장바구니 담기 실패: ${reason}`,
+            }]);
+          } catch (e) {
+            console.error(`[naver] 담당자 확인 필요 저장 실패: ${e.message}`);
+          }
+          errorCollector.addError(
+            ORDER_STEPS.ADD_TO_CART,
+            ERROR_CODES.CLICK_FAILED,
+            `장바구니 담기 실패 (alert): ${reason}`,
+            { purchaseOrderId, productVariantVendorId: product.productVariantVendorId },
+          );
+          await saveOrderResults(authToken, {
+            purchaseOrderId,
+            products: [],
+            automationErrors: errorCollector.getErrors(),
+            poLineIds,
+            success: false,
+            vendor: "naver",
+          });
+          return res.json({
+            success: false,
+            message: `장바구니 담기 실패: ${reason}`,
+            steps,
+            purchaseOrderId,
+          });
         }
 
         addedProducts.push({
