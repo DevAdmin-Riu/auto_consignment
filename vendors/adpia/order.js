@@ -1985,8 +1985,6 @@ async function processAdpiaOrder(
           } catch (e) {
             console.error(`[adpia] 담당자 확인 필요 저장 실패: ${e.message}`);
           }
-          errorCollector.addError(currentStep, ERROR_CODES.UNEXPECTED_ERROR, reason,
-            { purchaseOrderId, productVariantVendorId: product.productVariantVendorId });
           results.push({ lineId: poLineIds?.[productIndex], productSku: product.productSku, productName: product.productName, success: false, message: reason, priceInfo });
           continue;
         }

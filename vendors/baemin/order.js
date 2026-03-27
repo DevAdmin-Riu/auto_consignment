@@ -3067,25 +3067,6 @@ async function processBaeminOrder(
               } catch (e) {
                 console.error(`[baemin] 담당자 확인 필요 저장 실패: ${e.message}`);
               }
-              errorCollector.addError(
-                ORDER_STEPS.ORDER_PLACEMENT,
-                ERROR_CODES.UNEXPECTED_ERROR,
-                reason,
-                { purchaseOrderId, productVariantVendorId: product.productVariantVendorId },
-              );
-              await saveOrderResults(authToken, {
-                purchaseOrderId,
-                products: [],
-                priceMismatches: openMallUnitPrice ? [{
-                  productVariantVendorId: product.productVariantVendorId,
-                  vendorPriceExcludeVat,
-                  openMallPrice: openMallUnitPrice,
-                }] : [],
-                automationErrors: errorCollector.getErrors(),
-                poLineIds: group.products.map((p) => poLineIds?.[p._originalIndex]).filter(Boolean),
-                success: false,
-                vendor: "baemin",
-              });
               groupOrderSuccess = false;
               break;
             }

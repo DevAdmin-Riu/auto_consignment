@@ -1014,14 +1014,6 @@ async function processNapkinOrder(
             } catch (e) {
               console.error(`[napkin] 담당자 확인 필요 저장 실패: ${e.message}`);
             }
-            errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.UNEXPECTED_ERROR, reason,
-              { purchaseOrderId, purchaseOrderLineId: lineId, productVariantVendorId: product.productVariantVendorId });
-            await saveOrderResults(authToken, {
-              purchaseOrderId, products: [],
-              priceMismatches: [{ productVariantVendorId: product.productVariantVendorId, vendorPriceExcludeVat: product.vendorPriceExcludeVat, openMallPrice: priceInfo.unitPrice || 0 }],
-              automationErrors: errorCollector.getErrors(),
-              poLineIds, success: false, vendor: "napkin",
-            });
             return res.json({ success: false, vendor: vendor.name, error: reason });
           }
         }

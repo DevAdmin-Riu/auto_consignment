@@ -546,20 +546,6 @@ async function processCoupangOrder(
                 } catch (e) {
                   console.error(`[coupang] 담당자 확인 필요 저장 실패: ${e.message}`);
                 }
-                errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.UNEXPECTED_ERROR, errorMessage, {
-                  purchaseOrderId,
-                  productVariantVendorId: ap.productVariantVendorId,
-                });
-                await saveOrderResults(authToken, {
-                  purchaseOrderId,
-                  products: [],
-                  priceMismatches: [],
-                  optionFailedProducts: [],
-                  automationErrors: errorCollector.getErrors(),
-                  poLineIds,
-                  success: false,
-                  vendor: "coupang",
-                });
                 return res.json({ success: false, error: errorMessage });
               }
 

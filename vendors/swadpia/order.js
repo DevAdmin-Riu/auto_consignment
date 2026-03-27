@@ -1938,19 +1938,7 @@ async function processSwadpiaOrder(
               } catch (e) {
                 console.error(`[swadpia] 담당자 확인 필요 저장 실패: ${e.message}`);
               }
-              errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, ERROR_CODES.UNEXPECTED_ERROR, reason,
-                { purchaseOrderId, productVariantVendorId: pm.productVariantVendorId });
             }
-            await saveOrderResults(authToken, {
-              purchaseOrderId, products: [],
-              priceMismatches: cartVerification.priceMismatches.map((pm) => ({
-                productVariantVendorId: pm.productVariantVendorId,
-                vendorPriceExcludeVat: pm.vendorPriceExcludeVat,
-                openMallPrice: pm.openMallPrice,
-              })),
-              automationErrors: errorCollector.getErrors(),
-              poLineIds, success: false, vendor: "swadpia",
-            });
             return res.json({ success: false, vendor: vendor.name, error: `가격 차이 초과로 결제 중단` });
           }
           console.log("[swadpia] 장바구니 검증 통과");
