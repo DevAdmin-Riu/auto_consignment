@@ -996,15 +996,24 @@ async function processNapkinOrder(
           }
         }
 
-        // 3-3.5. 가격 차이 5,000원 초과 또는 추출 실패 → 전체 그룹 결제 중단 (배치 주문)
+        // 3-3.5. 가격 체크: 오픈몰이 더 비싸면 STOP, 오픈몰이 더 싸면 진행
         const PRICE_DIFF_THRESHOLD = 5000;
         if (priceInfo) {
-          const absDiff = Math.abs(priceInfo.difference || 0);
-          if (priceInfo.priceMismatch && (!priceInfo.unitPrice || absDiff > PRICE_DIFF_THRESHOLD)) {
+          const priceDiff = priceInfo.difference || 0; // 양수 = 오픈몰이 더 비쌈
+          if (priceInfo.priceMismatch && (!priceInfo.unitPrice || priceDiff > PRICE_DIFF_THRESHOLD)) {
             const reason = !priceInfo.unitPrice
               ? `가격 추출 실패로 결제 중단: ${product.productSku}`
-              : `가격 차이 ${absDiff}원 초과로 결제 중단: 냅킨 ${priceInfo.unitPrice}원 vs 시스템 ${priceInfo.expectedUnitPrice}원`;
+              : `가격 차이 초과로 결제 중단: 냅킨 ${priceInfo.unitPrice}원 vs 시스템 ${priceInfo.expectedUnitPrice}원 (차이 +${priceDiff}원)`;
             console.error(`[napkin] ❌ ${reason}`);
+            try {
+              await createNeedsManagerVerification(authToken, [{
+                purchaseOrderId,
+                productVariantVendorId: product.productVariantVendorId,
+                reason,
+              }]);
+            } catch (e) {
+              console.error(`[napkin] 담당자 확인 필요 저장 실패: ${e.message}`);
+            }
             errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.UNEXPECTED_ERROR, reason,
               { purchaseOrderId, purchaseOrderLineId: lineId, productVariantVendorId: product.productVariantVendorId });
             await saveOrderResults(authToken, {

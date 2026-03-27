@@ -1918,17 +1918,26 @@ async function processSwadpiaOrder(
           cartVerification.unexpectedItems.length > 0;
 
         if (!needsRetry) {
-          // 가격 차이 5,000원 초과 체크
+          // 가격 체크: 오픈몰이 더 비싸면 STOP, 오픈몰이 더 싸면 진행
           const PRICE_DIFF_THRESHOLD = 5000;
           const bigPriceDiffs = (cartVerification.priceMismatches || []).filter(
-            (pm) => Math.abs(pm.difference || 0) > PRICE_DIFF_THRESHOLD || !pm.openMallPrice,
+            (pm) => (pm.difference || 0) > PRICE_DIFF_THRESHOLD || !pm.openMallPrice,
           );
           if (bigPriceDiffs.length > 0) {
             for (const pm of bigPriceDiffs) {
               const reason = !pm.openMallPrice
                 ? `가격 추출 실패로 결제 중단: ${pm.productCode}`
-                : `가격 차이 ${Math.abs(pm.difference)}원 초과로 결제 중단: 오픈몰 ${pm.openMallPrice}원 vs 시스템 ${pm.expectedPrice}원`;
+                : `가격 차이 초과로 결제 중단: 오픈몰 ${pm.openMallPrice}원 vs 시스템 ${pm.expectedPrice}원 (차이 +${pm.difference}원)`;
               console.error(`[swadpia] ❌ ${reason}`);
+              try {
+                await createNeedsManagerVerification(authToken, [{
+                  purchaseOrderId,
+                  productVariantVendorId: pm.productVariantVendorId,
+                  reason,
+                }]);
+              } catch (e) {
+                console.error(`[swadpia] 담당자 확인 필요 저장 실패: ${e.message}`);
+              }
               errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, ERROR_CODES.UNEXPECTED_ERROR, reason,
                 { purchaseOrderId, productVariantVendorId: pm.productVariantVendorId });
             }
@@ -1942,7 +1951,7 @@ async function processSwadpiaOrder(
               automationErrors: errorCollector.getErrors(),
               poLineIds, success: false, vendor: "swadpia",
             });
-            return res.json({ success: false, vendor: vendor.name, error: `가격 차이 ${PRICE_DIFF_THRESHOLD}원 초과로 결제 중단` });
+            return res.json({ success: false, vendor: vendor.name, error: `가격 차이 초과로 결제 중단` });
           }
           console.log("[swadpia] 장바구니 검증 통과");
           break; // 검증 통과, 루프 종료

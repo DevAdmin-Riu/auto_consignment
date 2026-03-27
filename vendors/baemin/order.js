@@ -3050,21 +3050,29 @@ async function processBaeminOrder(
               console.log(`[baemin] ✅ 가격 일치: ${openMallUnitPrice}원`);
             }
 
-            // 가격 차이 5,000원 초과 또는 가격 추출 실패 → 그룹 전체 결제 중단
+            // 가격 차이 체크: 오픈몰이 더 비싸면 STOP, 오픈몰이 더 싸면 진행
             const PRICE_DIFF_THRESHOLD = 5000;
-            const priceDiff = openMallUnitPrice && expectedPrice > 0 ? Math.abs(openMallUnitPrice - expectedPrice) : 0;
+            const priceDiff = openMallUnitPrice && expectedPrice > 0 ? (openMallUnitPrice - expectedPrice) : 0;
             if (!openMallUnitPrice || (priceDiff > PRICE_DIFF_THRESHOLD)) {
               const reason = !openMallUnitPrice
                 ? `가격 추출 실패로 그룹 결제 중단: ${product.productName}`
-                : `가격 차이 ${priceDiff}원 초과로 그룹 결제 중단: 오픈몰 ${openMallUnitPrice}원 vs 시스템 ${expectedPrice}원`;
+                : `가격 차이 초과로 그룹 결제 중단: 오픈몰 ${openMallUnitPrice}원 vs 시스템 ${expectedPrice}원 (차이 +${priceDiff}원)`;
               console.error(`[baemin] ❌ ${reason}`);
+              try {
+                await createNeedsManagerVerification(authToken, [{
+                  purchaseOrderId,
+                  productVariantVendorId: product.productVariantVendorId,
+                  reason,
+                }]);
+              } catch (e) {
+                console.error(`[baemin] 담당자 확인 필요 저장 실패: ${e.message}`);
+              }
               errorCollector.addError(
                 ORDER_STEPS.ORDER_PLACEMENT,
                 ERROR_CODES.UNEXPECTED_ERROR,
                 reason,
                 { purchaseOrderId, productVariantVendorId: product.productVariantVendorId },
               );
-              // 그룹 전체 실패 처리
               await saveOrderResults(authToken, {
                 purchaseOrderId,
                 products: [],
@@ -3079,7 +3087,7 @@ async function processBaeminOrder(
                 vendor: "baemin",
               });
               groupOrderSuccess = false;
-              break; // 이 그룹 전체 중단
+              break;
             }
 
             // 장바구니 담기 성공한 상품 기록

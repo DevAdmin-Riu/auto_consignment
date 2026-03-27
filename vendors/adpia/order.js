@@ -1968,18 +1968,27 @@ async function processAdpiaOrder(
           difference: openMallPriceExcludeVat - expectedPrice,
         };
 
-        // 가격 추출 실패 또는 5,000원 초과 차이 → 결제 중단
+        // 가격 체크: 오픈몰이 더 비싸면 STOP, 오픈몰이 더 싸면 진행
         const PRICE_DIFF_THRESHOLD = 5000;
-        const absDiff = Math.abs(openMallPriceExcludeVat - expectedPrice);
-        if (!openMallPrice || (expectedPrice > 0 && absDiff > PRICE_DIFF_THRESHOLD)) {
+        const priceDiff = openMallPriceExcludeVat - expectedPrice;
+        if (!openMallPrice || (expectedPrice > 0 && priceDiff > PRICE_DIFF_THRESHOLD)) {
           const reason = !openMallPrice
             ? `가격 추출 실패로 결제 중단: ${product.productSku}`
-            : `가격 차이 ${absDiff}원 초과로 결제 중단: 오픈몰 ${openMallPriceExcludeVat}원 vs 시스템 ${expectedPrice}원 (VAT별도)`;
+            : `가격 차이 초과로 결제 중단: 오픈몰 ${openMallPriceExcludeVat}원 vs 시스템 ${expectedPrice}원 (차이 +${priceDiff}원, VAT별도)`;
           console.error(`[adpia] ❌ ${reason}`);
+          try {
+            await createNeedsManagerVerification(authToken, [{
+              purchaseOrderId,
+              productVariantVendorId: product.productVariantVendorId,
+              reason,
+            }]);
+          } catch (e) {
+            console.error(`[adpia] 담당자 확인 필요 저장 실패: ${e.message}`);
+          }
           errorCollector.addError(currentStep, ERROR_CODES.UNEXPECTED_ERROR, reason,
             { purchaseOrderId, productVariantVendorId: product.productVariantVendorId });
           results.push({ lineId: poLineIds?.[productIndex], productSku: product.productSku, productName: product.productName, success: false, message: reason, priceInfo });
-          continue; // 이 상품 중단, 다음 상품으로
+          continue;
         }
 
         // 2-4. 주문 페이지에서 처리 (수량 입력, 파일 업로드, 장바구니 담기)

@@ -42,6 +42,7 @@ const {
   saveOrderResults,
   createPaymentLogs,
   createAutomationErrors,
+  createNeedsManagerVerification,
 } = require("../../lib/graphql-client");
 const Tesseract = require("tesseract.js");
 const sharp = require("sharp");
@@ -532,9 +533,19 @@ async function processCoupangOrder(
               const systemPrice = Math.round(ap.vendorPriceExcludeVat * 1.1); // 시스템가 VAT 포함
               const priceDiff = openMallPrice - systemPrice;
 
-              if (Math.abs(priceDiff) > PRICE_DIFF_THRESHOLD) {
-                const errorMessage = `가격 차이 초과로 결제 중단: 오픈몰 ${openMallPrice}원 vs 시스템 ${systemPrice}원 (차이 ${priceDiff}원) - ${ap.productName}`;
+              if (priceDiff > PRICE_DIFF_THRESHOLD) {
+                // 오픈몰이 더 비싸면 STOP + 담당자 확인 필요
+                const errorMessage = `가격 차이 초과로 결제 중단: 오픈몰 ${openMallPrice}원 vs 시스템 ${systemPrice}원 (차이 +${priceDiff}원) - ${ap.productName}`;
                 console.log(`[coupang] ⚠️ ${errorMessage}`);
+                try {
+                  await createNeedsManagerVerification(authToken, [{
+                    purchaseOrderId,
+                    productVariantVendorId: ap.productVariantVendorId,
+                    reason: errorMessage,
+                  }]);
+                } catch (e) {
+                  console.error(`[coupang] 담당자 확인 필요 저장 실패: ${e.message}`);
+                }
                 errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.UNEXPECTED_ERROR, errorMessage, {
                   purchaseOrderId,
                   productVariantVendorId: ap.productVariantVendorId,
@@ -552,7 +563,7 @@ async function processCoupangOrder(
                 return res.json({ success: false, error: errorMessage });
               }
 
-              // 불일치는 있지만 5,000원 이하 → 기록만
+              // 가격 차이 기록 (오픈몰이 싸든 비싸든 10원 초과면 기록)
               if (Math.abs(priceDiff) > 10) {
                 priceMismatches.push({
                   productVariantVendorId: ap.productVariantVendorId,
