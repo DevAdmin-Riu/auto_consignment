@@ -1873,7 +1873,7 @@ async function processSwadpiaOrder(
       errorCollector.addError(ORDER_STEPS.CART_CLEARING, ERROR_CODES.CLICK_FAILED,
         "장바구니 비우기 실패", { purchaseOrderId });
       // poLine 실패 기록
-      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: "장바구니 비우기 실패" }); } } catch (e2) { console.error("[swadpia] poLine 실패 기록 에러 (무시):", e2.message); }
+      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "장바구니 비우기 실패" }); } } catch (e2) { console.error("[swadpia] poLine 실패 기록 에러 (무시):", e2.message); }
       await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "swadpia" });
       return res.json({ success: false, vendor: vendor.name, error: "장바구니 비우기 실패" });
     }
@@ -2135,7 +2135,7 @@ async function processSwadpiaOrder(
     } else {
       // 실패: 장바구니 검증 실패 또는 결제 실패
       // poLine 실패 기록
-      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: orderResult?.error || "장바구니 검증 실패 또는 결제 실패" }); } } catch (e) { console.error("[swadpia] poLine 실패 기록 에러 (무시):", e.message); }
+      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: orderResult?.error || "장바구니 검증 실패 또는 결제 실패" }); } } catch (e) { console.error("[swadpia] poLine 실패 기록 에러 (무시):", e.message); }
 
       await saveOrderResults(authToken, {
         purchaseOrderId,
@@ -2200,7 +2200,7 @@ async function processSwadpiaOrder(
     console.error("[swadpia] 주문 처리 에러:", error);
 
     // poLine 실패 기록
-    try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: error.message }); } } catch (e) { console.error("[swadpia] poLine 실패 기록 에러 (무시):", e.message); }
+    try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: error.message }); } } catch (e) { console.error("[swadpia] poLine 실패 기록 에러 (무시):", e.message); }
 
     // 에러 발생 시에도 임시 파일 정리
     console.log("[swadpia] 임시 파일 정리 (에러)...");

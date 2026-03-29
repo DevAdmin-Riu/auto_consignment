@@ -822,7 +822,7 @@ async function processNapkinOrder(
         { purchaseOrderId },
       );
       // poLine 실패 기록
-      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: `로그인 실패: ${loginResult.message}` }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
+      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: `로그인 실패: ${loginResult.message}` }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
 
       await saveOrderResults(authToken, {
         purchaseOrderId,
@@ -866,7 +866,7 @@ async function processNapkinOrder(
       errorCollector.addError(ORDER_STEPS.CART_CLEARING, ERROR_CODES.CLICK_FAILED,
         `장바구니 비우기 실패: ${clearResult.message}`, { purchaseOrderId });
       // poLine 실패 기록
-      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: `장바구니 비우기 실패: ${clearResult.message}` }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
+      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: `장바구니 비우기 실패: ${clearResult.message}` }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
       await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "napkin" });
       return res.json({ success: false, vendor: vendor.name, error: `장바구니 비우기 실패: ${clearResult.message}` });
     }
@@ -1017,7 +1017,7 @@ async function processNapkinOrder(
                 productVariantVendorId: product.productVariantVendorId,
               });
               // poLine 가격 추출 실패 기록
-              try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: reason }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
+              try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: reason }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
               return res.json({ success: false, vendor: vendor.name, error: reason });
             } else {
               const reason = `가격 차이 초과로 결제 중단: ${priceResult.reason}`;
@@ -1112,7 +1112,7 @@ async function processNapkinOrder(
           reason: r.message,
         }));
       // poLine 실패 기록
-      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: "모든 상품 처리 실패" }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
+      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "모든 상품 처리 실패" }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
 
       await saveOrderResults(authToken, {
         purchaseOrderId,
@@ -2187,7 +2187,7 @@ async function processNapkinOrder(
         { purchaseOrderId },
       );
       // poLine 실패 기록
-      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: "신한카드 결제 실패 - 최대 재시도 초과" }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
+      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "신한카드 결제 실패 - 최대 재시도 초과" }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
 
       await saveOrderResults(authToken, {
         purchaseOrderId,
@@ -2370,7 +2370,7 @@ async function processNapkinOrder(
     }
 
     // poLine 실패 기록
-    try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, { lastError: error.message }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
+    try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: error.message }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
 
     await saveOrderResults(authToken, {
       purchaseOrderId,

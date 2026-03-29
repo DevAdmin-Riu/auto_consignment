@@ -2071,7 +2071,7 @@ async function processNaverOrder(
       // poLine 실패 기록
       try {
         for (const plId of (poLineIds || [])) {
-          await updatePoLineFailure(authToken, plId, { lastError: `로그인 실패: ${loginError.message}` });
+          await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: `로그인 실패: ${loginError.message}` });
         }
       } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
 
@@ -2109,7 +2109,7 @@ async function processNaverOrder(
       // poLine 실패 기록
       try {
         for (const plId of (poLineIds || [])) {
-          await updatePoLineFailure(authToken, plId, { lastError: `장바구니 비우기 실패: ${cartError.message}` });
+          await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: `장바구니 비우기 실패: ${cartError.message}` });
         }
       } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
 
@@ -2174,7 +2174,7 @@ async function processNaverOrder(
           // poLine 실패 기록
           try {
             for (const plId of (poLineIds || [])) {
-              await updatePoLineFailure(authToken, plId, { lastError: `장바구니 담기 실패: ${reason}` });
+              await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: `장바구니 담기 실패: ${reason}` });
             }
           } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
 
@@ -2223,7 +2223,7 @@ async function processNaverOrder(
         // poLine 실패 기록
         try {
           for (const plId of (poLineIds || [])) {
-            await updatePoLineFailure(authToken, plId, { lastError: `상품 처리 실패: ${product.productName} - ${error.message}` });
+            await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: `상품 처리 실패: ${product.productName} - ${error.message}` });
           }
         } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
 
@@ -2316,7 +2316,7 @@ async function processNaverOrder(
         // poLine 실패 기록
         try {
           for (const plId of (poLineIds || [])) {
-            await updatePoLineFailure(authToken, plId, { lastError: `옵션 선택 실패로 주문 불가 (${optionFailedProducts.length}건)` });
+            await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: `옵션 선택 실패로 주문 불가 (${optionFailedProducts.length}건)` });
           }
         } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
 
@@ -2354,7 +2354,7 @@ async function processNaverOrder(
       // poLine 실패 기록
       try {
         for (const plId of (poLineIds || [])) {
-          await updatePoLineFailure(authToken, plId, { lastError: "장바구니에 담긴 상품이 없음" });
+          await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "장바구니에 담긴 상품이 없음" });
         }
       } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
 
@@ -2422,7 +2422,7 @@ async function processNaverOrder(
       // poLine 실패 기록
       try {
         for (const plId of (poLineIds || [])) {
-          await updatePoLineFailure(authToken, plId, { lastError: "주문하기 버튼을 찾을 수 없음" });
+          await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "주문하기 버튼을 찾을 수 없음" });
         }
       } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
 
@@ -2469,7 +2469,7 @@ async function processNaverOrder(
             // poLine 실패 기록
             try {
               for (const plId of (poLineIds || [])) {
-                await updatePoLineFailure(authToken, plId, { lastError: `배송지 선택 실패: ${addressResult.reason}` });
+                await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: `배송지 선택 실패: ${addressResult.reason}` });
               }
             } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
 
@@ -2529,7 +2529,7 @@ async function processNaverOrder(
         // poLine 실패 기록
         try {
           for (const plId of (poLineIds || [])) {
-            await updatePoLineFailure(authToken, plId, { lastError: "배송지 검증 실패 (주소 불일치)" });
+            await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "배송지 검증 실패 (주소 불일치)" });
           }
         } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
 
@@ -2575,7 +2575,7 @@ async function processNaverOrder(
         // poLine 실패 기록
         try {
           for (const plId of (poLineIds || [])) {
-            await updatePoLineFailure(authToken, plId, { lastError: `통관 처리 실패: ${customsResult.reason}` });
+            await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: `통관 처리 실패: ${customsResult.reason}` });
           }
         } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
 
@@ -2713,7 +2713,7 @@ async function processNaverOrder(
         // poLine 실패 기록
         try {
           for (const plId of (poLineIds || [])) {
-            await updatePoLineFailure(authToken, plId, { lastError: "결제 팝업이 열리지 않음" });
+            await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "결제 팝업이 열리지 않음" });
           }
         } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
 
@@ -2753,7 +2753,7 @@ async function processNaverOrder(
         // poLine 실패 기록
         try {
           for (const plId of (poLineIds || [])) {
-            await updatePoLineFailure(authToken, plId, { lastError: "네이버페이 PIN이 설정되지 않음" });
+            await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "네이버페이 PIN이 설정되지 않음" });
           }
         } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
 
@@ -2985,7 +2985,7 @@ async function processNaverOrder(
         // poLine 실패 기록
         try {
           for (const plId of (poLineIds || [])) {
-            await updatePoLineFailure(authToken, plId, { lastError: "네이버페이 비밀번호 입력 실패" });
+            await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "네이버페이 비밀번호 입력 실패" });
           }
         } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
 
@@ -3022,7 +3022,7 @@ async function processNaverOrder(
       // poLine 실패 기록
       try {
         for (const plId of (poLineIds || [])) {
-          await updatePoLineFailure(authToken, plId, { lastError: "결제하기 버튼을 찾을 수 없음" });
+          await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "결제하기 버튼을 찾을 수 없음" });
         }
       } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
 
@@ -3064,7 +3064,7 @@ async function processNaverOrder(
     // poLine 실패 기록
     try {
       for (const plId of (poLineIds || [])) {
-        await updatePoLineFailure(authToken, plId, { lastError: error.message });
+        await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: error.message });
       }
     } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
 
