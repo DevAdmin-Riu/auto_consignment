@@ -73,7 +73,7 @@ AUTO_EMAIL        → 발주서 없음 → n8n 무관
 
 ### 결제:
 
-- `WowPressCreatePaymentLog(ordnum, purchaseOrderId, purchaseOrderLineIds)` — 결제내역 생성
+- `WowPressCreatePaymentLog(purchaseOrderId, paymentAmount)` — 결제내역 생성
 
 ## n8n에서 제거/수정 필요
 

@@ -123,9 +123,9 @@ async function payOutstanding(page, browser, vendor) {
 
   // 미납금 금액 파싱
   const paymentAmount = await page.evaluate(() => {
-    const emphasis = document.querySelector(".deco_wowpress.emphasis.fs18:last-of-type");
-    if (emphasis) {
-      const text = emphasis.textContent.trim();
+    const allSpans = document.querySelectorAll(".deco_wowpress.emphasis.fs18");
+    for (const span of allSpans) {
+      const text = span.textContent.trim();
       const match = text.match(/([\d,]+)\s*원/);
       if (match) return parseInt(match[1].replace(/,/g, ""), 10) || 0;
     }
