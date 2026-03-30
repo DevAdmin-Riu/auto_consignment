@@ -71,6 +71,18 @@ async function login(page, vendor) {
     console.log("[naver] 이미 로그인됨 (로그인 폼 없음)");
   }
 
+  // 패스키 브릿지 페이지 감지 → "30일 동안 안 보기" 체크
+  try {
+    const passkeyCheckbox = await page.$("#notagain");
+    if (passkeyCheckbox) {
+      console.log("[naver] 패스키 브릿지 감지 → 30일 안 보기 체크");
+      await passkeyCheckbox.click();
+      await delay(2000);
+    }
+  } catch (e) {
+    // 무시
+  }
+
   return true;
 }
 
