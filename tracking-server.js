@@ -161,12 +161,13 @@ app.post("/api/vendor/tracking", async (req, res) => {
         page = pageInstance;
       }
 
-      // 벤더별 tracking 함수 호출
+      // 벤더별 tracking 함수 호출 (fulfillmentMap 전달)
       const trackingHandler = trackingHandlers[vendor];
       const trackingResponse = await trackingHandler(
         page,
         vendorConfig,
         openMallOrderNumbers,
+        fulfillmentMap,
       );
 
       // 반환 형식 처리: { results: [...], automationErrors: ... } 또는 배열
@@ -174,12 +175,25 @@ app.post("/api/vendor/tracking", async (req, res) => {
         ? trackingResponse
         : trackingResponse?.results || [];
 
-      // 송장번호가 있는 것만 fulfillmentMap과 병합하여 추가
+      // 결과 병합
       for (const r of results) {
-        if (r.trackingNumber && fulfillmentMap[r.openMallOrderNumber]) {
+        if (!r.trackingNumber) continue;
+
+        // fulfillmentId가 직접 지정된 경우 (상품별 매칭)
+        if (r.fulfillmentId) {
+          trackingResults.push({
+            openMallOrderNumber: r.openMallOrderNumber,
+            trackingNumber: r.trackingNumber,
+            carrier: r.carrier,
+            fulfillmentId: r.fulfillmentId,
+          });
+          continue;
+        }
+
+        // 기존 방식: fulfillmentMap에서 fulfillmentIds 전부 같은 송장
+        if (fulfillmentMap?.[r.openMallOrderNumber]) {
           const fm = fulfillmentMap[r.openMallOrderNumber];
-          // 모든 fulfillmentId에 대해 결과 추가
-          for (const fulfillmentId of fm.fulfillmentIds) {
+          for (const fulfillmentId of (fm.fulfillmentIds || [])) {
             trackingResults.push({
               openMallOrderNumber: r.openMallOrderNumber,
               trackingNumber: r.trackingNumber,
