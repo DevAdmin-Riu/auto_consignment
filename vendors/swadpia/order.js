@@ -49,7 +49,6 @@ const {
   createNeedsManagerVerification,
   updatePoLineFailure,
   updatePoLineSuccess,
-  updatePoLineN8nInfo,
 } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
 const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
@@ -1954,7 +1953,7 @@ async function processSwadpiaOrder(
           }
           if (priceStopRequired) {
             // poLine 가격 차이 초과 기록 (failCount 증가 안함)
-            try { for (const plId of (poLineIds || [])) { await updatePoLineN8nInfo(authToken, plId, { isPriceGapExceeded: true, lastError: "가격 차이 초과로 결제 중단" }); } } catch (e) { console.error("[swadpia] poLine 가격 차이 기록 에러 (무시):", e.message); }
+            try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { isPriceGapExceeded: true, lastError: "가격 차이 초과로 결제 중단" }); } } catch (e) { console.error("[swadpia] poLine 가격 차이 기록 에러 (무시):", e.message); }
             return res.json({ success: false, vendor: vendor.name, error: `가격 차이 초과로 결제 중단` });
           }
           console.log("[swadpia] 장바구니 검증 통과");

@@ -42,7 +42,6 @@ const {
   createNeedsManagerVerification,
   updatePoLineFailure,
   updatePoLineSuccess,
-  updatePoLineN8nInfo,
 } = require("../../lib/graphql-client");
 const { getEnv } = require("../config");
 const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
@@ -2274,7 +2273,7 @@ async function processNaverOrder(
         // poLine 가격 차이 초과 기록 (failCount 증가 안함)
         try {
           for (const plId of (poLineIds || [])) {
-            await updatePoLineN8nInfo(authToken, plId, { isPriceGapExceeded: true, lastError: `가격 차이 초과: ${priceResult.reason} - ${ap.productName}` });
+            await updatePoLineFailure(authToken, plId, purchaseOrderId, { isPriceGapExceeded: true, lastError: `가격 차이 초과: ${priceResult.reason} - ${ap.productName}` });
           }
         } catch (e) { console.error("[naver] poLine 가격 차이 기록 에러 (무시):", e.message); }
         return res.json({ success: false, error: priceResult.reason });

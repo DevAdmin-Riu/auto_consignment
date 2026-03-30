@@ -45,7 +45,6 @@ const {
   createNeedsManagerVerification,
   updatePoLineFailure,
   updatePoLineSuccess,
-  updatePoLineN8nInfo,
 } = require("../../lib/graphql-client");
 const Tesseract = require("tesseract.js");
 const sharp = require("sharp");
@@ -561,7 +560,7 @@ async function processCoupangOrder(
                   }
                 }
                 // poLine 가격 차이 초과 기록 (failCount 증가 안함)
-                try { for (const plId of (poLineIds || [])) { await updatePoLineN8nInfo(authToken, plId, { isPriceGapExceeded: true, lastError: `가격 차이 초과: ${priceResult.reason} - ${ap.productName}` }); } } catch (e) { console.error("[coupang] poLine 가격 차이 기록 에러 (무시):", e.message); }
+                try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { isPriceGapExceeded: true, lastError: `가격 차이 초과: ${priceResult.reason} - ${ap.productName}` }); } } catch (e) { console.error("[coupang] poLine 가격 차이 기록 에러 (무시):", e.message); }
                 return res.json({ success: false, error: priceResult.reason });
               }
 

@@ -42,7 +42,6 @@ const {
   createNeedsManagerVerification,
   updatePoLineFailure,
   updatePoLineSuccess,
-  updatePoLineN8nInfo,
 } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
 const {
@@ -1032,7 +1031,7 @@ async function processNapkinOrder(
                 console.error(`[napkin] 담당자 확인 필요 저장 실패: ${e.message}`);
               }
               // poLine 가격 차이 초과 기록 (failCount 증가 안함)
-              try { for (const plId of (poLineIds || [])) { await updatePoLineN8nInfo(authToken, plId, { isPriceGapExceeded: true, lastError: reason }); } } catch (e) { console.error("[napkin] poLine 가격 차이 기록 에러 (무시):", e.message); }
+              try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { isPriceGapExceeded: true, lastError: reason }); } } catch (e) { console.error("[napkin] poLine 가격 차이 기록 에러 (무시):", e.message); }
               return res.json({ success: false, vendor: vendor.name, error: reason });
             }
           }

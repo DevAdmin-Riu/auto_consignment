@@ -3068,7 +3068,7 @@ async function processBaeminOrder(
               try {
                 for (const gp of group.products) {
                   const plId = poLineIds?.[gp._originalIndex];
-                  if (plId) await updatePoLineN8nInfo(authToken, plId, { isPriceGapExceeded: true, lastError: `가격 차이 초과: ${priceResult.reason}` });
+                  if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { isPriceGapExceeded: true, lastError: `가격 차이 초과: ${priceResult.reason}` });
                 }
               } catch (e) { console.error("[baemin] poLine 가격 차이 기록 에러 (무시):", e.message); }
               break;

@@ -51,7 +51,6 @@ const {
   createNeedsManagerVerification,
   updatePoLineFailure,
   updatePoLineSuccess,
-  updatePoLineN8nInfo,
 } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
 const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
@@ -2034,7 +2033,7 @@ async function processAdpiaOrder(
             }
             results.push({ lineId: poLineIds?.[productIndex], productSku: product.productSku, productName: product.productName, success: false, message: reason, priceInfo });
             // poLine 가격 차이 초과 기록 (failCount 증가 안함)
-            try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineN8nInfo(authToken, plId, { isPriceGapExceeded: true, lastError: reason }); } catch (e) { console.error("[adpia] poLine 가격 차이 기록 에러 (무시):", e.message); }
+            try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { isPriceGapExceeded: true, lastError: reason }); } catch (e) { console.error("[adpia] poLine 가격 차이 기록 에러 (무시):", e.message); }
           }
           continue;
         }
