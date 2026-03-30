@@ -317,7 +317,7 @@ async function processWowpressOrder(
   res,
   page,
   vendor,
-  { browser, products = [], poLineIds = [], purchaseOrderId },
+  { browser, purchaseOrderId },
   authToken,
 ) {
   console.log("\n[wowpress] ===== 와우프레스 결제 시작 =====");
@@ -344,45 +344,30 @@ async function processWowpressOrder(
       });
     }
 
-    // 3. 결제 성공 → 발주접수 + 출고처리 + 결제내역 (백엔드 일괄 처리)
-    if (products.length > 0 && authToken) {
+    // 3. 결제 성공 → 결제내역 저장 (백엔드 처리)
+    if (purchaseOrderId && authToken) {
       const graphqlClient = require("../../lib/graphql-client");
-
-      // ordnum별로 그룹핑 (같은 ordnum에 여러 poLineId가 매핑될 수 있음)
-      const ordnumMap = new Map();
-      for (let i = 0; i < products.length; i++) {
-        const ordnum = products[i].openMallOrderNumber;
-        if (!ordnum) continue;
-        if (!ordnumMap.has(ordnum)) {
-          ordnumMap.set(ordnum, []);
-        }
-        if (poLineIds[i]) {
-          ordnumMap.get(ordnum).push(poLineIds[i]);
-        }
-      }
-
-      for (const [ordnum, lineIds] of ordnumMap) {
-        try {
-          console.log(
-            `[wowpress] 발주접수 + 출고 + 결제내역 처리: ${ordnum} (${lineIds.length}건), 결제금액: ${payResult.paymentAmount || 0}원`,
-          );
-          await graphqlClient.callGraphQL(
-            authToken,
-            `
-            mutation WowPressCreatePaymentLog($ordnum: String!, $purchaseOrderId: ID!, $purchaseOrderLineIds: [ID!]!, $paymentAmount: Int) {
-              wowPressCreatePaymentLog(ordnum: $ordnum, purchaseOrderId: $purchaseOrderId, purchaseOrderLineIds: $purchaseOrderLineIds, paymentAmount: $paymentAmount) {
-                result
-              }
+      try {
+        console.log(
+          `[wowpress] 결제내역 저장: ${purchaseOrderId}, 결제금액: ${payResult.paymentAmount || 0}원`,
+        );
+        await graphqlClient.callGraphQL(
+          authToken,
+          `
+          mutation WowPressCreatePaymentLog($purchaseOrderId: ID!, $paymentAmount: Int!) {
+            wowPressCreatePaymentLog(purchaseOrderId: $purchaseOrderId, paymentAmount: $paymentAmount) {
+              result
+              wowPressErrors { field message }
             }
-          `,
-            { ordnum, purchaseOrderId, purchaseOrderLineIds: lineIds, paymentAmount: payResult.paymentAmount || 0 },
-          );
-          console.log(`[wowpress] ✅ ${ordnum} 처리 완료`);
-        } catch (e) {
-          console.log(
-            `[wowpress] ❌ ${ordnum} 처리 실패: ${e.message}`,
-          );
-        }
+          }
+        `,
+          { purchaseOrderId, paymentAmount: payResult.paymentAmount || 0 },
+        );
+        console.log(`[wowpress] ✅ 결제내역 저장 완료`);
+      } catch (e) {
+        console.log(
+          `[wowpress] ❌ 결제내역 저장 실패: ${e.message}`,
+        );
       }
     }
 
