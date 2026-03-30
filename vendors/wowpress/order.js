@@ -118,8 +118,20 @@ async function payOutstanding(page, browser, vendor) {
 
   if (!hasPayBtn) {
     console.log("[wowpress] 미납금 없음 (기타결제 버튼 없음)");
-    return { success: true, message: "미납금 없음" };
+    return { success: true, message: "미납금 없음", paymentAmount: 0 };
   }
+
+  // 미납금 금액 파싱
+  const paymentAmount = await page.evaluate(() => {
+    const emphasis = document.querySelector(".deco_wowpress.emphasis.fs18:last-of-type");
+    if (emphasis) {
+      const text = emphasis.textContent.trim();
+      const match = text.match(/([\d,]+)\s*원/);
+      if (match) return parseInt(match[1].replace(/,/g, ""), 10) || 0;
+    }
+    return 0;
+  });
+  console.log(`[wowpress] 총 결제해야할 미납금: ${paymentAmount.toLocaleString()}원`);
 
   // 2. 기타결제 버튼 클릭
   console.log("[wowpress] 기타결제 버튼 클릭...");
@@ -296,7 +308,7 @@ async function payOutstanding(page, browser, vendor) {
 
   await delay(2000);
   console.log("[wowpress] 결제 완료!");
-  return { success: true, message: "네이버페이 결제 완료" };
+  return { success: true, message: "네이버페이 결제 완료", paymentAmount };
 }
 
 // ==================== 메인 처리 ====================
@@ -378,6 +390,7 @@ async function processWowpressOrder(
       success: true,
       vendor: vendor.name,
       message: payResult.message,
+      paymentAmount: payResult.paymentAmount || 0,
     });
   } catch (error) {
     console.error("[wowpress] 처리 에러:", error.message);
