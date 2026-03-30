@@ -562,6 +562,7 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
     let maxProgress = 0;
     let modalFoundEarly = false;
     let uploadRetryCount = 0;
+    let stuckAt1PercentSince = null; // 1% 정체 시작 시간
     for (let i = 0; i < 120; i++) {
       await delay(1000);
 
@@ -638,6 +639,37 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
       if (progress !== null) {
         if ((i + 1) % 10 === 0 || progress >= 90) {
           console.log(`[adpia] 업로드 진행률 (${i + 1}초): ${progress}%`);
+        }
+
+        // 1% 정체 감지 — 30초 이상 1% 이하면 업로드 실패로 판단 → 재시도
+        if (progress <= 1) {
+          if (!stuckAt1PercentSince) {
+            stuckAt1PercentSince = i;
+          } else if (i - stuckAt1PercentSince >= 30) {
+            uploadRetryCount++;
+            console.log(`[adpia] ⚠️ 업로드 1% 정체 30초 → 재시도 (${uploadRetryCount}/3)`);
+            if (uploadRetryCount >= 3) {
+              console.error("[adpia] 파일 업로드 3회 정체 - 중단");
+              return { success: false, message: `파일 업로드 정체: ${product.productSku} - 30초 이상 1%`, needsManagerVerification: true };
+            }
+            // 모달 닫고 장바구니 버튼 재클릭
+            await page.evaluate(() => {
+              const btn = document.querySelector(".ajs-modal button.ajs-button.btn_orange");
+              if (btn) btn.click();
+            });
+            await delay(2000);
+            const retryBtn = await page.$(SELECTORS.orderPage.addToCartBtn) || await page.$(SELECTORS.orderPage.addToCartBtnAlt);
+            if (retryBtn) {
+              await retryBtn.click();
+              console.log("[adpia] 장바구니 담기 버튼 재클릭 (업로드 재시도)");
+            }
+            stuckAt1PercentSince = null;
+            maxProgress = 0;
+            await delay(3000);
+            continue;
+          }
+        } else {
+          stuckAt1PercentSince = null; // 1% 넘으면 리셋
         }
 
         // 최대 진행률 갱신
