@@ -364,18 +364,18 @@ async function processWowpressOrder(
       for (const [ordnum, lineIds] of ordnumMap) {
         try {
           console.log(
-            `[wowpress] 발주접수 + 출고 + 결제내역 처리: ${ordnum} (${lineIds.length}건)`,
+            `[wowpress] 발주접수 + 출고 + 결제내역 처리: ${ordnum} (${lineIds.length}건), 결제금액: ${payResult.paymentAmount || 0}원`,
           );
           await graphqlClient.callGraphQL(
             authToken,
             `
-            mutation WowPressCreatePaymentLog($ordnum: String!, $purchaseOrderId: ID!, $purchaseOrderLineIds: [ID!]!) {
-              wowPressCreatePaymentLog(ordnum: $ordnum, purchaseOrderId: $purchaseOrderId, purchaseOrderLineIds: $purchaseOrderLineIds) {
+            mutation WowPressCreatePaymentLog($ordnum: String!, $purchaseOrderId: ID!, $purchaseOrderLineIds: [ID!]!, $paymentAmount: Int) {
+              wowPressCreatePaymentLog(ordnum: $ordnum, purchaseOrderId: $purchaseOrderId, purchaseOrderLineIds: $purchaseOrderLineIds, paymentAmount: $paymentAmount) {
                 result
               }
             }
           `,
-            { ordnum, purchaseOrderId, purchaseOrderLineIds: lineIds },
+            { ordnum, purchaseOrderId, purchaseOrderLineIds: lineIds, paymentAmount: payResult.paymentAmount || 0 },
           );
           console.log(`[wowpress] ✅ ${ordnum} 처리 완료`);
         } catch (e) {
