@@ -1,7 +1,9 @@
 /**
  * 냅킨코리아 송장번호 조회 모듈
  *
- * 주문번호로 냅킨코리아 주문상세에서 송장번호를 크롤링
+ * 주문상세에서 행별로 옵션 + 송장번호 파싱
+ * - 옵션 텍스트로 fulfillment 매칭
+ * - delivery_trace URL에서 invoice_no 직접 추출 (버튼 클릭 불필요)
  */
 
 const { loginToNapkin } = require("./order");
@@ -12,202 +14,311 @@ const {
   ERROR_CODES,
 } = require("../../lib/automation-error");
 
-// 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-// 셀렉터 상수
-// 셀렉터는 사용하지 않음 — evaluate에서 텍스트 기반으로 추출
-const SELECTORS = {};
-
 /**
- * 냅킨코리아 송장번호 조회
- * @param {Page} page - Puppeteer 페이지
- * @param {Object} vendor - 냅킨코리아 협력사 설정
- * @param {string[]} openMallOrderNumbers - 조회할 오픈몰 주문번호 배열
- * @returns {Array} 조회 결과 배열 [{ openMallOrderNumber, trackingNumber, carrier }, ...]
+ * 냅킨코리아 송장번호 조회 (상품별)
+ * @param {Page} page
+ * @param {Object} vendor
+ * @param {string[]} openMallOrderNumbers
+ * @param {Object} fulfillmentMap - { openMallOrderNumber: { fulfillments: [{ fulfillmentId, openMallOptions }] } }
  */
-async function getNapkinTrackingNumbers(page, vendor, openMallOrderNumbers) {
+async function getNapkinTrackingNumbers(page, vendor, openMallOrderNumbers, fulfillmentMap = {}) {
   console.log(`[napkin 송장조회] 시작: ${openMallOrderNumbers.length}건`);
 
   const errorCollector = createTrackingErrorCollector("napkin");
   const results = [];
 
   try {
-    // 1. 로그인 확인/처리
     const loginResult = await loginToNapkin(page, vendor);
     if (!loginResult.success) {
       console.error("[napkin 송장조회] 로그인 실패:", loginResult.message);
-      errorCollector.addError(
-        TRACKING_STEPS.LOGIN,
-        ERROR_CODES.LOGIN_FAILED,
-        loginResult.message,
-      );
+      errorCollector.addError(TRACKING_STEPS.LOGIN, ERROR_CODES.LOGIN_FAILED, loginResult.message);
       return { results, automationErrors: errorCollector.getErrors() };
     }
     console.log("[napkin 송장조회] 로그인 완료");
 
-    // 2. 각 주문번호에 대해 송장번호 조회
     for (const openMallOrderNumber of openMallOrderNumbers) {
       try {
-        console.log(
-          `[napkin 송장조회] 주문번호 ${openMallOrderNumber} 검색 중...`,
-        );
+        console.log(`[napkin 송장조회] 주문번호 ${openMallOrderNumber} 검색 중...`);
 
-        const trackingInfo = await findTrackingNumber(
-          page,
-          openMallOrderNumber,
-        );
+        const orderUrl = `https://www.napkinkorea.co.kr/myshop/order/detail.html?order_id=${openMallOrderNumber}&page=1`;
+        console.log(`[napkin 송장조회] 주문 페이지 이동: ${orderUrl}`);
 
-        if (trackingInfo?.trackingNumber) {
-          const carrier = normalizeCarrier(trackingInfo.carrier);
-          results.push({
-            openMallOrderNumber,
-            trackingNumber: trackingInfo.trackingNumber,
-            carrier,
-          });
-          console.log(
-            `[napkin 송장조회] ${openMallOrderNumber} → ${trackingInfo.trackingNumber} (${carrier})`,
-          );
+        await page.goto(orderUrl, { waitUntil: "networkidle2", timeout: 30000 });
+        await delay(2000);
+
+        const fulfillmentInfo = fulfillmentMap?.[openMallOrderNumber];
+
+        if (fulfillmentInfo?.fulfillments?.length > 0) {
+          // 상품별 매칭 모드
+          const rowResults = await parseAllRows(page, openMallOrderNumber);
+
+          if (rowResults.length === 0) {
+            console.log(`[napkin 송장조회] ${openMallOrderNumber}: 상품 행 없음`);
+            continue;
+          }
+
+          const matched = matchFulfillmentsToRows(fulfillmentInfo.fulfillments, rowResults, openMallOrderNumber);
+
+          for (const m of matched) {
+            if (m.trackingNumber) {
+              results.push({
+                openMallOrderNumber,
+                fulfillmentId: m.fulfillmentId,
+                trackingNumber: m.trackingNumber,
+                carrier: normalizeCarrier(m.carrier),
+              });
+            }
+          }
         } else {
-          console.log(
-            `[napkin 송장조회] ${openMallOrderNumber} → 송장번호 없음`,
-          );
+          // 기존 방식 (하위 호환)
+          const trackingInfo = await findTrackingNumberLegacy(page, openMallOrderNumber);
+          if (trackingInfo?.trackingNumber) {
+            results.push({
+              openMallOrderNumber,
+              trackingNumber: trackingInfo.trackingNumber,
+              carrier: normalizeCarrier(trackingInfo.carrier),
+            });
+            console.log(`[napkin 송장조회] ${openMallOrderNumber} → ${trackingInfo.trackingNumber} (${trackingInfo.carrier})`);
+          } else {
+            console.log(`[napkin 송장조회] ${openMallOrderNumber} → 송장번호 없음`);
+          }
         }
+
+        await delay(1000);
       } catch (error) {
-        console.error(
-          `[napkin 송장조회] ${openMallOrderNumber} 에러:`,
-          error.message,
-        );
-        errorCollector.addError(
-          TRACKING_STEPS.EXTRACTION,
-          ERROR_CODES.EXTRACTION_FAILED,
-          error.message,
-          { openMallOrderNumber },
-        );
+        console.error(`[napkin 송장조회] ${openMallOrderNumber} 에러:`, error.message);
+        errorCollector.addError(TRACKING_STEPS.EXTRACTION, ERROR_CODES.EXTRACTION_FAILED, error.message, { openMallOrderNumber });
       }
     }
 
+    console.log(`[napkin 송장조회] 완료: ${results.length}/${openMallOrderNumbers.length}건 조회됨`);
     return {
       results,
-      automationErrors: errorCollector.hasErrors()
-        ? errorCollector.getErrors()
-        : undefined,
+      automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
     };
   } catch (error) {
     console.error("[napkin 송장조회] 전체 에러:", error);
-    errorCollector.addError(
-      TRACKING_STEPS.EXTRACTION,
-      ERROR_CODES.EXTRACTION_FAILED,
-      error.message,
-    );
-    return {
-      results,
-      automationErrors: errorCollector.hasErrors()
-        ? errorCollector.getErrors()
-        : undefined,
-    };
+    errorCollector.addError(TRACKING_STEPS.EXTRACTION, ERROR_CODES.EXTRACTION_FAILED, error.message);
+    return { results, automationErrors: errorCollector.getErrors() };
   }
 }
 
 /**
- * 주문 상세 페이지에서 송장번호 조회
- * @param {Page} page - Puppeteer 페이지
- * @param {string} openMallOrderNumber - 오픈몰 주문번호
- * @returns {Object|null} 송장 정보 또는 null
+ * 주문상세에서 모든 상품 행 파싱 (옵션 + 송장번호)
+ * @returns {Array} [{ optionText, productName, trackingNumber, carrier, productNo, optId }]
  */
-async function findTrackingNumber(page, openMallOrderNumber) {
-  try {
-    // 1. 주문 상세 페이지로 이동
-    const orderUrl = `https://www.napkinkorea.co.kr/myshop/order/detail.html?order_id=${openMallOrderNumber}&page=1`;
-    console.log(`[napkin 송장조회] 주문 페이지 이동: ${orderUrl}`);
+async function parseAllRows(page, openMallOrderNumber) {
+  const rows = await page.evaluate(() => {
+    const results = [];
+    const trs = document.querySelectorAll("tbody tr.xans-record-");
 
-    await page.goto(orderUrl, {
-      waitUntil: "networkidle2",
-      timeout: 30000,
-    });
-    await delay(2000);
+    for (const tr of trs) {
+      // 옵션 텍스트
+      const optionEl = tr.querySelector("td.left .option");
+      let optionText = optionEl?.textContent?.trim() || "";
+      // "[옵션: xxx]" 에서 xxx 추출
+      const optMatch = optionText.match(/\[옵션:\s*(.+?)\]/);
+      if (optMatch) optionText = optMatch[1].trim();
 
-    // 2. 택배사 + 송장번호 추출 (텍스트 기반)
-    const trackingInfo = await page.evaluate(() => {
-      // "배송완료" 또는 "배송중" 텍스트가 있는 td에서 추출
-      const tds = document.querySelectorAll("td");
-      for (const td of tds) {
-        const statusEl = td.querySelector("p.txtEm");
-        if (!statusEl) continue;
-        const status = statusEl.textContent.trim();
-        if (!status.includes("배송") && !status.includes("발송")) continue;
+      // 상품명
+      const nameEl = tr.querySelector("td.left .name a");
+      const productName = nameEl?.textContent?.trim() || "";
 
-        // 같은 td 내 a 태그들에서 택배사/송장번호 추출
-        const links = td.querySelectorAll("p a");
-        let carrier = null;
-        let trackingNumber = null;
+      // 상품 URL에서 product_no 추출
+      const productLink = nameEl?.getAttribute("href") || "";
+      const prodNoMatch = productLink.match(/\/(\d+)\//);
+      const productNo = prodNoMatch ? prodNoMatch[1] : null;
 
-        for (const link of links) {
-          const text = link.textContent.trim();
-          const href = link.getAttribute("href") || "";
-          const onclick = link.getAttribute("onclick") || "";
+      // 송장번호 + 택배사: delivery_trace URL에서 추출
+      let trackingNumber = null;
+      let carrier = null;
+      let optId = null;
 
-          // delivery_trace 링크 → 택배사명
+      const links = tr.querySelectorAll("td a");
+      for (const link of links) {
+        const href = link.getAttribute("href") || "";
+        const onclick = link.getAttribute("onclick") || "";
+        const text = link.textContent?.trim() || "";
+
+        // delivery_trace URL에서 invoice_no, opt_id 추출
+        const traceUrl = href.includes("delivery_trace") ? href : "";
+        const onclickTrace = onclick.includes("delivery_trace") ? onclick : "";
+        const sourceUrl = traceUrl || onclickTrace;
+
+        if (sourceUrl) {
+          const invoiceMatch = sourceUrl.match(/invoice_no=(\d+)/);
+          const optIdMatch = sourceUrl.match(/opt_id=([^&'"]+)/);
+
+          if (invoiceMatch) trackingNumber = invoiceMatch[1];
+          if (optIdMatch) optId = optIdMatch[1];
+
+          // 택배사: delivery_trace 링크의 텍스트 (sp-btn 아닌 것)
           if (href.includes("delivery_trace") && !link.classList.contains("sp-btn")) {
             carrier = text;
           }
-          // sp-btn 클래스 or onclick에 delivery_trace → 송장번호
-          if (link.classList.contains("sp-btn") || (onclick.includes("delivery_trace") && /^\d+$/.test(text))) {
-            trackingNumber = text;
-          }
-        }
-
-        if (trackingNumber || carrier) {
-          return { carrier, trackingNumber };
         }
       }
-      return { carrier: null, trackingNumber: null };
-    });
 
-    let carrier = trackingInfo.carrier;
-    let trackingNumber = trackingInfo.trackingNumber;
-
-    if (!carrier) console.log(`[napkin 송장조회] ${openMallOrderNumber}: 택배사 정보 없음`);
-    if (!trackingNumber) console.log(`[napkin 송장조회] ${openMallOrderNumber}: 송장번호 없음`);
-
-    // 자체배송인 경우 송장번호가 전화번호 형태일 수 있음
-    if (carrier === "자체배송" && trackingNumber) {
-      // 전화번호 형태 그대로 사용 (010-xxxx-xxxx 등)
-      console.log(`[napkin 송장조회] 자체배송 - 연락처: ${trackingNumber}`);
-    }
-
-    if (trackingNumber) {
-      console.log(
-        `[napkin 송장조회] 찾음: ${carrier || "자체배송"} / ${trackingNumber}`,
-      );
-      return {
+      results.push({
+        optionText,
+        productName: productName.substring(0, 80),
+        productNo,
+        optId,
         trackingNumber,
-        carrier: carrier || "자체배송",
-        status: "found",
-      };
+        carrier,
+      });
     }
 
-    console.log(`[napkin 송장조회] ${openMallOrderNumber}: 송장번호 없음`);
+    return results;
+  });
+
+  console.log(`[napkin 송장조회] ${openMallOrderNumber}: 상품 행 ${rows.length}개 발견`);
+  for (const r of rows) {
+    console.log(`  - 옵션="${r.optionText}", 송장=${r.trackingNumber || "없음"} (${r.carrier || "없음"}), productNo=${r.productNo}`);
+  }
+
+  return rows;
+}
+
+/**
+ * fulfillment와 행 매칭 (옵션 텍스트 기반)
+ */
+function matchFulfillmentsToRows(fulfillments, rowResults, openMallOrderNumber) {
+  const matched = new Array(fulfillments.length).fill(null);
+  const usedRows = new Set();
+
+  // 옵션 value 미리 추출
+  const optionValues = fulfillments.map(f => {
+    try {
+      const options = typeof f.openMallOptions === "string" ? JSON.parse(f.openMallOptions) : f.openMallOptions;
+      if (Array.isArray(options) && options.length > 0) {
+        return options[0]?.options?.[0]?.value || "";
+      }
+    } catch (e) {}
+    return "";
+  });
+
+  // === 1패스: usedRows 적용 (다른 상품끼리 정확 매칭) ===
+  for (let fi = 0; fi < fulfillments.length; fi++) {
+    const f = fulfillments[fi];
+    const optionValue = optionValues[fi];
+    let bestRow = null;
+    let bestRowIdx = -1;
+
+    if (optionValue) {
+      for (let i = 0; i < rowResults.length; i++) {
+        if (usedRows.has(i)) continue;
+        const row = rowResults[i];
+        if (!row.optionText) continue;
+        const rowKey = row.optionText.substring(0, 20);
+        const optKey = optionValue.substring(0, 20);
+        if (rowKey === optKey || row.optionText.includes(optKey) || optionValue.includes(rowKey)) {
+          bestRow = row;
+          bestRowIdx = i;
+          break;
+        }
+      }
+    }
+
+    if (!bestRow && rowResults.length === 1 && !usedRows.has(0)) {
+      bestRow = rowResults[0];
+      bestRowIdx = 0;
+    }
+
+    if (bestRow && bestRowIdx >= 0) {
+      usedRows.add(bestRowIdx);
+      matched[fi] = { fulfillmentId: f.fulfillmentId, trackingNumber: bestRow.trackingNumber, carrier: bestRow.carrier };
+      console.log(`[napkin 매칭] ${openMallOrderNumber}: fulfillment ${f.fulfillmentId} → 옵션 "${bestRow.optionText}", 송장=${bestRow.trackingNumber || "없음"}`);
+    }
+  }
+
+  // === 2패스: 매칭 실패한 fulfillment → usedRows 무시하고 재매칭 ===
+  for (let fi = 0; fi < fulfillments.length; fi++) {
+    if (matched[fi]) continue;
+    const f = fulfillments[fi];
+    const optionValue = optionValues[fi];
+    let bestRow = null;
+
+    if (optionValue) {
+      for (const row of rowResults) {
+        if (!row.optionText) continue;
+        const rowKey = row.optionText.substring(0, 20);
+        const optKey = optionValue.substring(0, 20);
+        if (rowKey === optKey || row.optionText.includes(optKey) || optionValue.includes(rowKey)) {
+          bestRow = row;
+          break;
+        }
+      }
+    }
+
+    if (bestRow) {
+      matched[fi] = { fulfillmentId: f.fulfillmentId, trackingNumber: bestRow.trackingNumber, carrier: bestRow.carrier };
+      console.log(`[napkin 매칭] ${openMallOrderNumber}: fulfillment ${f.fulfillmentId} → 2패스 재매칭 "${bestRow.optionText}", 송장=${bestRow.trackingNumber || "없음"}`);
+    } else {
+      // 최종 폴백: 첫 번째 송장번호
+      const firstWithTracking = rowResults.find(r => r.trackingNumber);
+      if (firstWithTracking) {
+        matched[fi] = { fulfillmentId: f.fulfillmentId, trackingNumber: firstWithTracking.trackingNumber, carrier: firstWithTracking.carrier };
+        console.log(`[napkin 매칭] ${openMallOrderNumber}: fulfillment ${f.fulfillmentId} → 첫 번째 송장 폴백: ${firstWithTracking.trackingNumber}`);
+      } else {
+        matched[fi] = { fulfillmentId: f.fulfillmentId, trackingNumber: null, carrier: null };
+        console.log(`[napkin 매칭] ${openMallOrderNumber}: fulfillment ${f.fulfillmentId} → 매칭 실패 (옵션: "${optionValue}")`);
+      }
+    }
+  }
+
+  return matched;
+}
+
+/**
+ * 기존 방식 (하위 호환) — 첫 번째 송장번호만
+ */
+async function findTrackingNumberLegacy(page, openMallOrderNumber) {
+  const trackingInfo = await page.evaluate(() => {
+    const tds = document.querySelectorAll("td");
+    for (const td of tds) {
+      const statusEl = td.querySelector("p.txtEm");
+      if (!statusEl) continue;
+      const status = statusEl.textContent.trim();
+      if (!status.includes("배송") && !status.includes("발송")) continue;
+
+      const links = td.querySelectorAll("p a");
+      let carrier = null;
+      let trackingNumber = null;
+
+      for (const link of links) {
+        const text = link.textContent.trim();
+        const href = link.getAttribute("href") || "";
+        const onclick = link.getAttribute("onclick") || "";
+
+        if (href.includes("delivery_trace") && !link.classList.contains("sp-btn")) {
+          carrier = text;
+        }
+        if (link.classList.contains("sp-btn") || (onclick.includes("delivery_trace") && /^\d+$/.test(text))) {
+          trackingNumber = text;
+        }
+      }
+
+      if (trackingNumber || carrier) {
+        return { carrier, trackingNumber };
+      }
+    }
+    return { carrier: null, trackingNumber: null };
+  });
+
+  if (trackingInfo.trackingNumber) {
     return {
-      trackingNumber: null,
-      carrier: null,
-      status: "tracking_not_found",
-    };
-  } catch (error) {
-    console.error(
-      `[napkin 송장조회] ${openMallOrderNumber} 조회 실패:`,
-      error.message,
-    );
-    return {
-      trackingNumber: null,
-      carrier: null,
-      status: "error",
-      error: error.message,
+      trackingNumber: trackingInfo.trackingNumber,
+      carrier: trackingInfo.carrier || "자체배송",
+      status: "found",
     };
   }
+
+  return { trackingNumber: null, carrier: null, status: "tracking_not_found" };
 }
 
 module.exports = {
   getNapkinTrackingNumbers,
-  findTrackingNumber,
 };

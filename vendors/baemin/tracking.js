@@ -13,6 +13,7 @@ const {
   TRACKING_STEPS,
   ERROR_CODES,
 } = require("../../lib/automation-error");
+const { sendAlertMail } = require("../../lib/alert-mail");
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -28,6 +29,7 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers, fulf
 
   const errorCollector = createTrackingErrorCollector("baemin");
   const results = [];
+  const allAlerts = []; // 지연/취소 수집
 
   try {
     const loginResult = await loginToBaemin(page, vendor);
@@ -47,6 +49,48 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers, fulf
         await delay(2000);
 
         console.log(`[baemin 송장조회] 현재 URL: ${page.url()}`);
+
+        // 배송지연/취소 체크 (배송조회 버튼 기준으로 블록 탐색)
+        const alertInfo = await page.evaluate(() => {
+          const alerts = [];
+          const deliveryBtns = document.querySelectorAll('[data-action-button-click-event-label="배송조회"]');
+
+          for (const btn of deliveryBtns) {
+            // 버튼에서 위로 올라가며 컨테이너 찾기
+            let container = btn.parentElement;
+            while (container && !container.querySelector('a[href*="/goods/detail/"]')) {
+              container = container.parentElement;
+            }
+            if (!container) continue;
+
+            // 상태 텍스트: 컨테이너 안의 모든 텍스트에서 키워드 검색
+            const allText = container.innerText || "";
+            let state = null;
+            if (allText.includes("취소")) state = "취소";
+            else if (allText.includes("품절")) state = "품절";
+            else if (allText.includes("지연")) state = "지연";
+
+            if (state) {
+              // 상품명
+              const nameLink = container.querySelectorAll('a[href*="/goods/detail/"]');
+              let productName = "알 수 없음";
+              for (const link of nameLink) {
+                const text = link.textContent?.trim();
+                if (text && text.length > 5) { productName = text; break; }
+              }
+              alerts.push({ state, productName });
+            }
+          }
+          return alerts;
+        });
+
+        if (alertInfo.length > 0) {
+          const orderUrl = `https://mart.baemin.com/mymart/order/detail/${openMallOrderNumber}`;
+          console.log(`[baemin 송장조회] ⚠️ ${openMallOrderNumber}: 이상 상태 감지 ${alertInfo.length}건`);
+          for (const a of alertInfo) {
+            allAlerts.push({ openMallOrderNumber, orderUrl, ...a });
+          }
+        }
 
         const fulfillmentInfo = fulfillmentMap?.[openMallOrderNumber];
 
@@ -94,6 +138,35 @@ async function getBaeminTrackingNumbers(page, vendor, openMallOrderNumbers, fulf
     }
 
     console.log(`[baemin 송장조회] 완료: ${results.length}/${openMallOrderNumbers.length}건 조회됨`);
+
+    // 지연/취소 모아서 메일 발송
+    if (allAlerts.length > 0) {
+      const rows = allAlerts.map(a =>
+        `<tr>
+          <td style="padding:6px 10px;border:1px solid #ddd;">${a.openMallOrderNumber}</td>
+          <td style="padding:6px 10px;border:1px solid #ddd;color:red;font-weight:bold;">${a.state}</td>
+          <td style="padding:6px 10px;border:1px solid #ddd;">${a.productName}</td>
+          <td style="padding:6px 10px;border:1px solid #ddd;"><a href="${a.orderUrl}">주문상세</a></td>
+        </tr>`
+      ).join("");
+
+      sendAlertMail({
+        subject: `배민상회 배송 이상 ${allAlerts.length}건`,
+        body: `<p>배민상회 송장조회 중 지연/취소가 감지되었습니다.</p>
+        <table style="border-collapse:collapse;font-size:13px;">
+          <tr style="background:#f0f0f0;">
+            <th style="padding:6px 10px;border:1px solid #ddd;">주문번호</th>
+            <th style="padding:6px 10px;border:1px solid #ddd;">상태</th>
+            <th style="padding:6px 10px;border:1px solid #ddd;">상품명</th>
+            <th style="padding:6px 10px;border:1px solid #ddd;">링크</th>
+          </tr>
+          ${rows}
+        </table>`,
+        vendor: "배민상회",
+      });
+      console.log(`[baemin 송장조회] 이상 알림 메일 발송: ${allAlerts.length}건`);
+    }
+
     return {
       results,
       automationErrors: errorCollector.hasErrors() ? errorCollector.getErrors() : undefined,
@@ -130,37 +203,35 @@ async function findTrackingNumbersByBlock(page, openMallOrderNumber) {
       const link = container.querySelector('a[href*="/goods/detail/"]');
       const goodsId = link?.href?.match(/\/goods\/detail\/(\d+)/)?.[1] || null;
 
-      // 상품명
-      const allDivs = container.querySelectorAll('div');
+      // 상품명, 옵션, 가격 추출
+      // 배민 구조:
+      //   container > a (이미지링크) + div.info (정보) + div.buttons (버튼들)
+      //   div.info > a > div (상품명) + div (가격) + div (옵션)
       let productName = "";
       let optionText = "";
       let priceText = "";
 
-      for (const div of allDivs) {
-        const text = div.textContent?.trim() || "";
-        // 가격/수량 패턴: "25,850원 / 수량 : 1개"
-        if (text.match(/[\d,]+원\s*\/\s*수량/)) {
-          priceText = text;
-        }
-      }
+      // 버튼 컨테이너가 아닌 직계 div = 정보 컨테이너
+      const directChildren = container.querySelectorAll(':scope > div');
+      for (const child of directChildren) {
+        // 버튼 컨테이너는 스킵
+        if (child.querySelector('[data-action-button-click-event-label]')) continue;
 
-      // 상품명: goods 링크 안의 텍스트
-      const nameEl = link?.querySelector('div');
-      if (nameEl) productName = nameEl.textContent?.trim() || "";
+        // 정보 컨테이너의 직계 자식들 순회
+        const infoChildren = child.children;
+        for (const el of infoChildren) {
+          const text = el.textContent?.trim() || "";
+          if (!text) continue;
 
-      // 옵션: 가격 div 다음 div (같은 컨테이너 안)
-      // 배민 구조: 상품명 div → 가격 div → 옵션 div
-      const infoContainer = container.querySelector('a[href*="/goods/detail/"]')?.parentElement;
-      if (infoContainer) {
-        const divs = infoContainer.querySelectorAll(':scope > div');
-        for (const div of divs) {
-          const text = div.textContent?.trim() || "";
-          // 옵션은 가격도 아니고 상품명도 아닌 텍스트
-          if (text && !text.match(/[\d,]+원\s*\/\s*수량/) && text !== productName && text.length < 200) {
-            // 상품명과 다른 짧은 텍스트 = 옵션
-            if (!text.includes("장바구니") && !text.includes("배송조회") && !text.includes("문의")) {
-              optionText = text;
-            }
+          if (el.tagName === 'A') {
+            // 상품명 링크
+            productName = text;
+          } else if (text.match(/[\d,]+원\s*\/\s*수량/)) {
+            // 가격
+            priceText = text;
+          } else if (text.length < 200) {
+            // 나머지 = 옵션
+            optionText = text;
           }
         }
       }
@@ -272,49 +343,130 @@ async function extractTrackingFromPage(page) {
  * fulfillment와 블록 매칭 (옵션 텍스트 기반)
  */
 function matchFulfillmentsToBlocks(fulfillments, blockResults, openMallOrderNumber) {
-  const matched = [];
+  const matched = new Array(fulfillments.length).fill(null);
+  const usedBlocks = new Set();
 
-  for (const f of fulfillments) {
-    let bestBlock = null;
-
-    // openMallOptions에서 옵션 value 추출
-    let optionValue = "";
+  // 옵션 value 미리 추출
+  const optionValues = fulfillments.map(f => {
     try {
       const options = typeof f.openMallOptions === "string" ? JSON.parse(f.openMallOptions) : f.openMallOptions;
       if (Array.isArray(options) && options.length > 0) {
-        optionValue = options[0]?.options?.[0]?.value || "";
+        return options[0]?.options?.[0]?.value || "";
       }
     } catch (e) {}
+    return "";
+  });
 
-    if (optionValue) {
-      // 옵션 텍스트로 매칭
-      for (const block of blockResults) {
-        if (block.optionText && optionValue.includes(block.optionText.substring(0, 20))) {
-          bestBlock = block;
-          break;
+  // === 1패스: usedBlocks 적용 (다른 상품끼리 정확 매칭) ===
+  for (let fi = 0; fi < fulfillments.length; fi++) {
+    const f = fulfillments[fi];
+    const optionValue = optionValues[fi];
+    let bestBlock = null;
+    let bestBlockIdx = -1;
+
+    // vendorItemId == goodsId
+    if (f.vendorItemId) {
+      for (let i = 0; i < blockResults.length; i++) {
+        if (usedBlocks.has(i)) continue;
+        if (blockResults[i].goodsId === f.vendorItemId) {
+          if (optionValue && blockResults[i].optionText) {
+            const blockKey = blockResults[i].optionText.substring(0, 20);
+            const optKey = optionValue.substring(0, 20);
+            if (blockKey === optKey || blockResults[i].optionText.includes(optKey) || optionValue.includes(blockKey)) {
+              bestBlock = blockResults[i];
+              bestBlockIdx = i;
+              break;
+            }
+          } else {
+            bestBlock = blockResults[i];
+            bestBlockIdx = i;
+            break;
+          }
         }
-        if (block.optionText && block.optionText.includes(optionValue.substring(0, 20))) {
+      }
+    }
+
+    // 옵션 텍스트 매칭
+    if (!bestBlock && optionValue) {
+      for (let i = 0; i < blockResults.length; i++) {
+        if (usedBlocks.has(i)) continue;
+        const block = blockResults[i];
+        if (!block.optionText) continue;
+        const blockKey = block.optionText.substring(0, 20);
+        const optKey = optionValue.substring(0, 20);
+        if (blockKey === optKey || block.optionText.includes(optKey) || optionValue.includes(blockKey)) {
           bestBlock = block;
+          bestBlockIdx = i;
           break;
         }
       }
     }
 
-    if (!bestBlock && blockResults.length === 1) {
-      // 블록 1개면 그냥 매칭
+    // 블록 1개 + 미사용이면 자동 매칭
+    if (!bestBlock && blockResults.length === 1 && !usedBlocks.has(0)) {
       bestBlock = blockResults[0];
+      bestBlockIdx = 0;
+    }
+
+    if (bestBlock && bestBlockIdx >= 0) {
+      usedBlocks.add(bestBlockIdx);
+      matched[fi] = { fulfillmentId: f.fulfillmentId, trackingNumber: bestBlock.trackingNumber, carrier: bestBlock.carrier };
+      console.log(`[baemin 매칭] ${openMallOrderNumber}: fulfillment ${f.fulfillmentId} → 옵션 "${bestBlock.optionText}", 송장=${bestBlock.trackingNumber || "없음"}`);
+    }
+  }
+
+  // === 2패스: 매칭 실패한 fulfillment → usedBlocks 무시하고 재매칭 ===
+  for (let fi = 0; fi < fulfillments.length; fi++) {
+    if (matched[fi]) continue;
+    const f = fulfillments[fi];
+    const optionValue = optionValues[fi];
+    let bestBlock = null;
+
+    // vendorItemId로 재매칭 (usedBlocks 무시)
+    if (f.vendorItemId) {
+      for (const block of blockResults) {
+        if (block.goodsId === f.vendorItemId) {
+          if (optionValue && block.optionText) {
+            const blockKey = block.optionText.substring(0, 20);
+            const optKey = optionValue.substring(0, 20);
+            if (blockKey === optKey || block.optionText.includes(optKey) || optionValue.includes(blockKey)) {
+              bestBlock = block;
+              break;
+            }
+          } else {
+            bestBlock = block;
+            break;
+          }
+        }
+      }
+    }
+
+    // 옵션 텍스트로 재매칭 (usedBlocks 무시)
+    if (!bestBlock && optionValue) {
+      for (const block of blockResults) {
+        if (!block.optionText) continue;
+        const blockKey = block.optionText.substring(0, 20);
+        const optKey = optionValue.substring(0, 20);
+        if (blockKey === optKey || block.optionText.includes(optKey) || optionValue.includes(blockKey)) {
+          bestBlock = block;
+          break;
+        }
+      }
     }
 
     if (bestBlock) {
-      matched.push({
-        fulfillmentId: f.fulfillmentId,
-        trackingNumber: bestBlock.trackingNumber,
-        carrier: bestBlock.carrier,
-      });
-      console.log(`[baemin 매칭] ${openMallOrderNumber}: fulfillment ${f.fulfillmentId} → 옵션 "${bestBlock.optionText}", 송장=${bestBlock.trackingNumber || "없음"}`);
+      matched[fi] = { fulfillmentId: f.fulfillmentId, trackingNumber: bestBlock.trackingNumber, carrier: bestBlock.carrier };
+      console.log(`[baemin 매칭] ${openMallOrderNumber}: fulfillment ${f.fulfillmentId} → 2패스 재매칭 "${bestBlock.optionText}", 송장=${bestBlock.trackingNumber || "없음"}`);
     } else {
-      matched.push({ fulfillmentId: f.fulfillmentId, trackingNumber: null, carrier: null });
-      console.log(`[baemin 매칭] ${openMallOrderNumber}: fulfillment ${f.fulfillmentId} → 매칭 실패`);
+      // 최종 폴백: 첫 번째 송장번호
+      const firstWithTracking = blockResults.find(b => b.trackingNumber);
+      if (firstWithTracking) {
+        matched[fi] = { fulfillmentId: f.fulfillmentId, trackingNumber: firstWithTracking.trackingNumber, carrier: firstWithTracking.carrier };
+        console.log(`[baemin 매칭] ${openMallOrderNumber}: fulfillment ${f.fulfillmentId} → 첫 번째 송장 폴백: ${firstWithTracking.trackingNumber}`);
+      } else {
+        matched[fi] = { fulfillmentId: f.fulfillmentId, trackingNumber: null, carrier: null };
+        console.log(`[baemin 매칭] ${openMallOrderNumber}: fulfillment ${f.fulfillmentId} → 매칭 실패 (옵션: "${optionValue}")`);
+      }
     }
   }
 
