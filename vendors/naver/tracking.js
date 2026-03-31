@@ -16,6 +16,7 @@ const {
   TRACKING_STEPS,
   ERROR_CODES,
 } = require("../../lib/automation-error");
+const { sendAlertMail } = require("../../lib/alert-mail");
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -85,6 +86,35 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
           timeout: 30000,
         });
         await delay(2000);
+
+        // 배송지연/발송지연 체크
+        const delayInfo = await page.evaluate(() => {
+          const items = document.querySelectorAll('[class*="ProductInfoSection_product-item"]');
+          const delays = [];
+          for (const item of items) {
+            const stateEl = item.querySelector('[class*="DeliveryState_state"]');
+            const state = stateEl?.textContent?.trim() || "";
+            if (state.includes("배송지연") || state.includes("발송지연")) {
+              const nameEl = item.querySelector('[class*="ProductDetail_name"]');
+              const productName = nameEl?.textContent?.trim() || "알 수 없음";
+              const optionEl = item.querySelector('[class*="ProductDetail_text"]');
+              const optionText = optionEl?.textContent?.trim() || "";
+              delays.push({ state, productName, optionText });
+            }
+          }
+          return delays;
+        });
+
+        if (delayInfo.length > 0) {
+          const orderUrl = `https://orders.pay.naver.com/order/status/${openMallOrderNumber}`;
+          const delayDetails = delayInfo.map(d => `- [${d.state}] ${d.productName} ${d.optionText}`).join("\n");
+          console.log(`[naver 송장조회] ⚠️ ${openMallOrderNumber}: 지연 감지 ${delayInfo.length}건`);
+          sendAlertMail({
+            subject: `배송/발송 지연 감지 - ${openMallOrderNumber}`,
+            body: `주문번호: ${openMallOrderNumber}<br>링크: <a href="${orderUrl}">${orderUrl}</a><br><br>지연 상품:<br>${delayDetails.replace(/\n/g, "<br>")}`,
+            vendor: "네이버",
+          });
+        }
 
         // 배송조회 버튼 찾기
         let trackBtn = await page.$(SELECTORS.orderStatus.trackDeliveryBtn);
