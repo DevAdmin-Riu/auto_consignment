@@ -89,16 +89,16 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
 
         // 배송지연/발송지연 체크
         const delayInfo = await page.evaluate(() => {
-          const items = document.querySelectorAll('[class*="ProductInfoSection_product-item"]');
+          const items = document.querySelectorAll('li[class*="product-item"], li[class*="ProductInfoSection"]');
           const delays = [];
           for (const item of items) {
-            const stateEl = item.querySelector('[class*="DeliveryState_state"]');
+            const stateEl = item.querySelector('strong[class*="DeliveryState_state"], strong[class*="state"]');
             const state = stateEl?.textContent?.trim() || "";
             if (state.includes("배송지연") || state.includes("발송지연")) {
-              const nameEl = item.querySelector('[class*="ProductDetail_name"]');
-              const productName = nameEl?.textContent?.trim() || "알 수 없음";
-              const optionEl = item.querySelector('[class*="ProductDetail_text"]');
-              const optionText = optionEl?.textContent?.trim() || "";
+              const nameEl = item.querySelector('strong[class*="ProductDetail_name"], strong[class*="name"]');
+              const productName = nameEl?.textContent?.trim()?.replace("상품명", "") || "알 수 없음";
+              const optionEls = item.querySelectorAll('span[class*="ProductDetail_text"]');
+              const optionText = Array.from(optionEls).map(el => el.textContent?.trim()).filter(Boolean).join(" / ");
               delays.push({ state, productName, optionText });
             }
           }
