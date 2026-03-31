@@ -55,6 +55,7 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
   console.log(`[naver 송장조회] 시작: ${openMallOrderNumbers.length}건`);
 
   const results = [];
+  const allDelays = []; // 배송지연/발송지연 수집
   const errorCollector = createTrackingErrorCollector("naver");
 
   try {
@@ -107,13 +108,10 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
 
         if (delayInfo.length > 0) {
           const orderUrl = `https://orders.pay.naver.com/order/status/${openMallOrderNumber}`;
-          const delayDetails = delayInfo.map(d => `- [${d.state}] ${d.productName} ${d.optionText}`).join("\n");
           console.log(`[naver 송장조회] ⚠️ ${openMallOrderNumber}: 지연 감지 ${delayInfo.length}건`);
-          sendAlertMail({
-            subject: `배송/발송 지연 감지 - ${openMallOrderNumber}`,
-            body: `주문번호: ${openMallOrderNumber}<br>링크: <a href="${orderUrl}">${orderUrl}</a><br><br>지연 상품:<br>${delayDetails.replace(/\n/g, "<br>")}`,
-            vendor: "네이버",
-          });
+          for (const d of delayInfo) {
+            allDelays.push({ openMallOrderNumber, orderUrl, ...d });
+          }
         }
 
         // 배송조회 버튼 찾기
@@ -231,6 +229,37 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers) {
     console.log(
       `[naver 송장조회] 완료: ${results.length}/${openMallOrderNumbers.length}건 조회됨`,
     );
+
+    // 배송지연/발송지연 모아서 메일 발송
+    if (allDelays.length > 0) {
+      const rows = allDelays.map(d =>
+        `<tr>
+          <td style="padding:6px 10px;border:1px solid #ddd;">${d.openMallOrderNumber}</td>
+          <td style="padding:6px 10px;border:1px solid #ddd;color:red;font-weight:bold;">${d.state}</td>
+          <td style="padding:6px 10px;border:1px solid #ddd;">${d.productName}</td>
+          <td style="padding:6px 10px;border:1px solid #ddd;">${d.optionText}</td>
+          <td style="padding:6px 10px;border:1px solid #ddd;"><a href="${d.orderUrl}">주문상세</a></td>
+        </tr>`
+      ).join("");
+
+      sendAlertMail({
+        subject: `네이버 배송/발송 지연 ${allDelays.length}건`,
+        body: `<p>네이버 송장조회 중 배송지연/발송지연이 감지되었습니다.</p>
+        <table style="border-collapse:collapse;font-size:13px;">
+          <tr style="background:#f0f0f0;">
+            <th style="padding:6px 10px;border:1px solid #ddd;">주문번호</th>
+            <th style="padding:6px 10px;border:1px solid #ddd;">상태</th>
+            <th style="padding:6px 10px;border:1px solid #ddd;">상품명</th>
+            <th style="padding:6px 10px;border:1px solid #ddd;">옵션</th>
+            <th style="padding:6px 10px;border:1px solid #ddd;">링크</th>
+          </tr>
+          ${rows}
+        </table>`,
+        vendor: "네이버",
+      });
+      console.log(`[naver 송장조회] 지연 알림 메일 발송: ${allDelays.length}건`);
+    }
+
     return {
       results,
       automationErrors: errorCollector.hasErrors()
