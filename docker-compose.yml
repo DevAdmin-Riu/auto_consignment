@@ -18,7 +18,7 @@ services:
       - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=false
       - N8N_ALLOW_ENV_ACCESS=AUTH_TOKEN,GRAPHQL_URL,CONTENT_TYPE,MALL_URL,SMTP_PASSWORD,PO_EMAIL
       - SMTP_PASSWORD=bllocfrpxobbpfpx
-      - PO_EMAIL=kyungjun0928@riupack.com
+      - PO_EMAIL=ytoh@riupack.com
       - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
       # Allow external npm modules in Code node
       - NODE_FUNCTION_ALLOW_EXTERNAL=xlsx,xlsx-js-style,exceljs,axios,nodemailer
