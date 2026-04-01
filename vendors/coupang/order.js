@@ -173,26 +173,26 @@ async function processCoupangOrder(
     for (let productIndex = 0; productIndex < products.length; productIndex++) {
       const product = products[productIndex];
       const productUrl = product.productUrl;
+      const productName = product.productName;
+      const poLineId = product.poLineNo ? `[${product.poLineNo}]` : `[상품${productIndex + 1}]`;
+
       // openMallQtyPerUnit 적용: 우리 1개 → 오픈몰 N개
       const baseQuantity = product.quantity || 1;
       const qtyPerUnit = product.openMallQtyPerUnit || 1;
       const quantity = baseQuantity * qtyPerUnit;
       if (qtyPerUnit > 1) {
         console.log(
-          `[coupang] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${quantity}개`,
+          `[coupang] ${poLineId} 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${quantity}개`,
         );
       }
-      const productName = product.productName;
-
-      const tag = product.poLineNo ? `[${product.poLineNo}]` : `[상품${productIndex + 1}]`;
       console.log(
-        `\n----- ${tag} [${productIndex + 1}/${products.length}] 상품 처리: ${
+        `\n----- ${poLineId} [${productIndex + 1}/${products.length}] 상품 처리: ${
           productName || productUrl
         } -----`,
       );
 
       if (!productUrl) {
-        console.log(`[coupang] 상품 ${productIndex + 1}: URL 없음, 스킵`);
+        console.log(`[coupang] ${poLineId} URL 없음, 스킵`);
         steps.push({
           step: `product_${productIndex + 1}_skip`,
           success: false,
@@ -212,7 +212,7 @@ async function processCoupangOrder(
       }
 
       // 2-1. 상품 페이지 이동
-      console.log(`[coupang] 상품 ${productIndex + 1}: 페이지 이동...`, productUrl);
+      console.log(`[coupang] ${poLineId} 페이지 이동...`, productUrl);
       try {
         await safeGoto(page, productUrl, {
           waitUntil: "networkidle2",
@@ -242,7 +242,7 @@ async function processCoupangOrder(
 
         // 2-2. 수량 설정
         if (quantity > 1) {
-          console.log(`[coupang] 상품 ${productIndex + 1}: 수량 설정...`, quantity);
+          console.log(`[coupang] ${poLineId} 수량 설정...`, quantity);
           let qtySet = false;
 
           // 방법 1: "수량더하기" 버튼 클릭 (가장 안정적)
@@ -273,12 +273,12 @@ async function processCoupangOrder(
                 await delay(200);
                 qtySet = true;
               } else {
-                console.log(`[coupang] 수량 버튼 클릭 실패 (${i}/${quantity - 1}) - 상품: ${productName || productUrl}, 목표수량: ${quantity}`);
+                console.log(`[coupang] ${poLineId} 수량 버튼 클릭 실패 (${i}/${quantity - 1}) - 상품: ${productName || productUrl}, 목표수량: ${quantity}`);
                 break;
               }
             }
           } catch (e) {
-            console.log("[coupang] 수량 설정 방법 1 실패:", e.message);
+            console.log(`[coupang] ${poLineId} 수량 설정 방법 1 실패:`, e.message);
           }
 
           // 방법 2: input 값 직접 변경 + Enter키 (fallback)
@@ -297,12 +297,12 @@ async function processCoupangOrder(
                 qtySet = true;
               }
             } catch (e) {
-              console.log("[coupang] 수량 설정 방법 2 실패:", e.message);
+              console.log(`[coupang] ${poLineId} 수량 설정 방법 2 실패:`, e.message);
             }
           }
 
           if (!qtySet) {
-            console.error(`[coupang] ❌ 수량 설정 실패 - 상품: ${productName || productUrl}, 목표수량: ${quantity}`);
+            console.error(`[coupang] ${poLineId} ❌ 수량 설정 실패 - 상품: ${productName || productUrl}, 목표수량: ${quantity}`);
             return { success: false, error: "수량 설정 실패" };
           }
 
@@ -316,10 +316,10 @@ async function processCoupangOrder(
             return 0;
           });
           if (actualQty !== quantity) {
-            console.log(`[coupang] ⚠️ 수량 즉시 검증 불일치: 기대=${quantity}, 실제=${actualQty} - 상품: ${productName || productUrl}`);
+            console.log(`[coupang] ${poLineId} ⚠️ 수량 즉시 검증 불일치: 기대=${quantity}, 실제=${actualQty} - 상품: ${productName || productUrl}`);
             return { success: false, error: `수량 불일치: 기대=${quantity}, 실제=${actualQty}` };
           }
-          console.log(`[coupang] 수량 검증 OK: ${actualQty}개`);
+          console.log(`[coupang] ${poLineId} 수량 검증 OK: ${actualQty}개`);
 
           await delay(1000);
           steps.push({
@@ -348,17 +348,17 @@ async function processCoupangOrder(
             return 0;
           });
           if (productUnitPrice > 0) {
-            console.log(`[coupang] 상품 ${productIndex + 1} 단가: ${productUnitPrice}원`);
+            console.log(`[coupang] ${poLineId} 단가: ${productUnitPrice}원`);
           }
         } catch (e) {
-          console.log(`[coupang] 상품 단가 추출 실패 (무시): ${e.message}`);
+          console.log(`[coupang] ${poLineId} 상품 단가 추출 실패 (무시): ${e.message}`);
         }
 
         // 2-2.6. 가격 차이 체크 — 임시 비활성화 (가격 추출 셀렉터 개선 후 재활성화)
         // TODO: 쿠팡 상품 페이지 가격 셀렉터 수정 후 다시 활성화
 
         // 2-3. 장바구니 담기
-        console.log(`[coupang] 상품 ${productIndex + 1}: 장바구니 담기...`);
+        console.log(`[coupang] ${poLineId} 장바구니 담기...`);
         const cartBtn = await page.$("button.prod-cart-btn");
         if (cartBtn) {
           await cartBtn.click();
@@ -380,7 +380,7 @@ async function processCoupangOrder(
             productVariantVendorId: product.productVariantVendorId || null,
           });
         } else {
-          console.error(`[coupang] ❌ 상품 ${productIndex + 1} 장바구니 버튼 못 찾음 → 전체 중단`);
+          console.error(`[coupang] ${poLineId} ❌ 장바구니 버튼 못 찾음 → 전체 중단`);
           errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.ELEMENT_NOT_FOUND,
             `장바구니 버튼을 찾을 수 없음: ${product.productName}`,
             { purchaseOrderId, purchaseOrderLineId: poLineIds?.[productIndex], productVariantVendorId: product.productVariantVendorId });
@@ -390,7 +390,7 @@ async function processCoupangOrder(
           return res.json({ success: false, vendor: vendor.name, error: `장바구니 버튼 못 찾음: ${product.productName}` });
         }
       } catch (e) {
-        console.error(`[coupang] ❌ 상품 ${productIndex + 1} 처리 실패 → 전체 중단:`, e.message);
+        console.error(`[coupang] ${poLineId} ❌ 처리 실패 → 전체 중단:`, e.message);
         errorCollector.addError(ORDER_STEPS.ADD_TO_CART, null, `상품 처리 실패: ${product.productName} - ${e.message}`, {
           purchaseOrderId,
           purchaseOrderLineId: poLineIds?.[productIndex],

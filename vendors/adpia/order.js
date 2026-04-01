@@ -1912,9 +1912,9 @@ async function processAdpiaOrder(
     // 2. 각 상품 개별 처리 (애드피아: 상품별로 장바구니 → 주문 → 결제 → saveOrderResults)
     for (let productIndex = 0; productIndex < products.length; productIndex++) {
       const product = products[productIndex];
-      const tag = product.poLineNo ? `[${product.poLineNo}]` : `[상품${productIndex + 1}]`;
+      const poLineId = product.poLineNo ? `[${product.poLineNo}]` : `[상품${productIndex + 1}]`;
       console.log(
-        `\n[adpia] ========== ${tag} 상품 ${productIndex + 1}/${products.length}: ${product.productName} ==========`,
+        `\n[adpia] ${poLineId} ========== 상품 ${productIndex + 1}/${products.length}: ${product.productName} ==========`,
       );
 
       let vendorOrderNumber = null;
@@ -1925,7 +1925,7 @@ async function processAdpiaOrder(
         // 2-1. 장바구니 비우기 (이전 상품 잔여분 제거)
         const clearResult = await clearCart(page);
         if (clearResult && !clearResult.success) {
-          console.error("[adpia] ❌ 장바구니 비우기 실패:", clearResult.message);
+          console.error(`[adpia] ${poLineId} ❌ 장바구니 비우기 실패:`, clearResult.message);
           errorCollector.addError(ORDER_STEPS.CART_CLEARING, ERROR_CODES.CLICK_FAILED,
             `장바구니 비우기 실패: ${clearResult.message}`, { purchaseOrderId });
           continue; // 이 상품 중단, 다음 상품으로 (개별 주문)
@@ -1942,9 +1942,9 @@ async function processAdpiaOrder(
               purchaseOrderId,
               reason: findResult.message || `상품 처리 실패: ${product.productSku}`,
             }]);
-            console.log(`[adpia] 담당자 확인 필요 저장: ${findResult.message}`);
+            console.log(`[adpia] ${poLineId} 담당자 확인 필요 저장: ${findResult.message}`);
           } catch (e) {
-            console.error(`[adpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
+            console.error(`[adpia] ${poLineId} ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
           }
           results.push({
             lineId: poLineIds?.[productIndex],
@@ -1961,7 +1961,7 @@ async function processAdpiaOrder(
             });
           }
           // poLine 실패 기록
-          try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: findResult.message || `상품 처리 실패: ${product.productSku}` }); } catch (e) { console.error("[adpia] poLine 실패 기록 에러 (무시):", e.message); }
+          try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: findResult.message || `상품 처리 실패: ${product.productSku}` }); } catch (e) { console.error(`[adpia] ${poLineId} poLine 실패 기록 에러 (무시):`, e.message); }
 
           await saveOrderResults(authToken, {
             purchaseOrderId,
@@ -1988,7 +1988,7 @@ async function processAdpiaOrder(
         const expectedPrice = product.vendorPriceExcludeVat; // 시스템 가격 (VAT 제외)
 
         if (!openMallPrice) {
-          console.error(`[adpia] ❌ 가격 추출 실패: ${product.productSku} 가격을 찾을 수 없음`);
+          console.error(`[adpia] ${poLineId} ❌ 가격 추출 실패: ${product.productSku} 가격을 찾을 수 없음`);
         }
 
         // 가격 비교 로직 (checkPrice 사용)
@@ -1997,7 +1997,7 @@ async function processAdpiaOrder(
         const priceMismatch = priceResult.isExtractionFailure || priceResult.hasMismatch || priceResult.shouldStop;
 
         console.log(
-          `[adpia] 가격 비교: 오픈몰=${openMallPrice}(VAT제외=${openMallPriceExcludeVat}) vs 시스템=${priceResult.systemPriceWithVat}원(VAT별도=${expectedPrice}), 차이=${priceResult.priceDiff}원, 불일치=${priceMismatch}`,
+          `[adpia] ${poLineId} 가격 비교: 오픈몰=${openMallPrice}(VAT제외=${openMallPriceExcludeVat}) vs 시스템=${priceResult.systemPriceWithVat}원(VAT별도=${expectedPrice}), 차이=${priceResult.priceDiff}원, 불일치=${priceMismatch}`,
         );
 
         const priceInfo = {
@@ -2012,17 +2012,17 @@ async function processAdpiaOrder(
         if (priceResult.shouldStop) {
           if (priceResult.isExtractionFailure) {
             const reason = `가격 추출 실패로 결제 중단: ${product.productSku}`;
-            console.error(`[adpia] ❌ ${reason}`);
+            console.error(`[adpia] ${poLineId} ❌ ${reason}`);
             errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, reason, {
               purchaseOrderId,
               productVariantVendorId: product.productVariantVendorId,
             });
             results.push({ lineId: poLineIds?.[productIndex], productSku: product.productSku, productName: product.productName, success: false, message: reason, priceInfo });
             // poLine 가격 추출 실패 기록
-            try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: reason }); } catch (e) { console.error("[adpia] poLine 실패 기록 에러 (무시):", e.message); }
+            try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: reason }); } catch (e) { console.error(`[adpia] ${poLineId} poLine 실패 기록 에러 (무시):`, e.message); }
           } else {
             const reason = `가격 차이 초과로 결제 중단: ${priceResult.reason}`;
-            console.error(`[adpia] ❌ ${reason}`);
+            console.error(`[adpia] ${poLineId} ❌ ${reason}`);
             try {
               await createNeedsManagerVerification(authToken, [{
                 purchaseOrderId,
@@ -2030,11 +2030,11 @@ async function processAdpiaOrder(
                 reason,
               }]);
             } catch (e) {
-              console.error(`[adpia] 담당자 확인 필요 저장 실패: ${e.message}`);
+              console.error(`[adpia] ${poLineId} 담당자 확인 필요 저장 실패: ${e.message}`);
             }
             results.push({ lineId: poLineIds?.[productIndex], productSku: product.productSku, productName: product.productName, success: false, message: reason, priceInfo });
             // poLine 가격 차이 초과 기록 (failCount 증가 안함)
-            try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { isPriceGapExceeded: true, lastError: reason }); } catch (e) { console.error("[adpia] poLine 가격 차이 기록 에러 (무시):", e.message); }
+            try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { isPriceGapExceeded: true, lastError: reason }); } catch (e) { console.error(`[adpia] ${poLineId} poLine 가격 차이 기록 에러 (무시):`, e.message); }
           }
           continue;
         }
@@ -2055,7 +2055,7 @@ async function processAdpiaOrder(
         ) {
           if (productRetry > 0) {
             console.log(
-              `[adpia] 상품 재시작 시도 ${productRetry}/${MAX_PRODUCT_RETRIES - 1}...`,
+              `[adpia] ${poLineId} 상품 재시작 시도 ${productRetry}/${MAX_PRODUCT_RETRIES - 1}...`,
             );
           }
 
@@ -2069,14 +2069,14 @@ async function processAdpiaOrder(
             orderPageResult.needsRestart &&
             productRetry < MAX_PRODUCT_RETRIES - 1
           ) {
-            console.log("[adpia] 🔄 옵션 페이지에서 상품 다시 찾기...");
+            console.log(`[adpia] ${poLineId} 🔄 옵션 페이지에서 상품 다시 찾기...`);
             const retryFindResult = await findProductByCode(
               page,
               product.productSku,
             );
             if (!retryFindResult.success) {
               console.log(
-                "[adpia] 재시작 후 상품 찾기 실패:",
+                `[adpia] ${poLineId} 재시작 후 상품 찾기 실패:`,
                 retryFindResult.message,
               );
               orderPageResult = {
@@ -2100,9 +2100,9 @@ async function processAdpiaOrder(
                 purchaseOrderId,
                 reason: orderPageResult.message || `주문 실패: ${product.productSku}`,
               }]);
-              console.log("[adpia] 담당자 확인 필요 저장 완료");
+              console.log(`[adpia] ${poLineId} 담당자 확인 필요 저장 완료`);
             } catch (e) {
-              console.error(`[adpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
+              console.error(`[adpia] ${poLineId} ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
             }
           }
           // 에러 로그 기록
@@ -2130,7 +2130,7 @@ async function processAdpiaOrder(
             });
           }
           // poLine 실패 기록
-          try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: orderPageResult.message || `주문 실패: ${product.productSku}` }); } catch (e) { console.error("[adpia] poLine 실패 기록 에러 (무시):", e.message); }
+          try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: orderPageResult.message || `주문 실패: ${product.productSku}` }); } catch (e) { console.error(`[adpia] ${poLineId} poLine 실패 기록 에러 (무시):`, e.message); }
 
           // 실패해도 saveOrderResults 호출
           await saveOrderResults(authToken, {
@@ -2167,7 +2167,7 @@ async function processAdpiaOrder(
         currentStep = ORDER_STEPS.ORDER_PLACEMENT;
         const orderFormResult = await goToOrderForm(page);
         if (!orderFormResult.success) {
-          console.log("[adpia] 주문서 이동 실패:", orderFormResult.message);
+          console.log(`[adpia] ${poLineId} 주문서 이동 실패:`, orderFormResult.message);
           results.push({
             lineId: poLineIds?.[productIndex],
             productVariantVendorId: product.productVariantVendorId,
@@ -2180,7 +2180,7 @@ async function processAdpiaOrder(
             priceInfo,
           });
           // poLine 실패 기록
-          try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: orderFormResult.message || "주문서 이동 실패" }); } catch (e) { console.error("[adpia] poLine 실패 기록 에러 (무시):", e.message); }
+          try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: orderFormResult.message || "주문서 이동 실패" }); } catch (e) { console.error(`[adpia] ${poLineId} poLine 실패 기록 에러 (무시):`, e.message); }
 
           await saveOrderResults(authToken, {
             purchaseOrderId,
@@ -2215,13 +2215,13 @@ async function processAdpiaOrder(
           while (ispRetryCount <= MAX_ISP_RETRY) {
             if (ispRetryCount > 0) {
               console.log(
-                `\n[adpia] ========== ISP 결제 재시도 ${ispRetryCount}/${MAX_ISP_RETRY} ==========`,
+                `\n[adpia] ${poLineId} ========== ISP 결제 재시도 ${ispRetryCount}/${MAX_ISP_RETRY} ==========`,
               );
-              console.log("[adpia] 장바구니로 이동하여 재주문...");
+              console.log(`[adpia] ${poLineId} 장바구니로 이동하여 재주문...`);
               // 장바구니 → 주문서 이동
               const retryOrderForm = await goToOrderForm(page);
               if (!retryOrderForm.success) {
-                console.log("[adpia] 주문서 재이동 실패 - 재시도 중단");
+                console.log(`[adpia] ${poLineId} 주문서 재이동 실패 - 재시도 중단`);
                 shippingResult = {
                   success: false,
                   message: "주문서 재이동 실패",
@@ -2240,7 +2240,7 @@ async function processAdpiaOrder(
               ispRetryCount++;
               if (ispRetryCount <= MAX_ISP_RETRY) {
                 console.log(
-                  "[adpia] ISP 결제창 미출현 - 장바구니로 돌아가서 재시도...",
+                  `[adpia] ${poLineId} ISP 결제창 미출현 - 장바구니로 돌아가서 재시도...`,
                 );
                 await delay(2000);
                 continue;
@@ -2251,7 +2251,7 @@ async function processAdpiaOrder(
 
           if (!shippingResult?.success) {
             console.log(
-              "[adpia] 배송지 입력/결제 실패:",
+              `[adpia] ${poLineId} 배송지 입력/결제 실패:`,
               shippingResult?.message,
             );
             results.push({
@@ -2266,7 +2266,7 @@ async function processAdpiaOrder(
               priceInfo,
             });
             // poLine 실패 기록
-            try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: shippingResult?.message || "배송지 입력/결제 실패" }); } catch (e) { console.error("[adpia] poLine 실패 기록 에러 (무시):", e.message); }
+            try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: shippingResult?.message || "배송지 입력/결제 실패" }); } catch (e) { console.error(`[adpia] ${poLineId} poLine 실패 기록 에러 (무시):`, e.message); }
 
             await saveOrderResults(authToken, {
               purchaseOrderId,
@@ -2291,7 +2291,7 @@ async function processAdpiaOrder(
             continue;
           } else if (shippingResult.vendorOrderNumber) {
             vendorOrderNumber = shippingResult.vendorOrderNumber;
-            console.log("[adpia] 주문번호 확인:", vendorOrderNumber);
+            console.log(`[adpia] ${poLineId} 주문번호 확인:`, vendorOrderNumber);
           }
         }
 
@@ -2305,10 +2305,10 @@ async function processAdpiaOrder(
                 SELECTORS.order.orderNumber,
                 (el) => el.textContent?.trim(),
               );
-              console.log("[adpia] 주문번호 재시도 성공:", vendorOrderNumber);
+              console.log(`[adpia] ${poLineId} 주문번호 재시도 성공:`, vendorOrderNumber);
             }
           } catch (e) {
-            console.log("[adpia] 주문번호 재시도 실패:", e.message);
+            console.log(`[adpia] ${poLineId} 주문번호 재시도 실패:`, e.message);
           }
         }
 
@@ -2339,7 +2339,7 @@ async function processAdpiaOrder(
             openMallOrderNumber: vendorOrderNumber,
           });
           console.log(
-            `[adpia] ✅ 상품 ${productIndex + 1} 주문 완료: ${vendorOrderNumber}`,
+            `[adpia] ${poLineId} ✅ 상품 ${productIndex + 1} 주문 완료: ${vendorOrderNumber}`,
           );
         }
 
@@ -2389,9 +2389,9 @@ async function processAdpiaOrder(
                 openMallOption: product.openMallOptions ? (typeof product.openMallOptions === "string" ? product.openMallOptions : JSON.stringify(product.openMallOptions)) : null,
               });
             }
-          } catch (e) { console.error("[adpia] poLine 성공 기록 에러 (무시):", e.message); }
+          } catch (e) { console.error(`[adpia] ${poLineId} poLine 성공 기록 에러 (무시):`, e.message); }
         } else {
-          try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "주문번호 추출 실패" }); } catch (e) { console.error("[adpia] poLine 실패 기록 에러 (무시):", e.message); }
+          try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "주문번호 추출 실패" }); } catch (e) { console.error(`[adpia] ${poLineId} poLine 실패 기록 에러 (무시):`, e.message); }
         }
 
         // 결제 로그 저장 (2곳에서 파싱 + 교차 검증)
@@ -2418,14 +2418,14 @@ async function processAdpiaOrder(
               return 0;
             });
           } catch (e) {
-            console.log(`[adpia] 주문서 결제금액 파싱 실패: ${e.message}`);
+            console.log(`[adpia] ${poLineId} 주문서 결제금액 파싱 실패: ${e.message}`);
           }
 
-          console.log(`[adpia] 결제금액 파싱 - 단가계산: ${fromCalc}원, 주문서: ${fromPage}원`);
+          console.log(`[adpia] ${poLineId} 결제금액 파싱 - 단가계산: ${fromCalc}원, 주문서: ${fromPage}원`);
 
           let paymentAmount = fromPage || fromCalc || 0;
           if (fromCalc > 0 && fromPage > 0 && fromCalc !== fromPage) {
-            console.log(`[adpia] ⚠️ 결제금액 불일치! → 주문서 금액 사용`);
+            console.log(`[adpia] ${poLineId} ⚠️ 결제금액 불일치! → 주문서 금액 사용`);
             paymentAmount = fromPage;
           }
 
@@ -2439,15 +2439,15 @@ async function processAdpiaOrder(
                 paymentCard: "SHINHAN",
               },
             ]);
-            console.log(`[adpia] 결제 로그 저장: ${paymentAmount}원`);
+            console.log(`[adpia] ${poLineId} 결제 로그 저장: ${paymentAmount}원`);
             alertPaymentParsingFailed({ vendor: "애드피아몰", purchaseOrderId, openMallOrderNumber: vendorOrderNumber, paymentAmount: paymentAmount, parsingDetail: { 단가계산: fromCalc, 주문서: fromPage } });
           } catch (e) {
-            console.error(`[adpia] ⚠️ 결제 로그 저장 실패: ${e.message}`);
-          try { await createAutomationErrors(authToken, [{ vendor: "adpia", automationType: "ORDER", step: "ORDER_CONFIRMATION", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error("[adpia] 에러 기록도 실패:", e2.message); }
+            console.error(`[adpia] ${poLineId} ⚠️ 결제 로그 저장 실패: ${e.message}`);
+          try { await createAutomationErrors(authToken, [{ vendor: "adpia", automationType: "ORDER", step: "ORDER_CONFIRMATION", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error(`[adpia] ${poLineId} 에러 기록도 실패:`, e2.message); }
           }
         }
       } catch (error) {
-        console.error(`[adpia] 상품 처리 에러 (step: ${currentStep}):`, error.message);
+        console.error(`[adpia] ${poLineId} 상품 처리 에러 (step: ${currentStep}):`, error.message);
         errorCollector.addError(currentStep, null, error.message, {
           purchaseOrderId,
           purchaseOrderLineId: poLineIds?.[productIndex],
@@ -2461,7 +2461,7 @@ async function processAdpiaOrder(
           message: error.message,
         });
         // poLine 실패 기록
-        try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: error.message }); } catch (e) { console.error("[adpia] poLine 실패 기록 에러 (무시):", e.message); }
+        try { const plId = poLineIds?.[productIndex]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: error.message }); } catch (e) { console.error(`[adpia] ${poLineId} poLine 실패 기록 에러 (무시):`, e.message); }
 
         // 에러 시에도 saveOrderResults 호출
         await saveOrderResults(authToken, {

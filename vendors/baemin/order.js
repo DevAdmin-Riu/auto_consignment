@@ -2882,8 +2882,8 @@ async function processBaeminOrder(
         // 3-2. 그룹 내 모든 상품 장바구니 담기
         for (const product of group.products) {
           const idx = product._originalIndex;
-          const tag = product.poLineNo ? `[${product.poLineNo}]` : `[상품]`;
-          console.log(`\n[baemin] --- ${tag} 상품: ${product.productName} ---`);
+          const poLineId = product.poLineNo ? `[${product.poLineNo}]` : `[상품]`;
+          console.log(`\n[baemin] ${poLineId} --- 상품: ${product.productName} ---`);
 
           try {
             // 상품 페이지 이동
@@ -2910,7 +2910,7 @@ async function processBaeminOrder(
               return false;
             });
             if (isOutOfStock) {
-              console.log(`[baemin] ⚠️ 품절 상품 → 담당자 확인 필요: ${product.productSku}`);
+              console.log(`[baemin] ${poLineId} ⚠️ 품절 상품 → 담당자 확인 필요: ${product.productSku}`);
               try {
                 await createNeedsManagerVerification(authToken, [{
                   productVariantVendorId: product.productVariantVendorId,
@@ -2918,10 +2918,10 @@ async function processBaeminOrder(
                   reason: `품절: ${product.productSku} (${product.productName})`,
                 }]);
               } catch (e) {
-                console.error(`[baemin] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
+                console.error(`[baemin] ${poLineId} ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
               }
               // poLine 품절 기록 (failCount 증가 안함)
-              try { const plId = poLineIds?.[idx]; if (plId) await updatePoLineN8nInfo(authToken, plId, { soldOut: true, lastError: `품절: ${product.productSku} (${product.productName})` }); } catch (e) { console.error("[baemin] poLine 품절 기록 에러 (무시):", e.message); }
+              try { const plId = poLineIds?.[idx]; if (plId) await updatePoLineN8nInfo(authToken, plId, { soldOut: true, lastError: `품절: ${product.productSku} (${product.productName})` }); } catch (e) { console.error(`[baemin] ${poLineId} poLine 품절 기록 에러 (무시):`, e.message); }
               results.push({
                 lineId: poLineIds?.[idx],
                 productSku: product.productSku,
@@ -2941,7 +2941,7 @@ async function processBaeminOrder(
             const actualQuantity = baseQuantity * qtyPerUnit;
             if (qtyPerUnit > 1) {
               console.log(
-                `[baemin] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`,
+                `[baemin] ${poLineId} 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`,
               );
             }
 
@@ -2961,7 +2961,7 @@ async function processBaeminOrder(
                 actualQuantity,
               );
               if (!optionResult.success) {
-                console.log(`[baemin] ⚠️ 옵션 선택 실패 → 담당자 확인 필요: ${optionResult.reason}`);
+                console.log(`[baemin] ${poLineId} ⚠️ 옵션 선택 실패 → 담당자 확인 필요: ${optionResult.reason}`);
                 try {
                   await createNeedsManagerVerification(authToken, [{
                     productVariantVendorId: product.productVariantVendorId,
@@ -2969,7 +2969,7 @@ async function processBaeminOrder(
                     reason: `옵션 선택 실패: ${product.productSku} (${product.productName}) - ${optionResult.reason}`,
                   }]);
                 } catch (e) {
-                  console.error(`[baemin] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
+                  console.error(`[baemin] ${poLineId} ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
                 }
                 groupOptionFailed.push({
                   productVariantVendorId: product.productVariantVendorId,
@@ -2997,7 +2997,7 @@ async function processBaeminOrder(
             if (!addToCartResult.success) {
               // 품절/판매중지 → 담당자 확인 필요
               if (addToCartResult.outOfStock) {
-                console.log(`[baemin] ⚠️ 품절/판매중지 → 담당자 확인 필요: ${product.productSku}`);
+                console.log(`[baemin] ${poLineId} ⚠️ 품절/판매중지 → 담당자 확인 필요: ${product.productSku}`);
                 try {
                   await createNeedsManagerVerification(authToken, [{
                     productVariantVendorId: product.productVariantVendorId,
@@ -3005,13 +3005,13 @@ async function processBaeminOrder(
                     reason: `품절/판매중지: ${product.productSku} (${product.productName})`,
                   }]);
                 } catch (e) {
-                  console.error(`[baemin] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
+                  console.error(`[baemin] ${poLineId} ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
                 }
                 // poLine 품절 기록 (failCount 증가 안함)
-                try { const plId = poLineIds?.[idx]; if (plId) await updatePoLineN8nInfo(authToken, plId, { soldOut: true, lastError: `품절/판매중지: ${product.productSku} (${product.productName})` }); } catch (e) { console.error("[baemin] poLine 품절 기록 에러 (무시):", e.message); }
+                try { const plId = poLineIds?.[idx]; if (plId) await updatePoLineN8nInfo(authToken, plId, { soldOut: true, lastError: `품절/판매중지: ${product.productSku} (${product.productName})` }); } catch (e) { console.error(`[baemin] ${poLineId} poLine 품절 기록 에러 (무시):`, e.message); }
               } else {
                 // 일반 장바구니 담기 실패
-                try { const plId = poLineIds?.[idx]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "장바구니 담기 실패" }); } catch (e) { console.error("[baemin] poLine 실패 기록 에러 (무시):", e.message); }
+                try { const plId = poLineIds?.[idx]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "장바구니 담기 실패" }); } catch (e) { console.error(`[baemin] ${poLineId} poLine 실패 기록 에러 (무시):`, e.message); }
               }
               results.push({
                 lineId: poLineIds?.[idx],
@@ -3024,7 +3024,7 @@ async function processBaeminOrder(
               continue;
             }
 
-            console.log(`[baemin] 장바구니 담기 성공: ${product.productName}`);
+            console.log(`[baemin] ${poLineId} 장바구니 담기 성공: ${product.productName}`);
 
             // 가격 비교 (checkPrice 사용)
             // openMallPrice = "총 상품금액" (옵션 합산 × 수량 포함)
@@ -3035,24 +3035,24 @@ async function processBaeminOrder(
             let priceMismatch = false;
 
             if (ourQuantity > 1) {
-              console.log(`[baemin] 가격 비교: 총액 ${openMallPrice}원 / 우리수량 ${ourQuantity} = 단가 ${openMallUnitPrice}원`);
+              console.log(`[baemin] ${poLineId} 가격 비교: 총액 ${openMallPrice}원 / 우리수량 ${ourQuantity} = 단가 ${openMallUnitPrice}원`);
             }
 
             const priceResult = checkPrice(openMallUnitPrice, vendorPriceExcludeVat);
             console.log(
-              `[baemin] 가격 비교: 오픈몰 단가=${openMallUnitPrice}원, 시스템=${priceResult.systemPriceWithVat}원 (VAT별도=${vendorPriceExcludeVat})`,
+              `[baemin] ${poLineId} 가격 비교: 오픈몰 단가=${openMallUnitPrice}원, 시스템=${priceResult.systemPriceWithVat}원 (VAT별도=${vendorPriceExcludeVat})`,
             );
 
             if (priceResult.shouldStop) {
               if (priceResult.isExtractionFailure) {
-                console.error(`[baemin] ❌ 가격 추출 실패: 총 상품금액을 찾을 수 없음 (URL: ${product.productUrl})`);
+                console.error(`[baemin] ${poLineId} ❌ 가격 추출 실패: 총 상품금액을 찾을 수 없음 (URL: ${product.productUrl})`);
                 errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, `가격 추출 실패 - ${product.productName}`, {
                   purchaseOrderId,
                   productVariantVendorId: product.productVariantVendorId,
                 });
               } else {
                 const reason = `가격 차이 초과로 그룹 결제 중단: ${priceResult.reason}`;
-                console.error(`[baemin] ❌ ${reason}`);
+                console.error(`[baemin] ${poLineId} ❌ ${reason}`);
                 try {
                   await createNeedsManagerVerification(authToken, [{
                     purchaseOrderId,
@@ -3060,7 +3060,7 @@ async function processBaeminOrder(
                     reason,
                   }]);
                 } catch (e) {
-                  console.error(`[baemin] 담당자 확인 필요 저장 실패: ${e.message}`);
+                  console.error(`[baemin] ${poLineId} 담당자 확인 필요 저장 실패: ${e.message}`);
                 }
               }
               priceMismatch = true;
@@ -3071,13 +3071,13 @@ async function processBaeminOrder(
                   const plId = poLineIds?.[gp._originalIndex];
                   if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { isPriceGapExceeded: true, lastError: `가격 차이 초과: ${priceResult.reason}` });
                 }
-              } catch (e) { console.error("[baemin] poLine 가격 차이 기록 에러 (무시):", e.message); }
+              } catch (e) { console.error(`[baemin] ${poLineId} poLine 가격 차이 기록 에러 (무시):`, e.message); }
               break;
             }
 
             if (priceResult.hasMismatch) {
               console.log(
-                `[baemin] ⚠️ 가격 불일치 감지: 오픈몰 ${openMallUnitPrice}원 vs 시스템 ${priceResult.systemPriceWithVat}원 (차이: ${priceResult.priceDiff}원)`,
+                `[baemin] ${poLineId} ⚠️ 가격 불일치 감지: 오픈몰 ${openMallUnitPrice}원 vs 시스템 ${priceResult.systemPriceWithVat}원 (차이: ${priceResult.priceDiff}원)`,
               );
               priceMismatch = true;
               groupPriceMismatches.push({
@@ -3086,9 +3086,9 @@ async function processBaeminOrder(
                 openMallPrice: openMallUnitPrice,
               });
             } else if (vendorPriceExcludeVat <= 0) {
-              console.log(`[baemin] 가격 비교 스킵: 시스템가 0원 이하`);
+              console.log(`[baemin] ${poLineId} 가격 비교 스킵: 시스템가 0원 이하`);
             } else {
-              console.log(`[baemin] ✅ 가격 일치: ${openMallUnitPrice}원`);
+              console.log(`[baemin] ${poLineId} ✅ 가격 일치: ${openMallUnitPrice}원`);
             }
 
             // 장바구니 담기 성공한 상품 기록
@@ -3102,7 +3102,7 @@ async function processBaeminOrder(
             });
           } catch (productError) {
             console.error(
-              `[baemin] 상품 담기 에러: ${product.productName}`,
+              `[baemin] ${poLineId} 상품 담기 에러: ${product.productName}`,
               productError.message,
             );
             results.push({

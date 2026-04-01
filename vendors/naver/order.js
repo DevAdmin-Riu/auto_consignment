@@ -2132,8 +2132,8 @@ async function processNaverOrder(
     // 3. 각 상품 처리 (장바구니에 담기)
     for (let i = 0; i < products.length; i++) {
       const product = products[i];
-      const tag = product.poLineNo ? `[${product.poLineNo}]` : `[상품${i + 1}]`;
-      console.log(`\n[naver] === ${tag} 상품 ${i + 1}/${products.length} ===`);
+      const poLineId = product.poLineNo ? `[${product.poLineNo}]` : `[상품${i + 1}]`;
+      console.log(`\n[naver] === ${poLineId} 상품 ${i + 1}/${products.length} ===`);
 
       try {
         const result = await processProduct(page, product);
@@ -2147,7 +2147,7 @@ async function processNaverOrder(
               reason: result.error || `오픈몰 상품 링크 비어 있음: ${product.productSku}`,
             }]);
           } catch (e) {
-            console.log(`[naver] 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
+            console.log(`[naver] ${poLineId} 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
           }
           continue; // 다음 상품으로
         }
@@ -2155,7 +2155,7 @@ async function processNaverOrder(
         // 장바구니 담기 실패 (alert 등) → 담당자 확인 + 에러 로그 + 전체 그룹 중단
         if (result.cartFailed) {
           const reason = result.cartFailReason || "장바구니 담기 실패";
-          console.error(`[naver] ❌ 장바구니 담기 실패로 전체 그룹 중단: ${reason}`);
+          console.error(`[naver] ${poLineId} ❌ 장바구니 담기 실패로 전체 그룹 중단: ${reason}`);
           try {
             await createNeedsManagerVerification(authToken, [{
               productVariantVendorId: product.productVariantVendorId,
@@ -2163,7 +2163,7 @@ async function processNaverOrder(
               reason: `장바구니 담기 실패: ${reason}`,
             }]);
           } catch (e) {
-            console.error(`[naver] 담당자 확인 필요 저장 실패: ${e.message}`);
+            console.error(`[naver] ${poLineId} 담당자 확인 필요 저장 실패: ${e.message}`);
           }
           errorCollector.addError(
             ORDER_STEPS.ADD_TO_CART,
@@ -2176,7 +2176,7 @@ async function processNaverOrder(
             for (const plId of (poLineIds || [])) {
               await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: `장바구니 담기 실패: ${reason}` });
             }
-          } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
+          } catch (e) { console.error(`[naver] ${poLineId} poLine 실패 기록 에러 (무시):`, e.message); }
 
           await saveOrderResults(authToken, {
             purchaseOrderId,
@@ -2209,7 +2209,7 @@ async function processNaverOrder(
           optionFailed: result.optionFailed || false,
         });
       } catch (error) {
-        console.error(`[naver] ❌ 상품 처리 실패 → 전체 그룹 중단:`, error.message);
+        console.error(`[naver] ${poLineId} ❌ 상품 처리 실패 → 전체 그룹 중단:`, error.message);
         errorCollector.addError(
           ORDER_STEPS.ADD_TO_CART,
           null,
@@ -2225,7 +2225,7 @@ async function processNaverOrder(
           for (const plId of (poLineIds || [])) {
             await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: `상품 처리 실패: ${product.productName} - ${error.message}` });
           }
-        } catch (e) { console.error("[naver] poLine 실패 기록 에러 (무시):", e.message); }
+        } catch (e) { console.error(`[naver] ${poLineId} poLine 실패 기록 에러 (무시):`, e.message); }
 
         await saveOrderResults(authToken, {
           purchaseOrderId,

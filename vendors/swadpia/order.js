@@ -608,23 +608,22 @@ async function addProductsToCart(page, products, downloadedFiles) {
     for (let i = 0; i < products.length; i++) {
       const product = products[i];
       const productCode = product.productSku || "";
+      const poLineId = product.poLineNo ? `[${product.poLineNo}]` : `[상품${i + 1}]`;
 
       if (!productCode) {
-        console.log(`[swadpia] 상품 ${i + 1}: productSku 없음, 건너뜀`);
+        console.log(`[swadpia] ${poLineId} 상품 ${i + 1}: productSku 없음, 건너뜀`);
         continue;
       }
-
-      const tag = product.poLineNo ? `[${product.poLineNo}]` : `[상품${i + 1}]`;
       console.log(
-        `\n[swadpia] ===== ${tag} 상품 ${i + 1}/${products.length} 처리 시작 =====`,
+        `\n[swadpia] ${poLineId} ===== 상품 ${i + 1}/${products.length} 처리 시작 =====`,
       );
       console.log(
-        `[swadpia] 상품코드: ${productCode}, 수량: ${product.quantity}`,
+        `[swadpia] ${poLineId} 상품코드: ${productCode}, 수량: ${product.quantity}`,
       );
 
       // 옵션 목록 페이지로 이동 (두번째 상품부터)
       if (i > 0) {
-        console.log("[swadpia] 옵션 목록 페이지로 이동...");
+        console.log(`[swadpia] ${poLineId} 옵션 목록 페이지로 이동...`);
         await page.goto("https://www.swadpia.co.kr/mypage/option_list", {
           waitUntil: "networkidle2",
           timeout: 60000,
@@ -632,7 +631,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
       }
 
       // 2. 시작일 설정 (2025-01-01) - readonly 속성이라 JS로 직접 설정
-      console.log("[swadpia] 시작일 설정...");
+      console.log(`[swadpia] ${poLineId} 시작일 설정...`);
       await page.waitForSelector(SELECTORS.optionList.startDate, {
         timeout: 60000,
       });
@@ -644,7 +643,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
       });
 
       // 3. 제품 코드 검색
-      console.log("[swadpia] 제품 코드 입력:", productCode);
+      console.log(`[swadpia] ${poLineId} 제품 코드 입력:`, productCode);
       await page.waitForSelector(SELECTORS.optionList.searchInput, {
         timeout: 60000,
       });
@@ -657,14 +656,14 @@ async function addProductsToCart(page, products, downloadedFiles) {
       });
 
       // 4. 조회 버튼 클릭
-      console.log("[swadpia] 조회 버튼 클릭...");
+      console.log(`[swadpia] ${poLineId} 조회 버튼 클릭...`);
       await waitAndClick(page, SELECTORS.optionList.searchButton);
 
       // 검색 결과 대기
       await new Promise((resolve) => setTimeout(resolve, 3000));
 
       // 5. 상품 주문 버튼 클릭
-      console.log("[swadpia] 상품 주문 버튼 클릭...");
+      console.log(`[swadpia] ${poLineId} 상품 주문 버튼 클릭...`);
 
       await waitAndClick(page, SELECTORS.optionList.orderButton);
 
@@ -677,17 +676,17 @@ async function addProductsToCart(page, products, downloadedFiles) {
       const quantity = baseQuantity * qtyPerUnit;
       if (qtyPerUnit > 1) {
         console.log(
-          `[swadpia] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${quantity}개`,
+          `[swadpia] ${poLineId} 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${quantity}개`,
         );
       }
-      console.log("[swadpia] 주문 수량 선택:", quantity);
+      console.log(`[swadpia] ${poLineId} 주문 수량 선택:`, quantity);
       await page.waitForSelector(SELECTORS.orderPage.quantity, {
         timeout: 60000,
       });
       await page.select(SELECTORS.orderPage.quantity, String(quantity));
 
       // 7. 장바구니 담기 버튼 클릭 (파일 업로드 iframe이 나타남)
-      console.log("[swadpia] 장바구니 담기 버튼 클릭...");
+      console.log(`[swadpia] ${poLineId} 장바구니 담기 버튼 클릭...`);
 
       await waitAndClick(page, SELECTORS.orderPage.cartButton, {
         timeout: 60000,
@@ -701,10 +700,10 @@ async function addProductsToCart(page, products, downloadedFiles) {
         (f) => f.productSku === productCode,
       );
       if (downloadedFile) {
-        console.log("[swadpia] 디자인 파일 업로드 준비...");
+        console.log(`[swadpia] ${poLineId} 디자인 파일 업로드 준비...`);
 
         // iframe 로드 대기
-        console.log("[swadpia] iframe 로드 대기...");
+        console.log(`[swadpia] ${poLineId} iframe 로드 대기...`);
         await page.waitForSelector(SELECTORS.orderPage.fileUploadIframe, {
           timeout: 60000,
         });
@@ -722,7 +721,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
           { timeout: 60000 },
           SELECTORS.orderPage.fileUploadIframe,
         );
-        console.log("[swadpia] iframe 로드 완료");
+        console.log(`[swadpia] ${poLineId} iframe 로드 완료`);
 
         const iframeElement = await page.$(
           SELECTORS.orderPage.fileUploadIframe,
@@ -731,18 +730,18 @@ async function addProductsToCart(page, products, downloadedFiles) {
 
         if (iframe) {
           // iframe 내부 버튼 대기 (plupload 초기화 확인)
-          console.log("[swadpia] plupload 초기화 대기...");
+          console.log(`[swadpia] ${poLineId} plupload 초기화 대기...`);
           await iframe.waitForSelector(SELECTORS.orderPage.fileUploadButton, {
             timeout: 60000,
           });
           await new Promise((resolve) => setTimeout(resolve, 2000)); // plupload 완전 초기화 대기
 
           // plupload의 숨겨진 file input 찾기
-          console.log("[swadpia] 파일 선택:", downloadedFile.filePath);
+          console.log(`[swadpia] ${poLineId} 파일 선택:`, downloadedFile.filePath);
           const fileInput = await iframe.$("input[type='file']");
           if (fileInput) {
             await fileInput.uploadFile(downloadedFile.filePath);
-            console.log("[swadpia] 파일 선택 완료");
+            console.log(`[swadpia] ${poLineId} 파일 선택 완료`);
             await new Promise((resolve) => setTimeout(resolve, 1000));
           } else {
             throw new Error(
@@ -758,7 +757,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
         // 8-1. 교정확인 후 인쇄 라디오 버튼 클릭
         // - 뜨는 상품도 있고, 안 뜨는 상품도 있음
         // - 뜨더라도 늦게 나타날 수 있음 → 최대 5초 대기
-        console.log("[swadpia] 교정확인 라디오 버튼 확인 중...");
+        console.log(`[swadpia] ${poLineId} 교정확인 라디오 버튼 확인 중...`);
         let proofFileRadio = null;
         for (let attempt = 0; attempt < 5; attempt++) {
           proofFileRadio = await page.$(
@@ -786,7 +785,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
 
             if (isVisible) {
               await proofFileRadio.click();
-              console.log("[swadpia] 교정확인 후 인쇄 선택 완료");
+              console.log(`[swadpia] ${poLineId} 교정확인 후 인쇄 선택 완료`);
               await new Promise((resolve) => setTimeout(resolve, 500));
 
               // 담당자 휴대폰 번호 입력
@@ -805,26 +804,26 @@ async function addProductsToCart(page, products, downloadedFiles) {
                   await hp3Input.click({ clickCount: 3 });
                   await hp3Input.type(hp3);
                   console.log(
-                    `[swadpia] 담당자 연락처 입력 완료 (${proofPhone})`,
+                    `[swadpia] ${poLineId} 담당자 연락처 입력 완료 (${proofPhone})`,
                   );
                 }
               }
             } else {
               console.log(
-                "[swadpia] 교정확인 라디오 버튼이 숨겨져 있음 (스킵)",
+                `[swadpia] ${poLineId} 교정확인 라디오 버튼이 숨겨져 있음 (스킵)`,
               );
             }
           } catch (proofError) {
             console.log(
-              `[swadpia] 교정확인 클릭 실패, 스킵: ${proofError.message}`,
+              `[swadpia] ${poLineId} 교정확인 클릭 실패, 스킵: ${proofError.message}`,
             );
           }
         } else {
-          console.log("[swadpia] 교정확인 라디오 버튼 없음 (스킵)");
+          console.log(`[swadpia] ${poLineId} 교정확인 라디오 버튼 없음 (스킵)`);
         }
 
         // 9. 장바구니 저장 버튼 클릭 (파일 업로드 시작 및 완료 후 자동으로 장바구니 페이지로 이동됨)
-        console.log("[swadpia] 장바구니 저장 버튼 클릭...");
+        console.log(`[swadpia] ${poLineId} 장바구니 저장 버튼 클릭...`);
 
         await waitAndClick(page, SELECTORS.orderPage.cartSaveButton, {
           timeout: 60000,
@@ -838,7 +837,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
         let cartPageLoaded = false;
 
         while (!cartPageLoaded && uploadRetryCount < MAX_UPLOAD_RETRY) {
-          console.log("[swadpia] 파일 업로드 진행 및 장바구니 이동 대기...");
+          console.log(`[swadpia] ${poLineId} 파일 업로드 진행 및 장바구니 이동 대기...`);
 
           // iframe 다시 가져오기 (업로드 진행률 확인용)
           let uploadIframeElement = await page.$(
@@ -859,7 +858,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
 
             // 장바구니 페이지로 이동했는지 확인
             if (currentUrl.includes("/order/order_cart")) {
-              console.log("[swadpia] 장바구니 페이지로 이동 완료");
+              console.log(`[swadpia] ${poLineId} 장바구니 페이지로 이동 완료`);
               cartPageLoaded = true;
               break;
             }
@@ -902,7 +901,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
                 // 진행률이 변경되었거나 5초마다 로그
                 if (uploadStatus !== lastProgress || waitCount % 5 === 0) {
                   console.log(
-                    `[swadpia] 업로드 진행률: ${uploadStatus}% (${waitCount}초)`,
+                    `[swadpia] ${poLineId} 업로드 진행률: ${uploadStatus}% (${waitCount}초)`,
                   );
                 }
 
@@ -913,7 +912,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
                   const stuckThreshold = uploadStatus >= 100 ? 20 : 30;
                   if (sameProgressCount >= stuckThreshold) {
                     console.log(
-                      `[swadpia] 업로드 멈춤 감지 (${uploadStatus}%에서 ${stuckThreshold}초간 정지)`,
+                      `[swadpia] ${poLineId} 업로드 멈춤 감지 (${uploadStatus}%에서 ${stuckThreshold}초간 정지)`,
                     );
                     needRetry = true;
                     break;
@@ -930,7 +929,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
               // iframe 없으면 10초마다 상태 로그
               if (waitCount % 10 === 0) {
                 console.log(
-                  `[swadpia] 장바구니 이동 대기 중... ${waitCount}초`,
+                  `[swadpia] ${poLineId} 장바구니 이동 대기 중... ${waitCount}초`,
                 );
               }
             }
@@ -940,7 +939,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
           if (needRetry && !cartPageLoaded) {
             uploadRetryCount++;
             console.log(
-              `[swadpia] 업로드 재시도 ${uploadRetryCount}/${MAX_UPLOAD_RETRY}...`,
+              `[swadpia] ${poLineId} 업로드 재시도 ${uploadRetryCount}/${MAX_UPLOAD_RETRY}...`,
             );
 
             // 현재 페이지 새로고침하여 다시 시도
@@ -951,7 +950,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
             const retryBaseQty = product.quantity || 1;
             const retryQtyPerUnit = product.openMallQtyPerUnit || 1;
             const retryQuantity = retryBaseQty * retryQtyPerUnit;
-            console.log("[swadpia] 수량 재설정:", retryQuantity);
+            console.log(`[swadpia] ${poLineId} 수량 재설정:`, retryQuantity);
             try {
               await page.waitForSelector(SELECTORS.orderPage.quantity, {
                 timeout: 60000,
@@ -961,11 +960,11 @@ async function addProductsToCart(page, products, downloadedFiles) {
                 String(retryQuantity),
               );
             } catch (qtyError) {
-              console.log("[swadpia] 수량 재설정 실패:", qtyError.message);
+              console.log(`[swadpia] ${poLineId} 수량 재설정 실패:`, qtyError.message);
             }
 
             // 다시 장바구니 담기 버튼 클릭
-            console.log("[swadpia] 장바구니 담기 버튼 재클릭...");
+            console.log(`[swadpia] ${poLineId} 장바구니 담기 버튼 재클릭...`);
             await waitAndClick(page, SELECTORS.orderPage.cartButton, {
               timeout: 60000,
               retries: 3,
@@ -1002,14 +1001,14 @@ async function addProductsToCart(page, products, downloadedFiles) {
                 const fileInput = await uploadIframe.$("input[type='file']");
                 if (fileInput && downloadedFile) {
                   await fileInput.uploadFile(downloadedFile.filePath);
-                  console.log("[swadpia] 파일 재선택 완료");
+                  console.log(`[swadpia] ${poLineId} 파일 재선택 완료`);
                   await new Promise((resolve) => setTimeout(resolve, 1000));
                 }
               }
             }
 
             // 다시 장바구니 저장 버튼 클릭
-            console.log("[swadpia] 장바구니 저장 버튼 재클릭...");
+            console.log(`[swadpia] ${poLineId} 장바구니 저장 버튼 재클릭...`);
             await waitAndClick(page, SELECTORS.orderPage.cartSaveButton, {
               timeout: 60000,
               retries: 3,
@@ -1020,7 +1019,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
 
         if (!cartPageLoaded) {
           console.log(
-            "[swadpia] 장바구니 페이지 이동 타임아웃 - 현재 URL:",
+            `[swadpia] ${poLineId} 장바구니 페이지 이동 타임아웃 - 현재 URL:`,
             page.url(),
           );
         }
@@ -1030,7 +1029,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
       }
 
       console.log(
-        `[swadpia] ===== 상품 ${i + 1}/${
+        `[swadpia] ${poLineId} ===== 상품 ${i + 1}/${
           products.length
         } 장바구니 담기 완료 =====\n`,
       );

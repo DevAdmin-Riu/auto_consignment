@@ -877,16 +877,16 @@ async function processNapkinOrder(
       const product = products[i];
       const lineId = purchaseOrderLineIds[i];
 
-      const tag = product.poLineNo ? `[${product.poLineNo}]` : `[상품${i + 1}]`;
-      console.log(`\n[napkin] ${tag} 상품 ${i + 1}/${products.length} 처리 시작`);
-      console.log(`[napkin] ${tag} 상품명: ${product.productName}`);
-      console.log(`[napkin] URL: ${product.productUrl}`);
-      console.log(`[napkin] 수량: ${product.quantity}`);
+      const poLineId = product.poLineNo ? `[${product.poLineNo}]` : `[상품${i + 1}]`;
+      console.log(`\n[napkin] ${poLineId} 상품 ${i + 1}/${products.length} 처리 시작`);
+      console.log(`[napkin] ${poLineId} 상품명: ${product.productName}`);
+      console.log(`[napkin] ${poLineId} URL: ${product.productUrl}`);
+      console.log(`[napkin] ${poLineId} 수량: ${product.quantity}`);
 
       // productUrl이 없으면 스킵
       if (!product.productUrl) {
         console.log(
-          `[napkin] ⚠️ 상품 URL이 없음 → 담당자 확인 필요: ${product.productName}`,
+          `[napkin] ${poLineId} ⚠️ 상품 URL이 없음 → 담당자 확인 필요: ${product.productName}`,
         );
         try {
           await createNeedsManagerVerification(authToken, [{
@@ -895,7 +895,7 @@ async function processNapkinOrder(
             reason: `상품 URL 없음: ${product.productSku} (${product.productName})`,
           }]);
         } catch (e) {
-          console.error(`[napkin] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
+          console.error(`[napkin] ${poLineId} ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
         }
         results.push({
           success: false,
@@ -917,7 +917,7 @@ async function processNapkinOrder(
           })
           .catch(() => {
             console.log(
-              "[napkin] 페이지 이동 중 리다이렉트 발생, 계속 진행...",
+              `[napkin] ${poLineId} 페이지 이동 중 리다이렉트 발생, 계속 진행...`,
             );
           });
         await delay(2000);
@@ -929,7 +929,7 @@ async function processNapkinOrder(
           try {
             options = JSON.parse(options);
           } catch (e) {
-            console.log("[napkin] 옵션 파싱 실패:", e.message);
+            console.log(`[napkin] ${poLineId} 옵션 파싱 실패:`, e.message);
             options = [];
           }
         }
@@ -940,7 +940,7 @@ async function processNapkinOrder(
         const actualQuantity = baseQuantity * qtyPerUnit;
         if (qtyPerUnit > 1) {
           console.log(
-            `[napkin] 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`,
+            `[napkin] ${poLineId} 수량 변환: ${baseQuantity}개 × ${qtyPerUnit} = ${actualQuantity}개`,
           );
         }
 
@@ -954,7 +954,7 @@ async function processNapkinOrder(
             product.vendorPriceExcludeVat,
           );
           if (!optionResult.success) {
-            console.log(`[napkin] ⚠️ 옵션 선택 실패 → 담당자 확인 필요: ${optionResult.message}`);
+            console.log(`[napkin] ${poLineId} ⚠️ 옵션 선택 실패 → 담당자 확인 필요: ${optionResult.message}`);
             try {
               await createNeedsManagerVerification(authToken, [{
                 productVariantVendorId: product.productVariantVendorId,
@@ -962,7 +962,7 @@ async function processNapkinOrder(
                 reason: `옵션 선택 실패: ${product.productSku} (${product.productName}) - ${optionResult.message}`,
               }]);
             } catch (e) {
-              console.error(`[napkin] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
+              console.error(`[napkin] ${poLineId} ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
             }
             results.push({
               lineId,
@@ -1011,17 +1011,17 @@ async function processNapkinOrder(
           if (priceResult.shouldStop) {
             if (priceResult.isExtractionFailure) {
               const reason = `가격 추출 실패로 결제 중단: ${product.productSku}`;
-              console.error(`[napkin] ❌ ${reason}`);
+              console.error(`[napkin] ${poLineId} ❌ ${reason}`);
               errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, reason, {
                 purchaseOrderId,
                 productVariantVendorId: product.productVariantVendorId,
               });
               // poLine 가격 추출 실패 기록
-              try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: reason }); } } catch (e) { console.error("[napkin] poLine 실패 기록 에러 (무시):", e.message); }
+              try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: reason }); } } catch (e) { console.error(`[napkin] ${poLineId} poLine 실패 기록 에러 (무시):`, e.message); }
               return res.json({ success: false, vendor: vendor.name, error: reason });
             } else {
               const reason = `가격 차이 초과로 결제 중단: ${priceResult.reason}`;
-              console.error(`[napkin] ❌ ${reason}`);
+              console.error(`[napkin] ${poLineId} ❌ ${reason}`);
               try {
                 await createNeedsManagerVerification(authToken, [{
                   purchaseOrderId,
@@ -1029,10 +1029,10 @@ async function processNapkinOrder(
                   reason,
                 }]);
               } catch (e) {
-                console.error(`[napkin] 담당자 확인 필요 저장 실패: ${e.message}`);
+                console.error(`[napkin] ${poLineId} 담당자 확인 필요 저장 실패: ${e.message}`);
               }
               // poLine 가격 차이 초과 기록 (failCount 증가 안함)
-              try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { isPriceGapExceeded: true, lastError: reason }); } } catch (e) { console.error("[napkin] poLine 가격 차이 기록 에러 (무시):", e.message); }
+              try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { isPriceGapExceeded: true, lastError: reason }); } } catch (e) { console.error(`[napkin] ${poLineId} poLine 가격 차이 기록 에러 (무시):`, e.message); }
               return res.json({ success: false, vendor: vendor.name, error: reason });
             }
           }
@@ -1077,7 +1077,7 @@ async function processNapkinOrder(
           needsManagerVerification: product.needsManagerVerification || false,
         });
       } catch (productError) {
-        console.error(`[napkin] 상품 처리 에러 (SKU: ${product.productSku}, 상품명: ${product.productName}):`, productError.message);
+        console.error(`[napkin] ${poLineId} 상품 처리 에러 (SKU: ${product.productSku}, 상품명: ${product.productName}):`, productError.message);
         errorCollector.addError(
           ORDER_STEPS.ADD_TO_CART,
           null,
