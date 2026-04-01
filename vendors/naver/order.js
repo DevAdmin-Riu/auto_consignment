@@ -2132,7 +2132,8 @@ async function processNaverOrder(
     // 3. 각 상품 처리 (장바구니에 담기)
     for (let i = 0; i < products.length; i++) {
       const product = products[i];
-      console.log(`\n[naver] === 상품 ${i + 1}/${products.length} ===`);
+      const tag = product.poLineNo ? `[${product.poLineNo}]` : `[상품${i + 1}]`;
+      console.log(`\n[naver] === ${tag} 상품 ${i + 1}/${products.length} ===`);
 
       try {
         const result = await processProduct(page, product);

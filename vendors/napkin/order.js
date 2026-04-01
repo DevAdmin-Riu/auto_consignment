@@ -877,8 +877,9 @@ async function processNapkinOrder(
       const product = products[i];
       const lineId = purchaseOrderLineIds[i];
 
-      console.log(`\n[napkin] 상품 ${i + 1}/${products.length} 처리 시작`);
-      console.log(`[napkin] 상품명: ${product.productName}`);
+      const tag = product.poLineNo ? `[${product.poLineNo}]` : `[상품${i + 1}]`;
+      console.log(`\n[napkin] ${tag} 상품 ${i + 1}/${products.length} 처리 시작`);
+      console.log(`[napkin] ${tag} 상품명: ${product.productName}`);
       console.log(`[napkin] URL: ${product.productUrl}`);
       console.log(`[napkin] 수량: ${product.quantity}`);
 

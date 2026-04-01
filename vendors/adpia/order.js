@@ -1912,8 +1912,9 @@ async function processAdpiaOrder(
     // 2. 각 상품 개별 처리 (애드피아: 상품별로 장바구니 → 주문 → 결제 → saveOrderResults)
     for (let productIndex = 0; productIndex < products.length; productIndex++) {
       const product = products[productIndex];
+      const tag = product.poLineNo ? `[${product.poLineNo}]` : `[상품${productIndex + 1}]`;
       console.log(
-        `\n[adpia] ========== 상품 ${productIndex + 1}/${products.length}: ${product.productName} ==========`,
+        `\n[adpia] ========== ${tag} 상품 ${productIndex + 1}/${products.length}: ${product.productName} ==========`,
       );
 
       let vendorOrderNumber = null;

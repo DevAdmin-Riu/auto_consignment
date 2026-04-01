@@ -2882,7 +2882,8 @@ async function processBaeminOrder(
         // 3-2. 그룹 내 모든 상품 장바구니 담기
         for (const product of group.products) {
           const idx = product._originalIndex;
-          console.log(`\n[baemin] --- 상품: ${product.productName} ---`);
+          const tag = product.poLineNo ? `[${product.poLineNo}]` : `[상품]`;
+          console.log(`\n[baemin] --- ${tag} 상품: ${product.productName} ---`);
 
           try {
             // 상품 페이지 이동

@@ -184,8 +184,9 @@ async function processCoupangOrder(
       }
       const productName = product.productName;
 
+      const tag = product.poLineNo ? `[${product.poLineNo}]` : `[상품${productIndex + 1}]`;
       console.log(
-        `\n----- [${productIndex + 1}/${products.length}] 상품 처리: ${
+        `\n----- ${tag} [${productIndex + 1}/${products.length}] 상품 처리: ${
           productName || productUrl
         } -----`,
       );

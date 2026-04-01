@@ -614,8 +614,9 @@ async function addProductsToCart(page, products, downloadedFiles) {
         continue;
       }
 
+      const tag = product.poLineNo ? `[${product.poLineNo}]` : `[상품${i + 1}]`;
       console.log(
-        `\n[swadpia] ===== 상품 ${i + 1}/${products.length} 처리 시작 =====`,
+        `\n[swadpia] ===== ${tag} 상품 ${i + 1}/${products.length} 처리 시작 =====`,
       );
       console.log(
         `[swadpia] 상품코드: ${productCode}, 수량: ${product.quantity}`,
