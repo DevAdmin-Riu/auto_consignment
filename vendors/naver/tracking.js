@@ -49,6 +49,13 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers, fulfi
       return { results, automationErrors: errorCollector.getErrors() };
     }
 
+    // alert 자동 확인 핸들러
+    const dialogHandler = async (dialog) => {
+      console.log(`[naver 송장조회] alert 감지: "${dialog.message()}" → 확인`);
+      await dialog.accept();
+    };
+    page.on("dialog", dialogHandler);
+
     for (const openMallOrderNumber of openMallOrderNumbers) {
       try {
         console.log(`[naver 송장조회] 주문번호 ${openMallOrderNumber} 조회 중...`);
@@ -126,6 +133,9 @@ async function getNaverTrackingNumbers(page, vendor, openMallOrderNumbers, fulfi
         errorCollector.addError(TRACKING_STEPS.EXTRACTION, ERROR_CODES.EXTRACTION_FAILED, error.message, { openMallOrderNumber });
       }
     }
+
+    // dialog 핸들러 제거
+    page.off("dialog", dialogHandler);
 
     console.log(`[naver 송장조회] 완료: ${results.length}/${openMallOrderNumbers.length}건 조회됨`);
 
