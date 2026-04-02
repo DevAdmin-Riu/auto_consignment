@@ -40,8 +40,10 @@ const {
   createPaymentLogs,
   createAutomationErrors,
   createNeedsManagerVerification,
+  sendPurchaseOrder,
   updatePoLineFailure,
   updatePoLineSuccess,
+  updatePoLineN8nInfo,
 } = require("../../lib/graphql-client");
 const { automateISPPayment } = require("../../lib/isp-payment");
 const {
@@ -432,8 +434,14 @@ async function processSingleOption(page, option) {
     );
 
     if (selectResult.found) {
+      const selectedText = selectResult.selectedText || "";
+      // 품절 체크: 선택된 옵션에 "품절" 포함 시
+      if (selectedText.includes("품절")) {
+        console.log(`[napkin] ⚠️ 품절 옵션 감지: "${title}" = "${selectedText}"`);
+        return { success: false, message: `품절: ${selectedText}`, soldOut: true };
+      }
       console.log(
-        `[napkin] ✅ SELECT 선택 완료: "${title}" = "${selectResult.selectedText || value}"`,
+        `[napkin] ✅ SELECT 선택 완료: "${title}" = "${selectedText || value}"`,
       );
       await delay(2000); // 페이지 업데이트 대기
       return { success: true };
@@ -954,15 +962,27 @@ async function processNapkinOrder(
             product.vendorPriceExcludeVat,
           );
           if (!optionResult.success) {
-            console.log(`[napkin] ${poLineId} ⚠️ 옵션 선택 실패 → 담당자 확인 필요: ${optionResult.message}`);
+            const isSoldOut = optionResult.soldOut || false;
+            const reason = isSoldOut
+              ? `품절: ${product.productSku} (${product.productName}) - ${optionResult.message}`
+              : `옵션 선택 실패: ${product.productSku} (${product.productName}) - ${optionResult.message}`;
+            console.log(`[napkin] ${poLineId} ⚠️ ${isSoldOut ? '품절' : '옵션 선택 실패'} → 담당자 확인 필요: ${optionResult.message}`);
             try {
               await createNeedsManagerVerification(authToken, [{
                 productVariantVendorId: product.productVariantVendorId,
                 purchaseOrderId,
-                reason: `옵션 선택 실패: ${product.productSku} (${product.productName}) - ${optionResult.message}`,
+                reason,
               }]);
             } catch (e) {
               console.error(`[napkin] ${poLineId} ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
+            }
+            // 품절 시 poLine 기록 + 발송(PENDING 전환)
+            if (isSoldOut) {
+              try {
+                if (lineId) await updatePoLineN8nInfo(authToken, lineId, { soldOut: true, lastError: reason });
+                await sendPurchaseOrder(authToken, purchaseOrderId);
+                console.log(`[napkin] ${poLineId} ✅ 품절 → 접수대기 전환 완료`);
+              } catch (e) { console.error(`[napkin] ${poLineId} 품절 기록/발송 에러 (무시):`, e.message); }
             }
             results.push({
               lineId,
@@ -972,6 +992,7 @@ async function processNapkinOrder(
               purchaseOrderId: product.purchaseOrderId,
               success: false,
               message: optionResult.message,
+              soldOut: isSoldOut,
             });
             continue; // 다음 상품으로
           }
