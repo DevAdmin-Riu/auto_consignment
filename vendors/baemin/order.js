@@ -2910,6 +2910,7 @@ async function processBaeminOrder(
               return false;
             });
             if (isOutOfStock) {
+              product.soldOut = true;
               console.log(`[baemin] ${poLineId} ⚠️ 품절 상품 → 담당자 확인 필요: ${product.productSku}`);
               try {
                 await createNeedsManagerVerification(authToken, [{
@@ -2997,6 +2998,7 @@ async function processBaeminOrder(
             if (!addToCartResult.success) {
               // 품절/판매중지 → 담당자 확인 필요
               if (addToCartResult.outOfStock) {
+                product.soldOut = true;
                 console.log(`[baemin] ${poLineId} ⚠️ 품절/판매중지 → 담당자 확인 필요: ${product.productSku}`);
                 try {
                   await createNeedsManagerVerification(authToken, [{
@@ -3131,8 +3133,16 @@ async function processBaeminOrder(
             .map((p) => poLineIds?.[p._originalIndex])
             .filter(Boolean);
 
-          // poLine 실패 기록
-          try { for (const plId of failedPoLineIds) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "장바구니에 담긴 상품 없음" }); } } catch (e) { console.error("[baemin] poLine 실패 기록 에러 (무시):", e.message); }
+          // poLine 실패 기록 (품절로 이미 기록된 건은 스킵)
+          try {
+            for (const p of group.products) {
+              const plId = poLineIds?.[p._originalIndex];
+              if (!plId) continue;
+              // 품절로 이미 기록된 건은 덮어쓰지 않음
+              if (p.soldOut) continue;
+              await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "장바구니에 담긴 상품 없음" });
+            }
+          } catch (e) { console.error("[baemin] poLine 실패 기록 에러 (무시):", e.message); }
 
           await saveOrderResults(authToken, {
             purchaseOrderId,
