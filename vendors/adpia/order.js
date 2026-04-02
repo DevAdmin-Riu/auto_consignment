@@ -1935,17 +1935,8 @@ async function processAdpiaOrder(
         const findResult = await findProductByCode(page, product.productSku);
 
         if (!findResult.success) {
-          // 상품 못찾음 / 옵션 실패 → 담당자 확인 필요
-          try {
-            await createNeedsManagerVerification(authToken, [{
-              productVariantVendorId: product.productVariantVendorId,
-              purchaseOrderId,
-              reason: findResult.message || `상품 처리 실패: ${product.productSku}`,
-            }]);
-            console.log(`[adpia] ${poLineId} 담당자 확인 필요 저장: ${findResult.message}`);
-          } catch (e) {
-            console.error(`[adpia] ${poLineId} ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
-          }
+          // 상품 못찾음 / 옵션 실패 → saveOrderResults에서 담당자 확인 필요 처리
+          console.log(`[adpia] ${poLineId} 상품 처리 실패: ${findResult.message}`);
           results.push({
             lineId: poLineIds?.[productIndex],
             productVariantVendorId: product.productVariantVendorId,
