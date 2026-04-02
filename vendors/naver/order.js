@@ -2245,50 +2245,7 @@ async function processNaverOrder(
       }
     }
 
-    // 3.5. 가격 차이 체크 — 오픈몰이 5,000원 이상 비싸면 STOP
-    for (const ap of addedProducts) {
-      if (!ap.addedToCart || !ap.openMallPrice || !ap.vendorPriceExcludeVat) continue;
-      const ourQuantity = ap.quantity || 1;
-      const openMallUnitPrice = Math.round(ap.openMallPrice / ourQuantity);
-      const priceResult = checkPrice(openMallUnitPrice, ap.vendorPriceExcludeVat);
-
-      if (priceResult.shouldStop) {
-        if (priceResult.isExtractionFailure) {
-          errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, `가격 추출 실패 - ${ap.productName}`, {
-            purchaseOrderId,
-            productVariantVendorId: ap.productVariantVendorId,
-          });
-        } else {
-          const reason = `가격 차이 초과로 결제 중단: ${priceResult.reason} - ${ap.productName}`;
-          console.error(`[naver] ❌ ${reason}`);
-          try {
-            await createNeedsManagerVerification(authToken, [{
-              purchaseOrderId,
-              productVariantVendorId: ap.productVariantVendorId,
-              reason,
-            }]);
-          } catch (e) {
-            console.error(`[naver] 담당자 확인 필요 저장 실패: ${e.message}`);
-          }
-        }
-        // poLine 가격 차이 초과 기록 (failCount 증가 안함)
-        try {
-          for (const plId of (poLineIds || [])) {
-            await updatePoLineFailure(authToken, plId, purchaseOrderId, { isPriceGapExceeded: true, lastError: `가격 차이 초과: ${priceResult.reason} - ${ap.productName}` });
-          }
-        } catch (e) { console.error("[naver] poLine 가격 차이 기록 에러 (무시):", e.message); }
-        return res.json({ success: false, error: priceResult.reason });
-      }
-
-      if (priceResult.hasMismatch) {
-        priceMismatches.push({
-          productVariantVendorId: ap.productVariantVendorId,
-          vendorPriceExcludeVat: ap.vendorPriceExcludeVat,
-          openMallPrice: openMallUnitPrice,
-        });
-        console.log(`[naver] 가격 불일치 기록: 오픈몰 ${openMallUnitPrice}원 vs 시스템 ${priceResult.systemPriceWithVat}원 (차이 ${priceResult.priceDiff}원)`);
-      }
-    }
+    // 3.5. 가격 체크는 6-1 결제금액 파싱 후 처리 (정확한 결제금액 기준)
 
     // 3.6. 장바구니에 담긴 상품이 있는지 확인
     const successfulProducts = addedProducts.filter((p) => p.addedToCart);
@@ -2671,6 +2628,55 @@ async function processNaverOrder(
       }
     } catch (e) {
       console.log("[naver] 결제금액 파싱 실패:", e.message);
+    }
+
+    // 6-2. 결제금액 기준 가격 체크 (STOP 판단 + 불일치 기록 준비)
+    if (actualPaymentAmount > 0 && successfulProducts.length > 0) {
+      // 총 결제금액 / 우리 주문수량 합계 = 오픈몰 단가
+      const totalOurQuantity = successfulProducts.reduce((sum, p) => sum + (p.quantity || 1), 0);
+      const openMallUnitPrice = Math.round(actualPaymentAmount / totalOurQuantity);
+
+      // 상품 1개일 때만 정확한 개별 비교 가능
+      if (successfulProducts.length === 1) {
+        const ap = successfulProducts[0];
+        const priceResult = checkPrice(openMallUnitPrice, ap.vendorPriceExcludeVat);
+        console.log(`[naver] 결제금액 기준 가격 체크: 결제총액 ${actualPaymentAmount}원 / 수량 ${totalOurQuantity} = 단가 ${openMallUnitPrice}원 vs 시스템 ${priceResult.systemPriceWithVat}원 (차이 ${priceResult.priceDiff}원)`);
+
+        if (priceResult.shouldStop) {
+          if (!priceResult.isExtractionFailure) {
+            const reason = `가격 차이 초과로 결제 중단: ${priceResult.reason} - ${ap.productName}`;
+            console.error(`[naver] ❌ ${reason}`);
+            try {
+              await createNeedsManagerVerification(authToken, [{
+                purchaseOrderId,
+                productVariantVendorId: ap.productVariantVendorId,
+                reason,
+              }]);
+            } catch (e) {
+              console.error(`[naver] 담당자 확인 필요 저장 실패: ${e.message}`);
+            }
+          }
+          try {
+            for (const plId of (poLineIds || [])) {
+              await updatePoLineFailure(authToken, plId, purchaseOrderId, { isPriceGapExceeded: true, lastError: `가격 차이 초과: ${priceResult.reason}` });
+            }
+          } catch (e) { console.error("[naver] poLine 가격 차이 기록 에러 (무시):", e.message); }
+          return res.json({ success: false, error: priceResult.reason });
+        }
+
+        if (priceResult.hasMismatch) {
+          priceMismatches.push({
+            productVariantVendorId: ap.productVariantVendorId,
+            vendorPriceExcludeVat: ap.vendorPriceExcludeVat,
+            openMallPrice: openMallUnitPrice,
+          });
+          console.log(`[naver] 가격 불일치 기록 준비: 오픈몰 ${openMallUnitPrice}원 vs 시스템 ${priceResult.systemPriceWithVat}원`);
+        }
+      } else {
+        // 여러 상품: 개별 비교 불가 → 총합 기준 로그만
+        const totalExpected = successfulProducts.reduce((sum, p) => sum + Math.round((p.vendorPriceExcludeVat || 0) * 1.1) * (p.quantity || 1), 0);
+        console.log(`[naver] 결제금액 참고 (다상품): 결제총액 ${actualPaymentAmount}원 vs 예상총액 ${totalExpected}원`);
+      }
     }
 
     // 7. 결제하기 버튼 클릭 + 네이버페이 결제
