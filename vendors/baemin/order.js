@@ -1555,7 +1555,17 @@ async function enterShippingAddress(page, shippingAddress) {
     // 9. 상세주소 입력 (placeholder 기반 셀렉터)
     console.log("[baemin] 9. 상세주소 입력...");
     const rawDetail = (shippingAddress.streetAddress2 || "").trim();
-    const detailAddress = rawDetail || shippingAddress.firstName || "";
+    // 배민 상세주소 20바이트 제한 (한글 2바이트 기준)
+    const truncateByBytes = (str, maxBytes) => {
+      let bytes = 0;
+      let i = 0;
+      for (; i < str.length; i++) {
+        bytes += str.charCodeAt(i) > 127 ? 2 : 1;
+        if (bytes > maxBytes) break;
+      }
+      return str.substring(0, i);
+    };
+    const detailAddress = truncateByBytes(rawDetail || shippingAddress.firstName || "", 20);
 
     // iframe 닫히고 모달 대기
     await delay(1500);
