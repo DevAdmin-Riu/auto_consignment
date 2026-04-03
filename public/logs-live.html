@@ -111,9 +111,10 @@
     let ws;
 
     function classify(line) {
-      if (line.includes('❌') || line.includes('실패') || line.includes('Error') || line.includes('FAIL') || line.includes('에러')) return 'error';
+      // 먼저 성공/완료 체크 (폴백 성공 등 "실패" + "완료"가 동시에 있는 경우 대응)
       if (line.includes('✅') || line.includes('완료') || line.includes('성공')) return 'success';
-      if (line.includes('⚠️') || line.includes('경고')) return 'warning';
+      if (line.includes('⚠️') || line.includes('경고') || line.includes('전환')) return 'warning';
+      if (line.includes('❌') || line.includes('Error') || line.includes('FAIL')) return 'error';
       if (line.includes('[GraphQL]') || line.includes('[시스템]')) return 'info';
       return '';
     }
