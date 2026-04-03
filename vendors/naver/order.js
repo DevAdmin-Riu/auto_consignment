@@ -2645,7 +2645,7 @@ async function processNaverOrder(
         if (priceResult.shouldStop) {
           if (!priceResult.isExtractionFailure) {
             const reason = `가격 차이 초과로 결제 중단: ${priceResult.reason} - ${ap.productName}`;
-            console.error(`[naver] ❌ ${reason}`);
+            console.log(`[naver] ⚠️ ${reason}`);
             try {
               await createNeedsManagerVerification(authToken, [{
                 purchaseOrderId,
