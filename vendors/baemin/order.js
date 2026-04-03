@@ -1694,7 +1694,7 @@ async function proceedToCheckout(page) {
       await orderBtn.click();
     } else {
       // 텍스트로 폴백
-      console.log("[baemin] 셀렉터 실패, 텍스트로 검색...");
+      console.log("[baemin] 텍스트 기반 검색으로 전환...");
       const orderClicked = await page.evaluate(() => {
         const buttons = document.querySelectorAll("button");
         for (const btn of buttons) {
@@ -2190,7 +2190,7 @@ async function processPayment(page) {
       console.log("[baemin] 동의하고 결제하기 버튼 클릭 완료");
     } else {
       // 텍스트로 폴백
-      console.log("[baemin] 셀렉터 실패, 텍스트로 검색...");
+      console.log("[baemin] 텍스트 기반 검색으로 전환...");
       const agreeClicked = await naverPayPage.evaluate(() => {
         const buttons = document.querySelectorAll("button");
         for (const btn of buttons) {
@@ -2302,7 +2302,7 @@ async function processPayment(page) {
         await delay(3000);
       } else {
         // 텍스트로 폴백
-        console.log("[baemin] 셀렉터 실패, 텍스트로 검색...");
+        console.log("[baemin] 텍스트 기반 검색으로 전환...");
         const detailClicked = await page.evaluate(() => {
           const buttons = document.querySelectorAll("button, a");
           for (const btn of buttons) {
@@ -2346,7 +2346,7 @@ async function processPayment(page) {
 
       // 페이지 텍스트에서 주문번호 추출 (폴백)
       if (!orderNumber) {
-        console.log("[baemin] 셀렉터 실패, 텍스트로 검색...");
+        console.log("[baemin] 텍스트 기반 검색으로 전환...");
         const baeminOrderNumber = await page.evaluate(() => {
           const allText = document.body.innerText || "";
           const patterns = [/주문번호[:\s]*(\d+)/, /주문\s*번호[:\s]*(\d+)/];

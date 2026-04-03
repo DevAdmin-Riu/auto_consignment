@@ -242,7 +242,7 @@ async function payOutstanding(page, browser, vendor) {
     await agreePayBtn.click();
     console.log("[wowpress] 동의하고 결제하기 버튼 클릭 완료");
   } else {
-    console.log("[wowpress] 셀렉터 실패, 텍스트로 검색...");
+    console.log("[wowpress] 텍스트 기반 검색으로 전환...");
     const agreeClicked = await naverPayPage.evaluate(() => {
       const buttons = document.querySelectorAll("button");
       for (const btn of buttons) {
