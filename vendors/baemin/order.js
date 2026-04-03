@@ -2382,6 +2382,7 @@ async function processPayment(page) {
         message: "결제 완료",
         orderNumber,
         actualPaymentAmount,
+        paymentParsingDetail,
         url: finalUrl,
       };
     }
@@ -2392,6 +2393,7 @@ async function processPayment(page) {
       success: true,
       message: "결제 완료 (주문번호 확인 필요)",
       actualPaymentAmount,
+      paymentParsingDetail,
       url: finalUrl,
     };
   } catch (error) {
@@ -3467,7 +3469,7 @@ async function processBaeminOrder(
             console.log(
               `[baemin] 결제 로그 저장: ${paidAmount}원, 카드: BC, 주문번호: ${vendorOrderNumber || "없음"}`,
             );
-            alertPaymentParsingFailed({ vendor: "배민상회", purchaseOrderId, openMallOrderNumber: vendorOrderNumber, paymentAmount: paidAmount, parsingDetail: paymentParsingDetail });
+            alertPaymentParsingFailed({ vendor: "배민상회", purchaseOrderId, openMallOrderNumber: vendorOrderNumber, paymentAmount: paidAmount, parsingDetail: paymentResult?.paymentParsingDetail || {} });
           } catch (e) {
             console.error("[baemin] ⚠️ 결제 로그 저장 실패:", e.message);
           try { await createAutomationErrors(authToken, [{ vendor: "baemin", automationType: "ORDER", step: "ORDER_CONFIRMATION", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error("[baemin] 에러 기록도 실패:", e2.message); }
