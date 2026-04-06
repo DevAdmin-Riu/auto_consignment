@@ -2994,7 +2994,7 @@ async function processNaverOrder(
             needsManagerVerification: p.needsManagerVerification || false,
           })),
           // 가격 불일치 관련
-          priceMismatchCount: priceMismatchList.length,
+          priceMismatchCount: priceMismatches.length,
           priceMismatches: priceMismatches,
           // 옵션 실패 관련
           optionFailedCount: optionFailedProducts.length,
