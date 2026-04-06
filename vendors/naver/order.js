@@ -1505,6 +1505,7 @@ async function selectDeliveryAddress(page, shippingAddress) {
 
   // 수령인 이름으로 주소 선택 (다양한 필드명 지원)
   const receiverName =
+    shippingAddress.firstName ||
     shippingAddress.receiverName ||
     shippingAddress.name ||
     shippingAddress.recipient ||
