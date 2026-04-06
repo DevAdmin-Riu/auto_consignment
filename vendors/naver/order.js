@@ -2876,42 +2876,15 @@ async function processNaverOrder(
           orderNumber,
         });
 
-        // 가격 불일치 상세 데이터 (시스템 저장용)
-        const priceMismatchList = addedProducts.filter((p) => p.priceMismatch);
-        const priceMismatches = priceMismatchList.map((p) => {
-          const vendorPriceExcludeVat = p.vendorPriceExcludeVat || 0;
-          const expectedPrice = Math.round(vendorPriceExcludeVat * 1.1); // VAT 포함
-          const priceDiff = p.openMallPrice - expectedPrice;
-          const priceDiffPercent =
-            expectedPrice > 0
-              ? ((priceDiff / expectedPrice) * 100).toFixed(2)
-              : 0;
-          return {
-            purchaseOrderLineId: p.purchaseOrderLineId || null, // PurchaseOrderLine ID (mutation용)
-            productVariantVendorId: p.productVariantVendorId || null, // ProductVariantVendor ID
-            productCode: p.productSku,
-            productName: p.productName,
-            quantity: p.quantity,
-            openMallPrice: p.openMallPrice, // 오픈몰 현재 가격 (VAT 포함)
-            expectedPrice: expectedPrice, // 예상 가격 (VAT 포함)
-            vendorPriceExcludeVat: vendorPriceExcludeVat, // 협력사 매입가 (VAT 별도)
-            difference: priceDiff,
-            differencePercent: priceDiffPercent,
-          };
-        });
-
         // GraphQL mutations 호출 (성공: 주문번호 업데이트 + 가격불일치 + 대행접수 + 출고처리)
+        // priceMismatches는 6-2에서 결제금액 기준으로 이미 준비됨
         await saveOrderResults(authToken, {
           purchaseOrderId,
           products: addedProducts.map((p) => ({
             orderLineIds: p.orderLineIds, // n8n에서 배열로 전달됨
             openMallOrderNumber: orderNumber,
           })),
-          priceMismatches: priceMismatches.map((p) => ({
-            productVariantVendorId: p.productVariantVendorId,
-            vendorPriceExcludeVat: p.vendorPriceExcludeVat,
-            openMallPrice: p.openMallPrice,
-          })),
+          priceMismatches,
           optionFailedProducts: [],
           automationErrors: [],
           poLineIds,
