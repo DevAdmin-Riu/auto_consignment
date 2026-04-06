@@ -1342,8 +1342,8 @@ async function selectDeliveryAddress(page, shippingAddress) {
         resolve(newPage);
       }
     });
-    // 5초 후 타임아웃 (팝업이 안 열리면 null)
-    setTimeout(() => resolve(null), 5000);
+    // 10초 후 타임아웃 (팝업이 안 열리면 null)
+    setTimeout(() => resolve(null), 10000);
   });
 
   // 버튼 클릭
