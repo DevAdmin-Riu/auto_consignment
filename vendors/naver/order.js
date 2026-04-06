@@ -40,11 +40,14 @@ const {
   createPaymentLogs,
   createAutomationErrors,
   createNeedsManagerVerification,
+  sendPurchaseOrder,
   updatePoLineFailure,
   updatePoLineSuccess,
+  updatePoLineN8nInfo,
 } = require("../../lib/graphql-client");
 const { getEnv } = require("../config");
 const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
+const { checkSoldOutOnPage, handleSoldOut } = require("../../lib/sold-out-check");
 const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
 
 // 딜레이 함수
@@ -2369,14 +2372,32 @@ async function processNaverOrder(
       await delay(3000);
       steps.push({ step: "order_button", success: true });
     } else {
-      console.error("[naver] ❌ 주문하기 버튼 못 찾음 → 중단");
+      // 품절 체크: 장바구니에서 주문하기 버튼이 없으면 품절일 수 있음
+      const isSoldOut = await checkSoldOutOnPage(page);
+      if (isSoldOut) {
+        console.log("[naver] 주문하기 버튼 없음 → 품절 감지");
+        await handleSoldOut({
+          authToken, purchaseOrderId,
+          productVariantVendorId: successfulProducts[0]?.productVariantVendorId,
+          productSku: successfulProducts[0]?.productSku || "",
+          productName: successfulProducts[0]?.productName || "",
+          poLineIds, vendor: "naver",
+        });
+        await saveOrderResults(authToken, {
+          purchaseOrderId, products: [],
+          optionFailedProducts: [{ productVariantVendorId: successfulProducts[0]?.productVariantVendorId, reason: "품절" }],
+          automationErrors: [], poLineIds, success: false, vendor: "naver",
+        });
+        return res.json({ success: false, message: "품절", steps, purchaseOrderId });
+      }
+
+      console.log("[naver] ❌ 주문하기 버튼 못 찾음 → 중단");
       errorCollector.addError(
         ORDER_STEPS.ORDER_PLACEMENT,
         ERROR_CODES.ELEMENT_NOT_FOUND,
         "주문하기 버튼을 찾을 수 없음",
         { purchaseOrderId },
       );
-      // poLine 실패 기록
       try {
         for (const plId of (poLineIds || [])) {
           await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "주문하기 버튼을 찾을 수 없음" });
