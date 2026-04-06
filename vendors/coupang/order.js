@@ -1310,22 +1310,8 @@ async function processCoupangOrder(
     (p) => p.priceMismatch?.detected,
   );
 
-  // 가격 불일치 상세 데이터 (시스템 저장용)
-  const priceMismatches = priceMismatchList.map((p) => ({
-    purchaseOrderLineId: p.lineId, // PurchaseOrderLine ID (mutation용)
-    productVariantVendorId: p.productVariantVendorId || null, // ProductVariantVendor ID
-    productCode:
-      p.priceMismatch?.productUrl?.match(/vendorItemId=(\d+)/)?.[1] || null,
-    productName: p.priceMismatch?.productName || p.productName,
-    quantity: p.priceMismatch?.quantity || p.quantity,
-    openMallPrice: p.priceMismatch?.coupangPrice, // 오픈몰 현재 가격 (VAT 포함)
-    expectedPrice: p.priceMismatch?.expectedPrice, // 예상 가격 (VAT 포함)
-    vendorPriceExcludeVat: p.priceMismatch?.vendorPriceExcludeVat, // 협력사 매입가 (VAT 별도)
-    difference: p.priceMismatch?.difference,
-    differencePercent: p.priceMismatch?.differencePercent,
-  }));
-
   // saveOrderResults 호출
+  // priceMismatches는 장바구니 검증 시 checkPrice 기준으로 이미 push됨 (라인 587)
   const orderNumber = paymentStep?.orderNumber || null;
   if (isPaymentComplete) {
     if (!orderNumber) {
@@ -1339,11 +1325,7 @@ async function processCoupangOrder(
         orderLineIds: p.orderLineIds,
         openMallOrderNumber: paymentStep?.orderNumber || null,
       })),
-      priceMismatches: priceMismatches.map((p) => ({
-        productVariantVendorId: p.productVariantVendorId,
-        vendorPriceExcludeVat: p.vendorPriceExcludeVat,
-        openMallPrice: p.openMallPrice,
-      })),
+      priceMismatches,
       optionFailedProducts: [],
       automationErrors: [],
       poLineIds,
