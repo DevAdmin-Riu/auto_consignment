@@ -1648,6 +1648,20 @@ async function processProduct(page, product) {
   });
   await delay(2000);
 
+  // 1-1. 판매중지/품절 체크
+  const isSoldOut = await checkSoldOutOnPage(page);
+  if (isSoldOut) {
+    console.log(`[naver] ⚠️ 판매중지/품절 감지: ${product.productSku}`);
+    return {
+      success: false,
+      productName,
+      quantity,
+      openMallPrice: null,
+      priceMismatch: false,
+      soldOut: true,
+    };
+  }
+
   // 2. 수량 계산 (openMallQtyPerUnit 적용)
   const baseQuantity = quantity || 1;
   const qtyPerUnit = product.openMallQtyPerUnit || 1;
@@ -2154,6 +2168,24 @@ async function processNaverOrder(
             console.log(`[naver] ${poLineId} 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
           }
           continue; // 다음 상품으로
+        }
+
+        // 판매중지/품절 → handleSoldOut으로 처리
+        if (result.soldOut) {
+          await handleSoldOut({
+            authToken, purchaseOrderId,
+            productVariantVendorId: product.productVariantVendorId,
+            productSku: product.productSku,
+            productName: product.productName,
+            poLineIds,
+            vendor: "naver",
+          });
+          await saveOrderResults(authToken, {
+            purchaseOrderId, products: [],
+            optionFailedProducts: [{ productVariantVendorId: product.productVariantVendorId, reason: "판매중지/품절" }],
+            automationErrors: [], poLineIds, success: false, vendor: "naver",
+          });
+          return res.json({ success: false, message: "판매중지/품절", steps, purchaseOrderId });
         }
 
         // 장바구니 담기 실패 (alert 등) → 담당자 확인 + 에러 로그 + 전체 그룹 중단
