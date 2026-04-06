@@ -49,6 +49,7 @@ const { verifyShippingAddressOnPage } = require("../../lib/address-verify");
 const { findDaumFrameViaCDP, cleanupCDPFrame, searchAddressInFrame, selectAddressResult } = require("../../lib/daum-address");
 const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
 const { checkPrice } = require("../../lib/price-check");
+const { checkSoldOutOnPage, handleSoldOut } = require("../../lib/sold-out-check");
 
 // ==================== 셀렉터 정의 ====================
 
@@ -2924,23 +2925,14 @@ async function processBaeminOrder(
             });
             if (isOutOfStock) {
               product.soldOut = true;
-              console.log(`[baemin] ${poLineId} ⚠️ 품절 상품 → 담당자 확인 필요: ${product.productSku}`);
-              try {
-                await createNeedsManagerVerification(authToken, [{
-                  productVariantVendorId: product.productVariantVendorId,
-                  purchaseOrderId,
-                  reason: `품절: ${product.productSku} (${product.productName})`,
-                }]);
-              } catch (e) {
-                console.error(`[baemin] ${poLineId} ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
-              }
-              // poLine 품절 기록 + 발송(PENDING 전환)
-              try {
-                const plId = poLineIds?.[idx];
-                if (plId) await updatePoLineN8nInfo(authToken, plId, { soldOut: true, lastError: `품절: ${product.productSku} (${product.productName})` });
-                await sendPurchaseOrder(authToken, purchaseOrderId);
-                console.log(`[baemin] ${poLineId} ✅ 품절 → 접수대기 전환 완료`);
-              } catch (e) { console.error(`[baemin] ${poLineId} poLine 품절 기록/발송 에러 (무시):`, e.message); }
+              await handleSoldOut({
+                authToken, purchaseOrderId,
+                productVariantVendorId: product.productVariantVendorId,
+                productSku: product.productSku,
+                productName: product.productName,
+                poLineIds: poLineIds?.[idx] ? [poLineIds[idx]] : [],
+                vendor: "baemin",
+              });
               results.push({
                 lineId: poLineIds?.[idx],
                 productSku: product.productSku,
@@ -3017,23 +3009,14 @@ async function processBaeminOrder(
               // 품절/판매중지 → 담당자 확인 필요
               if (addToCartResult.outOfStock) {
                 product.soldOut = true;
-                console.log(`[baemin] ${poLineId} ⚠️ 품절/판매중지 → 담당자 확인 필요: ${product.productSku}`);
-                try {
-                  await createNeedsManagerVerification(authToken, [{
-                    productVariantVendorId: product.productVariantVendorId,
-                    purchaseOrderId,
-                    reason: `품절/판매중지: ${product.productSku} (${product.productName})`,
-                  }]);
-                } catch (e) {
-                  console.error(`[baemin] ${poLineId} ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
-                }
-                // poLine 품절 기록 + 발송(PENDING 전환)
-                try {
-                  const plId = poLineIds?.[idx];
-                  if (plId) await updatePoLineN8nInfo(authToken, plId, { soldOut: true, lastError: `품절/판매중지: ${product.productSku} (${product.productName})` });
-                  await sendPurchaseOrder(authToken, purchaseOrderId);
-                  console.log(`[baemin] ${poLineId} ✅ 품절/판매중지 → 접수대기 전환 완료`);
-                } catch (e) { console.error(`[baemin] ${poLineId} poLine 품절 기록/발송 에러 (무시):`, e.message); }
+                await handleSoldOut({
+                  authToken, purchaseOrderId,
+                  productVariantVendorId: product.productVariantVendorId,
+                  productSku: product.productSku,
+                  productName: product.productName,
+                  poLineIds: poLineIds?.[idx] ? [poLineIds[idx]] : [],
+                  vendor: "baemin",
+                });
               } else {
                 // 일반 장바구니 담기 실패
                 try { const plId = poLineIds?.[idx]; if (plId) await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "장바구니 담기 실패" }); } catch (e) { console.error(`[baemin] ${poLineId} poLine 실패 기록 에러 (무시):`, e.message); }

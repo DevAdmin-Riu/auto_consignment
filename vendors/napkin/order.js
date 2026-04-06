@@ -61,6 +61,7 @@ const {
 } = require("../../lib/daum-address");
 const { searchAddressWithKakao, normalizeAddress } = require("../../lib/address-verify"); // eslint-disable-line
 const { checkPrice } = require("../../lib/price-check");
+const { checkSoldOutOnPage, handleSoldOut } = require("../../lib/sold-out-check");
 
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -976,13 +977,16 @@ async function processNapkinOrder(
             } catch (e) {
               console.error(`[napkin] ${poLineId} ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
             }
-            // 품절 시 poLine 기록 + 발송(PENDING 전환)
+            // 품절 시 handleSoldOut으로 일괄 처리
             if (isSoldOut) {
-              try {
-                if (lineId) await updatePoLineN8nInfo(authToken, lineId, { soldOut: true, lastError: reason });
-                await sendPurchaseOrder(authToken, purchaseOrderId);
-                console.log(`[napkin] ${poLineId} ✅ 품절 → 접수대기 전환 완료`);
-              } catch (e) { console.error(`[napkin] ${poLineId} 품절 기록/발송 에러 (무시):`, e.message); }
+              await handleSoldOut({
+                authToken, purchaseOrderId,
+                productVariantVendorId: product.productVariantVendorId,
+                productSku: product.productSku,
+                productName: product.productName,
+                poLineIds: lineId ? [lineId] : [],
+                vendor: "napkin",
+              });
             }
             results.push({
               lineId,

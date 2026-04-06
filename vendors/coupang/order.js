@@ -38,6 +38,7 @@ const {
   ORDER_STEPS,
   ERROR_CODES,
 } = require("../../lib/automation-error");
+const { checkSoldOutOnPage, handleSoldOut } = require("../../lib/sold-out-check");
 const {
   saveOrderResults,
   createPaymentLogs,
@@ -380,6 +381,23 @@ async function processCoupangOrder(
             productVariantVendorId: product.productVariantVendorId || null,
           });
         } else {
+          // 품절 여부 확인
+          const isSoldOut = await checkSoldOutOnPage(page);
+          if (isSoldOut) {
+            console.log(`[coupang] ${poLineId} 장바구니 버튼 없음 → 품절 감지`);
+            await handleSoldOut({
+              authToken,
+              purchaseOrderId,
+              productVariantVendorId: product.productVariantVendorId,
+              productSku: product.productSku,
+              productName: product.productName,
+              poLineIds: poLineIds || [],
+              vendor: "coupang",
+            });
+            await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "coupang" });
+            return res.json({ success: false, vendor: vendor.name, error: `품절 감지: ${product.productName}` });
+          }
+
           console.error(`[coupang] ${poLineId} ❌ 장바구니 버튼 못 찾음 → 전체 중단`);
           errorCollector.addError(ORDER_STEPS.ADD_TO_CART, ERROR_CODES.ELEMENT_NOT_FOUND,
             `장바구니 버튼을 찾을 수 없음: ${product.productName}`,
@@ -640,10 +658,25 @@ async function processCoupangOrder(
         detail: orderClicked,
       });
     } else {
+      // 품절 여부 확인
+      const isSoldOut = await checkSoldOutOnPage(page);
+      if (isSoldOut) {
+        console.log("[coupang] 주문하기 버튼 없음 → 품절 감지");
+        await handleSoldOut({
+          authToken,
+          purchaseOrderId,
+          productVariantVendorId: products[0]?.productVariantVendorId,
+          productSku: products[0]?.productSku,
+          productName: products[0]?.productName,
+          poLineIds: poLineIds || [],
+          vendor: "coupang",
+        });
+      }
+
       steps.push({
         step: "checkout_click",
         success: false,
-        error: "주문하기 버튼을 찾을 수 없음",
+        error: isSoldOut ? "품절 감지 - 주문하기 버튼을 찾을 수 없음" : "주문하기 버튼을 찾을 수 없음",
         buttons: orderClicked.buttons,
       });
     }
