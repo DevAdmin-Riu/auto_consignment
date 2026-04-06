@@ -1031,8 +1031,11 @@ async function processNapkinOrder(
         }
 
         // 3-3.5. 가격 체크 (checkPrice 사용)
+        // checkPrice 결과를 저장해서 priceMismatches에 동일 기준으로 사용
+        let checkPriceResult = null;
         if (priceInfo) {
           const priceResult = checkPrice(priceInfo.unitPrice, product.vendorPriceExcludeVat);
+          checkPriceResult = { priceResult, openMallPrice: priceInfo.unitPrice, vendorPriceExcludeVat: product.vendorPriceExcludeVat };
           if (priceResult.shouldStop) {
             if (priceResult.isExtractionFailure) {
               const reason = `가격 추출 실패로 결제 중단: ${product.productSku}`;
@@ -1099,6 +1102,7 @@ async function processNapkinOrder(
           success: true,
           message: "장바구니 담기 완료",
           priceInfo,
+          checkPriceResult, // checkPrice 기준 값 (priceMismatches 저장용)
           needsManagerVerification: product.needsManagerVerification || false,
         });
       } catch (productError) {
@@ -2253,26 +2257,12 @@ async function processNapkinOrder(
     // 현재 URL 반환
     const currentUrl = page.url();
 
-    // 가격 불일치 상세 데이터 (시스템 저장용)
-    const priceMismatchList = results.filter((r) => r.priceInfo?.priceMismatch);
+    // 가격 불일치 상세 데이터 (checkPrice 기준 — 5000원 체크와 동일한 값)
+    const priceMismatchList = results.filter((r) => r.checkPriceResult?.priceResult?.hasMismatch);
     const priceMismatches = priceMismatchList.map((r) => ({
-      purchaseOrderLineId: r.lineId,
-      purchaseOrderId: r.purchaseOrderId, // 개별 상품의 발주 ID
       productVariantVendorId: r.productVariantVendorId || null,
-      productCode: r.productSku,
-      productName: r.productName,
-      quantity: r.quantity,
-      openMallPrice: r.priceInfo?.unitPrice,
-      expectedPrice: r.priceInfo?.expectedUnitPrice,
-      vendorPriceExcludeVat: r.priceInfo?.vendorPriceExcludeVat,
-      difference: r.priceInfo?.difference,
-      differencePercent:
-        r.priceInfo?.expectedUnitPrice > 0
-          ? (
-              (r.priceInfo?.difference / r.priceInfo?.expectedUnitPrice) *
-              100
-            ).toFixed(2)
-          : 0,
+      vendorPriceExcludeVat: r.checkPriceResult.vendorPriceExcludeVat,
+      openMallPrice: r.checkPriceResult.openMallPrice,
     }));
 
     // 옵션 실패 상품 필터링
