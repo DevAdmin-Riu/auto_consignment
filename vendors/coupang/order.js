@@ -122,6 +122,7 @@ async function processCoupangOrder(
   authToken,
 ) {
   const steps = [];
+  const priceMismatches = [];
   const addedProducts = []; // 장바구니에 담긴 상품들 추적
   const errorCollector = createOrderErrorCollector("coupang");
 
