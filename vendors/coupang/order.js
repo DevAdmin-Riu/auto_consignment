@@ -44,6 +44,7 @@ const {
   createPaymentLogs,
   createAutomationErrors,
   createNeedsManagerVerification,
+  sendPurchaseOrder,
   updatePoLineFailure,
   updatePoLineSuccess,
 } = require("../../lib/graphql-client");
@@ -193,23 +194,24 @@ async function processCoupangOrder(
       );
 
       if (!productUrl) {
-        console.log(`[coupang] ${poLineId} URL 없음, 스킵`);
-        steps.push({
-          step: `product_${productIndex + 1}_skip`,
-          success: false,
-          error: "URL 없음",
-        });
-        errorCollector.addError(
-          ORDER_STEPS.ADD_TO_CART,
-          ERROR_CODES.PRODUCT_NOT_FOUND,
-          "URL 없음",
-          {
-            purchaseOrderId,
-            purchaseOrderLineId: poLineIds?.[productIndex],
+        console.log(`[coupang] ${poLineId} ⚠️ URL 없음 → 담당자 확인 + 발송 처리`);
+        try {
+          await createNeedsManagerVerification(authToken, [{
             productVariantVendorId: product.productVariantVendorId,
-          },
-        );
-        continue;
+            purchaseOrderId,
+            reason: `오픈몰 상품 URL 없음: ${product.productSku} (${product.productName})`,
+          }]);
+          await sendPurchaseOrder(authToken, purchaseOrderId);
+          console.log(`[coupang] ${poLineId} ✅ 담당자 확인 + 접수대기 전환 완료`);
+        } catch (e) {
+          console.log(`[coupang] ${poLineId} 담당자 확인/발송 처리 실패 (무시): ${e.message}`);
+        }
+        await saveOrderResults(authToken, {
+          purchaseOrderId, products: [],
+          optionFailedProducts: [{ productVariantVendorId: product.productVariantVendorId, reason: `오픈몰 상품 URL 없음: ${product.productSku}` }],
+          automationErrors: [], poLineIds, success: false, vendor: "coupang",
+        });
+        return res.json({ success: false, error: `URL 없음: ${product.productSku}`, steps, purchaseOrderId });
       }
 
       // 2-1. 상품 페이지 이동
