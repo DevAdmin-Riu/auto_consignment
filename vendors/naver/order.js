@@ -1648,19 +1648,19 @@ async function processProduct(page, product) {
   });
   await delay(2000);
 
-  // 1-1. 판매중지/품절 체크
-  const isSoldOut = await checkSoldOutOnPage(page);
-  if (isSoldOut) {
-    console.log(`[naver] ⚠️ 판매중지/품절 감지: ${product.productSku}`);
-    return {
-      success: false,
-      productName,
-      quantity,
-      openMallPrice: null,
-      priceMismatch: false,
-      soldOut: true,
-    };
-  }
+  // 1-1. 판매중지/품절 체크 (TODO: 페이지 전체 텍스트 검색 → 특정 셀렉터 기반으로 개선 필요)
+  // const isSoldOut = await checkSoldOutOnPage(page);
+  // if (isSoldOut) {
+  //   console.log(`[naver] ⚠️ 판매중지/품절 감지: ${product.productSku}`);
+  //   return {
+  //     success: false,
+  //     productName,
+  //     quantity,
+  //     openMallPrice: null,
+  //     priceMismatch: false,
+  //     soldOut: true,
+  //   };
+  // }
 
   // 2. 수량 계산 (openMallQtyPerUnit 적용)
   const baseQuantity = quantity || 1;
