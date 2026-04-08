@@ -1415,6 +1415,12 @@ async function processNapkinOrder(
             phoneDigits = "0" + phoneDigits.substring(2);
           }
 
+          // 010이 아닌 번호(지역번호 등)면 법인폰으로 대체
+          if (!phoneDigits.startsWith("010")) {
+            console.log(`[napkin] ⚠️ 휴대폰 번호 010이 아님 (${phoneDigits}) → 법인폰 01077497515로 대체`);
+            phoneDigits = "01077497515";
+          }
+
           if (phoneDigits.length >= 10) {
             const first = phoneDigits.substring(0, 3); // 010
             const middle = phoneDigits.substring(3, 7); // XXXX
