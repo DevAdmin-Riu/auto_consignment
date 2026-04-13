@@ -2038,7 +2038,7 @@ async function fillAddressForm(page, shippingAddress) {
   // 상세주소 (addressDetail) 입력 - streetAddress2 또는 addressDetail 사용
   // 주의: 주소 검색 후 상세주소가 초기화되므로 주소 선택 완료 후에 입력해야 함
   const addressDetail =
-    shippingAddress.streetAddress2 || shippingAddress.addressDetail;
+    shippingAddress.streetAddress2 || shippingAddress.addressDetail || shippingAddress.firstName || "";
   if (addressDetail) {
     try {
       // pickerFrame 다시 찾기 (주소 검색 후 변경되었을 수 있음)
