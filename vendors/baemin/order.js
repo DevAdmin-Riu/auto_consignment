@@ -1751,17 +1751,18 @@ async function proceedToCheckout(page) {
       await finalOrderBtn.click();
       await delay(1100);
     } else {
-      // 텍스트로 폴백 (Puppeteer click)
-      let finalOrderClicked = { clicked: false };
-      const finalButtons = await page.$$("button");
-      for (const btn of finalButtons) {
-        const text = await page.evaluate(el => (el.innerText || el.textContent || "").trim(), btn);
-        if (text === "주문하기") {
-          await btn.click();
-          finalOrderClicked = { clicked: true, text };
-          break;
+      // 텍스트로 폴백
+      const finalOrderClicked = await page.evaluate(() => {
+        const buttons = document.querySelectorAll("button");
+        for (const btn of buttons) {
+          const text = (btn.innerText || btn.textContent || "").trim();
+          if (text === "주문하기") {
+            btn.click();
+            return { clicked: true, text };
+          }
         }
-      }
+        return { clicked: false };
+      });
 
       if (finalOrderClicked.clicked) {
         console.log(
