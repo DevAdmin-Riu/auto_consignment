@@ -1694,19 +1694,18 @@ async function proceedToCheckout(page) {
       console.log("[baemin] 주문하기 버튼 발견 (셀렉터)");
       await orderBtn.click();
     } else {
-      // 텍스트로 폴백
+      // 텍스트로 폴백 (Puppeteer click — 실제 좌표 클릭)
       console.log("[baemin] 텍스트 기반 검색으로 전환...");
-      const orderClicked = await page.evaluate(() => {
-        const buttons = document.querySelectorAll("button");
-        for (const btn of buttons) {
-          const text = (btn.innerText || btn.textContent || "").trim();
-          if (text.includes("주문하기")) {
-            btn.click();
-            return { clicked: true, text: text.substring(0, 50) };
-          }
+      let orderClicked = { clicked: false };
+      const buttons = await page.$$("button");
+      for (const btn of buttons) {
+        const text = await page.evaluate(el => (el.innerText || el.textContent || "").trim(), btn);
+        if (text.includes("주문하기")) {
+          await btn.click();
+          orderClicked = { clicked: true, text: text.substring(0, 50) };
+          break;
         }
-        return { clicked: false };
-      });
+      }
 
       if (!orderClicked.clicked) {
         // 장바구니 상태 확인 (디버깅용)
@@ -1752,18 +1751,17 @@ async function proceedToCheckout(page) {
       await finalOrderBtn.click();
       await delay(1100);
     } else {
-      // 텍스트로 폴백
-      const finalOrderClicked = await page.evaluate(() => {
-        const buttons = document.querySelectorAll("button");
-        for (const btn of buttons) {
-          const text = (btn.innerText || btn.textContent || "").trim();
-          if (text === "주문하기") {
-            btn.click();
-            return { clicked: true, text };
-          }
+      // 텍스트로 폴백 (Puppeteer click)
+      let finalOrderClicked = { clicked: false };
+      const finalButtons = await page.$$("button");
+      for (const btn of finalButtons) {
+        const text = await page.evaluate(el => (el.innerText || el.textContent || "").trim(), btn);
+        if (text === "주문하기") {
+          await btn.click();
+          finalOrderClicked = { clicked: true, text };
+          break;
         }
-        return { clicked: false };
-      });
+      }
 
       if (finalOrderClicked.clicked) {
         console.log(
