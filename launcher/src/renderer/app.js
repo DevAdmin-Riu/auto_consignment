@@ -338,10 +338,13 @@ function setupEventListeners() {
     }
   });
 
-  // n8n 열기
-  document.getElementById("btn-open-n8n").addEventListener("click", () => {
-    window.api.openN8n();
-  });
+  // n8n 열기 (버튼이 있는 경우에만)
+  const btnOpenN8n = document.getElementById("btn-open-n8n");
+  if (btnOpenN8n) {
+    btnOpenN8n.addEventListener("click", () => {
+      window.api.openN8n();
+    });
+  }
 
   // 로그 탭
   document.querySelectorAll(".log-tab").forEach((tab) => {
