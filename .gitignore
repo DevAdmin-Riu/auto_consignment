@@ -42,8 +42,8 @@ data_/
 temp/
 *.xlsx
 
-# PowerShell 스크립트
-*.ps1
+# PowerShell 스크립트 (temp 폴더만)
+temp/*.ps1
 
 n8n-data.zip
 
