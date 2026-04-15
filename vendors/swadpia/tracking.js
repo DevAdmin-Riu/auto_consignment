@@ -39,7 +39,7 @@ const SELECTORS = {
  * @param {string[]} openMallOrderNumbers - 조회할 오픈몰 주문번호 배열 (vendorOrderNumber로 사용)
  * @returns {Array} 조회 결과 배열 [{ openMallOrderNumber, trackingNumber, carrier }, ...]
  */
-async function getSwadpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
+async function getSwadpiaTrackingNumbers(page, vendor, openMallOrderNumbers, fulfillmentMap = {}, onTrackingFound = null) {
   console.log(`[swadpia 송장조회] 시작: ${openMallOrderNumbers.length}건`);
 
   const errorCollector = createTrackingErrorCollector("swadpia");

@@ -29,7 +29,7 @@ const DELIVERY_TABLE_SELECTOR =
  * @param {Object} fulfillmentMap - { openMallOrderNumber: { fulfillments: [{ fulfillmentId, vendorItemId, productName }] } }
  * @returns {Object} { results: [{ fulfillmentId, trackingNumber, carrier }], automationErrors }
  */
-async function getCoupangTrackingNumbers(page, vendor, openMallOrderNumbers, fulfillmentMap = {}) {
+async function getCoupangTrackingNumbers(page, vendor, openMallOrderNumbers, fulfillmentMap = {}, onTrackingFound = null) {
   console.log(`[coupang 송장조회] 시작: ${openMallOrderNumbers.length}건`);
 
   const results = [];
@@ -63,12 +63,16 @@ async function getCoupangTrackingNumbers(page, vendor, openMallOrderNumbers, ful
 
           for (const m of matched) {
             if (m.trackingNumber) {
+              const carrier = normalizeCarrier(m.carrier);
               results.push({
                 openMallOrderNumber,
                 fulfillmentId: m.fulfillmentId,
                 trackingNumber: m.trackingNumber,
-                carrier: normalizeCarrier(m.carrier),
+                carrier,
               });
+              if (onTrackingFound && m.fulfillmentId) {
+                await onTrackingFound({ openMallOrderNumber, trackingNumber: m.trackingNumber, carrier, fulfillmentId: m.fulfillmentId });
+              }
             }
           }
         } else {

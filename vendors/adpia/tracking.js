@@ -49,7 +49,7 @@ const DEFAULT_CARRIER = "롯데택배";
  * @param {string[]} openMallOrderNumbers - 조회할 오픈몰 주문번호 배열
  * @returns {Array} 조회 결과 배열 [{ openMallOrderNumber, trackingNumber, carrier }, ...]
  */
-async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers) {
+async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers, fulfillmentMap = {}, onTrackingFound = null) {
   console.log(`[adpia 송장조회] 시작: ${openMallOrderNumbers.length}건`);
 
   const errorCollector = createTrackingErrorCollector("adpia");

@@ -23,7 +23,7 @@ const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
  * @param {string[]} openMallOrderNumbers
  * @param {Object} fulfillmentMap - { openMallOrderNumber: { fulfillments: [{ fulfillmentId, openMallOptions }] } }
  */
-async function getNapkinTrackingNumbers(page, vendor, openMallOrderNumbers, fulfillmentMap = {}) {
+async function getNapkinTrackingNumbers(page, vendor, openMallOrderNumbers, fulfillmentMap = {}, onTrackingFound = null) {
   console.log(`[napkin 송장조회] 시작: ${openMallOrderNumbers.length}건`);
 
   const errorCollector = createTrackingErrorCollector("napkin");
@@ -63,12 +63,16 @@ async function getNapkinTrackingNumbers(page, vendor, openMallOrderNumbers, fulf
 
           for (const m of matched) {
             if (m.trackingNumber) {
+              const carrier = normalizeCarrier(m.carrier);
               results.push({
                 openMallOrderNumber,
                 fulfillmentId: m.fulfillmentId,
                 trackingNumber: m.trackingNumber,
-                carrier: normalizeCarrier(m.carrier),
+                carrier,
               });
+              if (onTrackingFound && m.fulfillmentId) {
+                await onTrackingFound({ openMallOrderNumber, trackingNumber: m.trackingNumber, carrier, fulfillmentId: m.fulfillmentId });
+              }
             }
           }
         } else {

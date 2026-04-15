@@ -242,53 +242,50 @@ app.post("/api/vendor/tracking", async (req, res) => {
         page = pageInstance;
       }
 
-      // 벤더별 tracking 함수 호출 (fulfillmentMap 전달)
+      // 즉시 업데이트 콜백 (1건 찾을 때마다 바로 mutation 호출)
+      const onTrackingFound = immediateUpdate ? async (item) => {
+        if (!item.trackingNumber || !item.fulfillmentId) return;
+        trackingResults.push(item);
+        await updateTrackingImmediate(authToken, item.fulfillmentId, item.trackingNumber, item.carrier);
+        updatedCount++;
+      } : null;
+
+      // 벤더별 tracking 함수 호출 (fulfillmentMap + onTrackingFound 전달)
       const trackingHandler = trackingHandlers[vendor];
       const trackingResponse = await trackingHandler(
         page,
         vendorConfig,
         openMallOrderNumbers,
         fulfillmentMap,
+        onTrackingFound,
       );
 
-      // 반환 형식 처리: { results: [...], automationErrors: ... } 또는 배열
-      const results = Array.isArray(trackingResponse)
-        ? trackingResponse
-        : trackingResponse?.results || [];
+      // 즉시 업데이트 안 한 경우만 결과 병합
+      if (!immediateUpdate) {
+        const results = Array.isArray(trackingResponse)
+          ? trackingResponse
+          : trackingResponse?.results || [];
 
-      // 결과 병합 + 즉시 업데이트
-      for (const r of results) {
-        if (!r.trackingNumber) continue;
+        for (const r of results) {
+          if (!r.trackingNumber) continue;
 
-        const items = [];
-
-        // fulfillmentId가 직접 지정된 경우 (상품별 매칭)
-        if (r.fulfillmentId) {
-          items.push({
-            openMallOrderNumber: r.openMallOrderNumber,
-            trackingNumber: r.trackingNumber,
-            carrier: r.carrier,
-            fulfillmentId: r.fulfillmentId,
-          });
-        } else if (fulfillmentMap?.[r.openMallOrderNumber]) {
-          // 기존 방식: fulfillmentMap에서 fulfillmentIds 전부 같은 송장
-          const fm = fulfillmentMap[r.openMallOrderNumber];
-          for (const fulfillmentId of (fm.fulfillmentIds || [])) {
-            items.push({
+          if (r.fulfillmentId) {
+            trackingResults.push({
               openMallOrderNumber: r.openMallOrderNumber,
               trackingNumber: r.trackingNumber,
               carrier: r.carrier,
-              fulfillmentId,
+              fulfillmentId: r.fulfillmentId,
             });
-          }
-        }
-
-        // 즉시 업데이트 모드: 찾는 즉시 mutation 호출
-        for (const item of items) {
-          trackingResults.push(item);
-          if (immediateUpdate) {
-            await updateTrackingImmediate(authToken, item.fulfillmentId, item.trackingNumber, item.carrier);
-            updatedCount++;
+          } else if (fulfillmentMap?.[r.openMallOrderNumber]) {
+            const fm = fulfillmentMap[r.openMallOrderNumber];
+            for (const fulfillmentId of (fm.fulfillmentIds || [])) {
+              trackingResults.push({
+                openMallOrderNumber: r.openMallOrderNumber,
+                trackingNumber: r.trackingNumber,
+                carrier: r.carrier,
+                fulfillmentId,
+              });
+            }
           }
         }
       }
