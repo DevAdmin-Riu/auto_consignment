@@ -1743,31 +1743,64 @@ async function proceedToCheckout(page) {
     console.log("[baemin] 최종 주문하기 버튼 찾는 중...");
     await delay(1100);
 
-    let finalOrderBtn = await waitFor(page, SELECTORS.finalOrderButton, 3000);
-    await delay(1100);
-
-    if (finalOrderBtn) {
-      console.log("[baemin] 최종 주문하기 버튼 발견 (셀렉터)");
-      await finalOrderBtn.click();
-      await delay(1100);
-    } else {
-      // 텍스트로 폴백 — "주문하기" 포함하는 버튼 (추천 모달 포함)
-      let finalOrderClicked = { clicked: false };
-      const finalButtons = await page.$$("button");
-      for (const btn of finalButtons) {
-        const text = await page.evaluate(el => (el.innerText || el.textContent || "").trim(), btn);
-        if (text.includes("주문하기")) {
-          await btn.click();
-          finalOrderClicked = { clicked: true, text: text.substring(0, 50) };
+    // 3-1. 추천 모달 처리 ("혹시 깜빡한거 없으세요?")
+    const recommendModalHandled = await page.evaluate(() => {
+      // 모달 타이틀로 추천 모달 찾기
+      const allElements = document.querySelectorAll("*");
+      for (const el of allElements) {
+        if (el.children.length > 3) continue;
+        const text = (el.textContent || "").trim();
+        if (text.includes("깜빡한거") || text.includes("깜빡한 거")) {
+          // 모달 컨테이너로 올라가기
+          let container = el.parentElement;
+          for (let i = 0; i < 10 && container; i++) {
+            const btn = container.querySelector('button');
+            if (btn) {
+              const btnText = (btn.innerText || btn.textContent || "").trim();
+              if (btnText.includes("주문하기")) {
+                btn.click();
+                return { found: true, text: btnText.substring(0, 50) };
+              }
+            }
+            container = container.parentElement;
+          }
           break;
         }
       }
+      return { found: false };
+    });
 
-      if (finalOrderClicked.clicked) {
-        console.log(
-          `[baemin] 최종 주문하기 버튼 클릭 (텍스트): "${finalOrderClicked.text}"`,
-        );
+    if (recommendModalHandled.found) {
+      console.log(`[baemin] 추천 모달 → 주문하기 클릭: "${recommendModalHandled.text}"`);
+      await delay(2000);
+    } else {
+      // 추천 모달 없으면 기존 방식 (셀렉터 → 텍스트 폴백)
+      let finalOrderBtn = await waitFor(page, SELECTORS.finalOrderButton, 3000);
+      await delay(1100);
+
+      if (finalOrderBtn) {
+        console.log("[baemin] 최종 주문하기 버튼 발견 (셀렉터)");
+        await finalOrderBtn.click();
         await delay(1100);
+      } else {
+        const finalOrderClicked = await page.evaluate(() => {
+          const buttons = document.querySelectorAll("button");
+          for (const btn of buttons) {
+            const text = (btn.innerText || btn.textContent || "").trim();
+            if (text === "주문하기") {
+              btn.click();
+              return { clicked: true, text };
+            }
+          }
+          return { clicked: false };
+        });
+
+        if (finalOrderClicked.clicked) {
+          console.log(
+            `[baemin] 최종 주문하기 버튼 클릭 (텍스트): "${finalOrderClicked.text}"`,
+          );
+          await delay(1100);
+        }
       }
     }
 
