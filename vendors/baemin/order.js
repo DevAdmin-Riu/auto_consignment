@@ -1741,7 +1741,7 @@ async function proceedToCheckout(page) {
 
     // 3. 최종 주문하기 모달 버튼 클릭 (셀렉터 우선)
     console.log("[baemin] 최종 주문하기 버튼 찾는 중...");
-    await delay(1100);
+    await delay(3000); // 추천 모달 렌더링 대기
 
     // 3-1. 추천 모달 처리 ("혹시 깜빡한거 없으세요?")
     const recommendModalHandled = await page.evaluate(() => {
