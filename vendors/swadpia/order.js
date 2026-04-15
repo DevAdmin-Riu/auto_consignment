@@ -2124,7 +2124,7 @@ async function processSwadpiaOrder(
             purchaseOrderId,
             openMallOrderNumber: orderResult?.vendorOrderNumber || null,
             paymentAmount: actualAmount,
-            paymentCard: "SHINHAN",
+            paymentCard: "BC",
           },
         ]);
         alertPaymentParsingFailed({ vendor: "성원애드피아", purchaseOrderId, openMallOrderNumber: orderResult?.vendorOrderNumber, paymentAmount: actualAmount, parsingDetail: orderResult?.paymentParsingDetail || {} });
