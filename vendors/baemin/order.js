@@ -1744,27 +1744,29 @@ async function proceedToCheckout(page) {
     await delay(3000); // 추천 모달 렌더링 대기
 
     // 3-1. 추천 모달 처리 ("혹시 깜빡한거 없으세요?")
+    // 먼저 모달/오버레이 존재 여부 디버그
+    const modalDebug = await page.evaluate(() => {
+      const bodyText = document.body?.innerText || "";
+      const has깜빡 = bodyText.includes("깜빡");
+      const has주문하기 = bodyText.includes("주문하기");
+      // 모든 버튼 텍스트 수집
+      const buttons = [...document.querySelectorAll("button")];
+      const btnTexts = buttons.map(b => (b.innerText || "").trim().substring(0, 50)).filter(t => t.includes("주문"));
+      return { has깜빡, has주문하기, btnTexts, bodySnippet: bodyText.substring(0, 300) };
+    });
+    console.log(`[baemin] 모달 디버그: 깜빡=${modalDebug.has깜빡}, 주문하기버튼=${JSON.stringify(modalDebug.btnTexts)}`);
+
     const recommendModalHandled = await page.evaluate(() => {
-      // 모달 타이틀로 추천 모달 찾기
-      const allElements = document.querySelectorAll("*");
-      for (const el of allElements) {
-        if (el.children.length > 3) continue;
-        const text = (el.textContent || "").trim();
-        if (text.includes("깜빡한거") || text.includes("깜빡한 거")) {
-          // 모달 컨테이너로 올라가기
-          let container = el.parentElement;
-          for (let i = 0; i < 10 && container; i++) {
-            const btn = container.querySelector('button');
-            if (btn) {
-              const btnText = (btn.innerText || btn.textContent || "").trim();
-              if (btnText.includes("주문하기")) {
-                btn.click();
-                return { found: true, text: btnText.substring(0, 50) };
-              }
-            }
-            container = container.parentElement;
-          }
-          break;
+      const bodyText = document.body?.innerText || "";
+      if (!bodyText.includes("깜빡")) return { found: false };
+
+      // "주문하기" 포함하는 모든 버튼에서 마지막 것 (모달이 위에 있으므로)
+      const buttons = [...document.querySelectorAll("button")];
+      for (let i = buttons.length - 1; i >= 0; i--) {
+        const text = (buttons[i].innerText || buttons[i].textContent || "").trim();
+        if (text.includes("주문하기")) {
+          buttons[i].click();
+          return { found: true, text: text.substring(0, 50) };
         }
       }
       return { found: false };
