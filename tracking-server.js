@@ -13,6 +13,8 @@
 const express = require("express");
 const { connect } = require("puppeteer-real-browser");
 const { getVendorByKey } = require("./vendors/config");
+const { setConfig: setGraphQLConfig, callGraphQL } = require("./lib/graphql-client");
+const { normalizeCarrier } = require("./lib/carrier");
 
 // 각 벤더별 tracking 모듈
 const { getCoupangTrackingNumbers } = require("./vendors/coupang/tracking");
@@ -95,11 +97,76 @@ const supportedVendors = Object.keys(trackingHandlers);
 
 // ==================== API 엔드포인트 ====================
 
+// 택배사 리스트 캐시
+let courierListCache = null;
+
 /**
- * 송장번호 조회
- * POST /api/vendor/tracking
- * Body: { vendors: [{ vendor: "coupang", openMallOrderNumbers: [...], fulfillmentMap: {...} }, ...] }
+ * 택배사 리스트 조회 (캐싱 — 1회 조회 후 재사용)
  */
+async function getCourierList(authToken) {
+  if (courierListCache) return courierListCache;
+
+  try {
+    const result = await callGraphQL(authToken, `
+      query CourierList($first: Int) {
+        couriers(first: $first) {
+          edges { node { id name code } }
+        }
+      }
+    `, { first: 1000 });
+
+    const edges = result?.data?.couriers?.edges || [];
+    courierListCache = edges.map(e => e.node);
+    console.log(`[tracking] 택배사 리스트 조회 완료: ${courierListCache.length}개`);
+    return courierListCache;
+  } catch (e) {
+    console.log(`[tracking] 택배사 리스트 조회 실패: ${e.message}`);
+    return [];
+  }
+}
+
+/**
+ * 송장번호 즉시 업데이트 (찾는 즉시 mutation 호출)
+ */
+async function updateTrackingImmediate(authToken, fulfillmentId, trackingNumber, carrier) {
+  if (!authToken || !fulfillmentId || !trackingNumber) return null;
+
+  const courierList = await getCourierList(authToken);
+
+  // 택배사 매칭
+  const courierMatch = courierList.find(c => c.name === carrier);
+  if (!courierMatch) {
+    console.log(`[tracking] ⚠️ 택배사 매칭 실패: ${carrier} → 스킵`);
+    return null;
+  }
+
+  try {
+    const result = await callGraphQL(authToken, `
+      mutation FulfillmentUpdateTracking($id: ID!, $input: FulfillmentUpdateTrackingInput!) {
+        fulfillmentUpdateTracking(id: $id, input: $input) {
+          fulfillment { id trackingNumber }
+          errors: orderErrors { code message field }
+        }
+      }
+    `, {
+      id: fulfillmentId,
+      input: { trackingNumber, courierId: courierMatch.id },
+      isPoLineDeliveryConfirmed: true,
+    });
+
+    if (result?.data?.fulfillmentUpdateTracking?.errors?.length > 0) {
+      console.log(`[tracking] ⚠️ 송장 업데이트 에러: ${fulfillmentId} → ${JSON.stringify(result.data.fulfillmentUpdateTracking.errors)}`);
+      return { success: false, errors: result.data.fulfillmentUpdateTracking.errors };
+    }
+
+    console.log(`[tracking] ✅ 송장 즉시 업데이트: ${fulfillmentId} → ${trackingNumber} (${carrier})`);
+    return { success: true };
+  } catch (e) {
+    console.log(`[tracking] ⚠️ 송장 업데이트 실패 (무시): ${fulfillmentId} → ${e.message}`);
+    return { success: false, error: e.message };
+  }
+}
+
 app.post("/api/vendor/tracking", async (req, res) => {
   const { vendors } = req.body;
 
@@ -111,11 +178,25 @@ app.post("/api/vendor/tracking", async (req, res) => {
     });
   }
 
+  // authToken + graphqlUrl 추출
+  const authToken = req.headers.authorization || req.body.authToken;
+  const graphqlUrl = req.body.graphqlUrl;
+
+  if (graphqlUrl) {
+    setGraphQLConfig({ graphqlUrl });
+  }
+
+  const immediateUpdate = !!authToken;
+  if (immediateUpdate) {
+    console.log(`[tracking] 즉시 업데이트 모드`);
+  }
+
   try {
     console.log(`[tracking] 송장 조회 요청: ${vendors.length}개 벤더`);
 
     const { browser, page } = await getBrowser();
     const trackingResults = [];
+    let updatedCount = 0;
 
     // 각 vendor별로 순차 처리
     for (const v of vendors) {
@@ -175,26 +256,25 @@ app.post("/api/vendor/tracking", async (req, res) => {
         ? trackingResponse
         : trackingResponse?.results || [];
 
-      // 결과 병합
+      // 결과 병합 + 즉시 업데이트
       for (const r of results) {
         if (!r.trackingNumber) continue;
 
+        const items = [];
+
         // fulfillmentId가 직접 지정된 경우 (상품별 매칭)
         if (r.fulfillmentId) {
-          trackingResults.push({
+          items.push({
             openMallOrderNumber: r.openMallOrderNumber,
             trackingNumber: r.trackingNumber,
             carrier: r.carrier,
             fulfillmentId: r.fulfillmentId,
           });
-          continue;
-        }
-
-        // 기존 방식: fulfillmentMap에서 fulfillmentIds 전부 같은 송장
-        if (fulfillmentMap?.[r.openMallOrderNumber]) {
+        } else if (fulfillmentMap?.[r.openMallOrderNumber]) {
+          // 기존 방식: fulfillmentMap에서 fulfillmentIds 전부 같은 송장
           const fm = fulfillmentMap[r.openMallOrderNumber];
           for (const fulfillmentId of (fm.fulfillmentIds || [])) {
-            trackingResults.push({
+            items.push({
               openMallOrderNumber: r.openMallOrderNumber,
               trackingNumber: r.trackingNumber,
               carrier: r.carrier,
@@ -202,10 +282,19 @@ app.post("/api/vendor/tracking", async (req, res) => {
             });
           }
         }
+
+        // 즉시 업데이트 모드: 찾는 즉시 mutation 호출
+        for (const item of items) {
+          trackingResults.push(item);
+          if (immediateUpdate) {
+            await updateTrackingImmediate(authToken, item.fulfillmentId, item.trackingNumber, item.carrier);
+            updatedCount++;
+          }
+        }
       }
     }
 
-    console.log(`[tracking] 송장번호 찾음: ${trackingResults.length}건`);
+    console.log(`[tracking] 송장번호 찾음: ${trackingResults.length}건${immediateUpdate ? `, 즉시 업데이트: ${updatedCount}건` : ''}`);
 
     // 조회 완료 후 브라우저 종료
     console.log("[tracking] 조회 완료, 브라우저 종료");

@@ -1820,6 +1820,11 @@ async function proceedToCheckout(page) {
       };
     }
 
+    // 결제 페이지가 아닌 경우 (장바구니 등에 머물러 있음)
+    if (currentUrl.includes("cart")) {
+      console.log("[baemin] ❌ 결제 페이지 진입 실패: 장바구니 페이지에 머물러 있음");
+      return { success: false, message: "결제 페이지 진입 실패: 장바구니 페이지에 머물러 있음" };
+    }
     return { success: true, message: "주문하기 완료", url: currentUrl };
   } catch (error) {
     console.error("[baemin] 주문하기 실패:", error.message);
