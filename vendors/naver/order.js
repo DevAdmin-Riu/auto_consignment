@@ -2766,6 +2766,19 @@ async function processNaverOrder(
       "#root > div > div.DoubleTemplate_container__5LG6a > div.SubmitButton_article__\\+7E3M.SubmitButton_type-pc__wc4Vy.SubmitButton_type-floating__VRJYZ.SubmitButton_floating__Plj-\\+ > div > div > div.SubmitButton_area-button__1RiID > button";
 
     let paymentBtn = await page.$(paymentBtnSelector);
+    // 셀렉터 실패 시 텍스트 폴백
+    if (!paymentBtn) {
+      console.log("[naver] 결제하기 버튼 셀렉터 실패, 텍스트로 검색...");
+      const buttons = await page.$$("button");
+      for (const btn of buttons) {
+        const text = await page.evaluate(el => (el.innerText || el.textContent || "").trim(), btn);
+        if (text.includes("결제하기")) {
+          paymentBtn = btn;
+          console.log(`[naver] 결제하기 버튼 발견 (텍스트): "${text.substring(0, 30)}"`);
+          break;
+        }
+      }
+    }
     if (paymentBtn) {
       console.log("[naver] 결제하기 버튼 클릭...");
       await paymentBtn.click();
