@@ -1201,7 +1201,7 @@ async function processNapkinOrder(
     let paymentCompleted = false;
     let actualPaymentAmount = 0;
     let paymentParsingDetail = {};
-    const MAX_PAYMENT_RETRIES = 1; // 1회 실패 시 바로 발송 처리 (냅킨 이슈)
+    const MAX_PAYMENT_RETRIES = 3;
 
     for (
       let paymentAttempt = 0;
