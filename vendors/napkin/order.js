@@ -2375,7 +2375,7 @@ async function processNapkinOrder(
           purchaseOrderId,
           openMallOrderNumber: vendorOrderNumber || null,
           paymentAmount: actualPaymentAmount,
-          paymentCard: "BC",
+          paymentCard: "SHINHAN",
         },
       ]);
       alertPaymentParsingFailed({ vendor: "냅킨코리아", purchaseOrderId, openMallOrderNumber: vendorOrderNumber, paymentAmount: actualPaymentAmount, parsingDetail: paymentParsingDetail });

@@ -2427,7 +2427,7 @@ async function processAdpiaOrder(
                 purchaseOrderId: purchaseOrderId,
                 openMallOrderNumber: vendorOrderNumber || null,
                 paymentAmount: paymentAmount,
-                paymentCard: "BC",
+                paymentCard: "SHINHAN",
               },
             ]);
             console.log(`[adpia] ${poLineId} 결제 로그 저장: ${paymentAmount}원`);
