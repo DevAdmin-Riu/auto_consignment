@@ -1751,6 +1751,8 @@ async function processNapkinOrder(
                   console.log("[napkin] BC카드 결제창 대기...");
                   for (let i = 0; i < 20; i++) {
                     if (paymentPopup) break;
+
+                    // 방법 1: browser.pages()로 새 탭 감지
                     const pagesAfter = await browser.pages();
                     for (const p of pagesAfter) {
                       if (!pagesBeforeNextSet.has(p)) {
@@ -1763,6 +1765,43 @@ async function processNapkinOrder(
                       }
                     }
                     if (paymentPopup) break;
+
+                    // 방법 2: CDP로 타겟 검색
+                    try {
+                      const client = await page.createCDPSession();
+                      const { targetInfos } = await client.send("Target.getTargets");
+                      for (const t of targetInfos) {
+                        if (t.type === "page" && t.url && !t.url.startsWith("devtools://") && !t.url.startsWith("about:")) {
+                          const isKnown = pagesAfter.some(p => {
+                            try { return p.url() === t.url; } catch (e) { return false; }
+                          });
+                          if (!isKnown || t.url.includes("pay") || t.url.includes("card") || t.url.includes("bc")) {
+                            console.log(`[napkin] CDP 타겟 발견: ${t.url.substring(0, 80)}`);
+                            const cdpPage = await browser.newPage();
+                            // 기존 타겟에 연결 시도
+                            try {
+                              const targetPage = await browser.pages();
+                              for (const tp of targetPage) {
+                                try {
+                                  const tpUrl = tp.url();
+                                  if (tpUrl === t.url && !pagesBeforeNextSet.has(tp)) {
+                                    paymentPopup = tp;
+                                    paymentPopup.on("dialog", paymentDialogHandler);
+                                    console.log(`[napkin] CDP 결제창 연결 성공: ${tpUrl.substring(0, 80)}`);
+                                    break;
+                                  }
+                                } catch (e) {}
+                              }
+                            } catch (e) {}
+                          }
+                        }
+                      }
+                      await client.detach().catch(() => {});
+                    } catch (e) {
+                      console.log(`[napkin] CDP 타겟 검색 실패 (무시): ${e.message}`);
+                    }
+                    if (paymentPopup) break;
+
                     console.log(`[napkin] BC카드 결제창 대기 중... (${(i + 1) * 3}/60초)`);
                     await delay(3000);
                   }
