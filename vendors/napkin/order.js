@@ -1771,7 +1771,7 @@ async function processNapkinOrder(
                       const client = await page.createCDPSession();
                       const { targetInfos } = await client.send("Target.getTargets");
                       for (const t of targetInfos) {
-                        if (t.type === "page" && t.url && !t.url.startsWith("devtools://") && !t.url.startsWith("about:")) {
+                        if (t.type === "page" && !t.url.startsWith("devtools://")) {
                           const isKnown = pagesAfter.some(p => {
                             try { return p.url() === t.url; } catch (e) { return false; }
                           });
@@ -1802,7 +1802,8 @@ async function processNapkinOrder(
                     }
                     if (paymentPopup) break;
 
-                    console.log(`[napkin] BC카드 결제창 대기 중... (${(i + 1) * 3}/60초)`);
+                    const pageUrls = pagesAfter.map(p => { try { return p.url(); } catch(e) { return "error"; } });
+                    console.log(`[napkin] BC카드 결제창 대기 중... (${(i + 1) * 3}/60초) pages=${pagesAfter.length} urls=${JSON.stringify(pageUrls)}`);
                     await delay(3000);
                   }
 
