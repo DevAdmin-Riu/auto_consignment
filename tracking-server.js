@@ -341,6 +341,44 @@ app.get("/api/vendor/tracking/status", async (req, res) => {
 });
 
 /**
+ * 쿠팡 로켓배송 배송완료 자동 처리
+ * - n8n에서 GraphQL로 쿠팡 미배송완료 fulfillment 조회 후
+ *   { fulfillmentId, trackingNumber } 배열로 전달
+ * - 각 송장번호를 coupangls.com에서 조회 → 배송완료건만 bulk mutation 호출
+ *
+ * Body:
+ *   { authToken, graphqlUrl, fulfillments: [{ fulfillmentId, trackingNumber }] }
+ */
+app.post("/api/coupang/rocket-confirm", async (req, res) => {
+  try {
+    const { authToken, graphqlUrl, fulfillments } = req.body || {};
+    if (!authToken || !graphqlUrl) {
+      return res.status(400).json({
+        success: false,
+        error: "authToken, graphqlUrl 필수",
+      });
+    }
+    if (!Array.isArray(fulfillments)) {
+      return res.status(400).json({
+        success: false,
+        error: "fulfillments 배열 필수",
+      });
+    }
+
+    const { confirmRocketDeliveries } = require("./lib/coupang-rocket-confirm");
+    const summary = await confirmRocketDeliveries({
+      authToken,
+      graphqlUrl,
+      fulfillments,
+    });
+    res.json({ success: true, summary });
+  } catch (error) {
+    console.error("[rocket-confirm] API 에러:", error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
  * 브라우저 리셋
  */
 app.post("/api/vendor/tracking/reset", async (req, res) => {
