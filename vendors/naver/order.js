@@ -571,7 +571,15 @@ async function selectSingleOption(page, option) {
   // 주의: 옵션 드롭다운 "버튼"에는 aria-haspopup="listbox", "옵션 항목"에는 role="option"이 있음
   // 둘 다 data-shp-contents-type 속성을 가지므로 버튼만 정확히 잡아야 함
   let optionBtn = null;
-  for (let retry = 0; retry < 5; retry++) {
+  for (let retry = 0; retry < 10; retry++) {
+    // 매 retry마다 옵션 영역으로 스크롤 (lazy-render 대응)
+    try {
+      await page.evaluate(() => {
+        const hint = document.querySelector('[data-shp-area-id="optselect"], [data-shp-area*="optselect"]');
+        if (hint) hint.scrollIntoView({ block: "center", behavior: "instant" });
+      });
+    } catch (e) {}
+
     // 1. 드롭다운 버튼 (aria-haspopup="listbox")
     optionBtn = await page.$(
       `a[aria-haspopup="listbox"][data-shp-contents-type="${option.title}"]`,
@@ -597,12 +605,52 @@ async function selectSingleOption(page, option) {
       }
     }
     if (optionBtn) break;
-    console.log(`[naver] 옵션 버튼 대기 중... (${retry + 1}/5)`);
+    console.log(`[naver] 옵션 버튼 대기 중... (${retry + 1}/10)`);
     await delay(1000);
   }
 
   if (!optionBtn) {
-    console.log(`[naver] ❌ 옵션 버튼 없음: ${option.title}`);
+    // 진단 로그: 페이지에 존재하는 옵션 버튼 후보 전부 출력
+    try {
+      const diagnostic = await page.evaluate(() => {
+        const out = {
+          listboxButtons: [],
+          anyDataShpContentsType: [],
+          nativeSelects: [],
+          url: window.location.href,
+          title: document.title,
+        };
+        document.querySelectorAll('[aria-haspopup="listbox"]').forEach((el) => {
+          out.listboxButtons.push({
+            tag: el.tagName.toLowerCase(),
+            text: (el.textContent || "").trim().substring(0, 80),
+            contentsType: el.getAttribute("data-shp-contents-type") || "",
+            visible: el.getBoundingClientRect().width > 0,
+          });
+        });
+        document.querySelectorAll('[data-shp-contents-type]').forEach((el) => {
+          out.anyDataShpContentsType.push({
+            tag: el.tagName.toLowerCase(),
+            role: el.getAttribute("role") || "",
+            ariaHaspopup: el.getAttribute("aria-haspopup") || "",
+            contentsType: el.getAttribute("data-shp-contents-type"),
+            text: (el.textContent || "").trim().substring(0, 50),
+          });
+        });
+        document.querySelectorAll("select").forEach((el) => {
+          out.nativeSelects.push({
+            name: el.name || "",
+            options: Array.from(el.options).slice(0, 5).map((o) => o.text),
+          });
+        });
+        return out;
+      });
+      console.log(
+        `[naver] ❌ 옵션 버튼 없음: ${option.title}\n  URL: ${diagnostic.url}\n  title: ${diagnostic.title}\n  listbox 버튼 ${diagnostic.listboxButtons.length}개: ${JSON.stringify(diagnostic.listboxButtons)}\n  data-shp-contents-type 요소 ${diagnostic.anyDataShpContentsType.length}개: ${JSON.stringify(diagnostic.anyDataShpContentsType.slice(0, 5))}\n  native <select> ${diagnostic.nativeSelects.length}개: ${JSON.stringify(diagnostic.nativeSelects)}`,
+      );
+    } catch (e) {
+      console.log(`[naver] ❌ 옵션 버튼 없음: ${option.title} (진단 실패: ${e.message})`);
+    }
     return { success: false, reason: `옵션 버튼 없음: ${option.title}` };
   }
 
