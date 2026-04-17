@@ -2212,7 +2212,7 @@ async function processNaverOrder(
             await createNeedsManagerVerification(authToken, [{
               productVariantVendorId: product.productVariantVendorId,
               purchaseOrderId,
-              reason: result.error || `오픈몰 상품 링크 비어 있음: ${product.productSku}`,
+              reason: result.optionFailReason || result.error || `오픈몰 상품 링크 비어 있음: ${product.productSku}`,
             }]);
           } catch (e) {
             console.log(`[naver] ${poLineId} 담당자 확인 필요 저장 실패 (무시): ${e.message}`);
