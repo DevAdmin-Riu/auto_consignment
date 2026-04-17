@@ -568,17 +568,28 @@ async function getProductPrice(page) {
  */
 async function selectSingleOption(page, option) {
   // 네이버 스마트스토어 옵션 버튼 찾기 (data-shp-contents-type 속성으로 매칭, 클래스명은 빌드마다 변경됨)
-  // 옵션 렌더링 대기 (최대 5초)
+  // 주의: 옵션 드롭다운 "버튼"에는 aria-haspopup="listbox", "옵션 항목"에는 role="option"이 있음
+  // 둘 다 data-shp-contents-type 속성을 가지므로 버튼만 정확히 잡아야 함
   let optionBtn = null;
   for (let retry = 0; retry < 5; retry++) {
-    // data 속성으로 찾기
-    optionBtn = await page.$(`a[data-shp-contents-type="${option.title}"]`);
-    if (!optionBtn) optionBtn = await page.$(`[data-shp-contents-type="${option.title}"]`);
-    // 텍스트 폴백: 드롭다운 버튼에서 옵션 타이틀 텍스트로 찾기
+    // 1. 드롭다운 버튼 (aria-haspopup="listbox")
+    optionBtn = await page.$(
+      `a[aria-haspopup="listbox"][data-shp-contents-type="${option.title}"]`,
+    );
+    // 2. aria-haspopup 없는 경우 role="button"으로 폴백
     if (!optionBtn) {
-      const links = await page.$$('a[role="button"][aria-haspopup="listbox"]');
+      optionBtn = await page.$(
+        `a[role="button"][data-shp-contents-type="${option.title}"]`,
+      );
+    }
+    // 3. 텍스트 폴백: aria-haspopup="listbox" 버튼 중 옵션 타이틀 텍스트 포함
+    if (!optionBtn) {
+      const links = await page.$$('a[aria-haspopup="listbox"]');
       for (const link of links) {
-        const text = await page.evaluate(el => (el.textContent || "").trim(), link);
+        const text = await page.evaluate(
+          (el) => (el.textContent || "").trim(),
+          link,
+        );
         if (text.includes(option.title)) {
           optionBtn = link;
           break;
@@ -590,48 +601,131 @@ async function selectSingleOption(page, option) {
     await delay(1000);
   }
 
-  if (optionBtn) {
-    // 옵션 드롭다운 버튼 클릭
-    await optionBtn.click();
-    console.log(`[naver] 옵션 드롭다운 열기: ${option.title}`);
-    await delay(1000);
-
-    // 드롭다운에서 옵션 값 선택 (li 항목 중 텍스트 매칭 - 정확히 일치만 허용)
-    const selected = await page.evaluate((targetValue) => {
-      const items = document.querySelectorAll(
-        "ul[role='listbox'] li a, div[role='listbox'] li a, .option_list li a",
-      );
-      for (const item of items) {
-        const rawText = item.textContent?.trim() || "";
-        // 가격 부분 제거: "무지긴팔 (-3,500원)" → "무지긴팔"
-        const text = rawText.replace(/\s*\([+-]?[\d,]+원\)\s*$/, "").trim();
-        // 띄어쓰기 모두 제거 후 비교
-        const normalize = s => s.replace(/\s/g, '');
-        if (normalize(text) === normalize(targetValue)) {
-          item.click();
-          return rawText;
-        }
-      }
-      return null;
-    }, option.value);
-
-    if (selected) {
-      console.log(`[naver] 옵션 선택됨: ${selected}`);
-      await delay(1000);
-      return { success: true, selectedValue: selected };
-    } else {
-      // 옵션 값 매칭 실패 → 실패 반환
-      console.log(`[naver] ❌ 옵션 값 매칭 실패: ${option.value}`);
-      return {
-        success: false,
-        reason: `옵션 값 매칭 실패: ${option.title} = ${option.value}`,
-      };
-    }
-  } else {
-    // 옵션 버튼 없음 → 실패 반환
+  if (!optionBtn) {
     console.log(`[naver] ❌ 옵션 버튼 없음: ${option.title}`);
     return { success: false, reason: `옵션 버튼 없음: ${option.title}` };
   }
+
+  // 옵션 드롭다운 버튼 클릭 (Puppeteer 실제 마우스 이벤트)
+  try {
+    await optionBtn.click();
+  } catch (e) {
+    // 요소가 가려진 경우: evaluate로 클릭 폴백
+    await page.evaluate((el) => el.click(), optionBtn);
+  }
+  console.log(`[naver] 옵션 드롭다운 열기: ${option.title}`);
+
+  // 드롭다운이 열릴 때까지 대기 (aria-expanded="true" 또는 listbox 표시)
+  try {
+    await page.waitForFunction(
+      (title) => {
+        const btn = document.querySelector(
+          `a[aria-haspopup="listbox"][data-shp-contents-type="${title}"]`,
+        );
+        if (btn && btn.getAttribute("aria-expanded") === "true") return true;
+        // 폴백: 화면에 보이는 listbox가 있는지
+        const lists = document.querySelectorAll("ul[role='listbox'], div[role='listbox']");
+        for (const list of lists) {
+          const rect = list.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0) return true;
+        }
+        return false;
+      },
+      { timeout: 3000 },
+      option.title,
+    );
+  } catch (e) {
+    console.log(`[naver] 드롭다운 expand 대기 타임아웃, 진행`);
+  }
+  await delay(500);
+
+  // 옵션 항목 찾기
+  // 네이버 스마트스토어는 옵션 항목에 data-shp-contents-id="25x30 50장" 속성을 제공 (가격 표시 없이 정확한 값)
+  // → 이 속성이 가장 신뢰할 수 있는 매칭 기준. textContent는 "25x30 50장  (-2,500원)"처럼 가격이 붙음
+  // 우리가 저장한 option.value도 "25x35 50장(+1,500원)"처럼 가격이 붙어있을 수 있으므로 양쪽에서 가격 제거
+  const priceRe = /\s*\([+-]?[\d,]+원\)\s*$/;
+  const stripPrice = (s) => (s || "").replace(priceRe, "").trim();
+  const normalize = (s) => stripPrice(s).replace(/\s/g, "").toLowerCase();
+  const targetNorm = normalize(option.value);
+
+  // 드롭다운 내 보이는 옵션 항목 수집 (role="option" 또는 listbox 하위 a)
+  const items = await page.$$(
+    `a[role="option"], ul[role='listbox'] li a, div[role='listbox'] li a`,
+  );
+
+  const candidates = [];
+  for (const item of items) {
+    const info = await page.evaluate((el) => {
+      const rect = el.getBoundingClientRect();
+      return {
+        contentsId: el.getAttribute("data-shp-contents-id") || "",
+        contentsType: el.getAttribute("data-shp-contents-type") || "",
+        text: (el.textContent || "").trim(),
+        visible: rect.width > 0 && rect.height > 0,
+      };
+    }, item);
+    if (!info.visible) continue;
+    // contents-type이 있으면 option.title과 같은 것만 (엉뚱한 드롭다운의 항목 제외)
+    if (info.contentsType && info.contentsType !== option.title) continue;
+    candidates.push({ handle: item, ...info });
+  }
+
+  // 디버깅: 후보 목록 로깅
+  console.log(
+    `[naver] 옵션 후보 ${candidates.length}개:`,
+    candidates.map((c) => c.contentsId || c.text).join(" | "),
+  );
+
+  let matched = null;
+  // 1순위: data-shp-contents-id 정확 매칭 (공백/대소문자 무시)
+  for (const c of candidates) {
+    if (c.contentsId && normalize(c.contentsId) === targetNorm) {
+      matched = c;
+      break;
+    }
+  }
+  // 2순위: textContent에서 가격 제거 후 매칭
+  if (!matched) {
+    for (const c of candidates) {
+      const cleaned = c.text.replace(priceRe, "").trim();
+      if (normalize(cleaned) === targetNorm) {
+        matched = c;
+        break;
+      }
+    }
+  }
+
+  if (!matched) {
+    console.log(`[naver] ❌ 옵션 값 매칭 실패: ${option.title} = ${option.value}`);
+    return {
+      success: false,
+      reason: `옵션 값 매칭 실패: ${option.title} = ${option.value}`,
+    };
+  }
+
+  // 옵션 항목 클릭 — Puppeteer 실제 마우스 이벤트로 React 합성 이벤트 트리거
+  try {
+    // 스크롤 후 클릭 (화면 밖일 경우 대비)
+    await page.evaluate(
+      (el) => el.scrollIntoView({ block: "center", behavior: "instant" }),
+      matched.handle,
+    );
+    await delay(200);
+    await matched.handle.click();
+  } catch (e) {
+    console.log(`[naver] 옵션 클릭 1차 실패: ${e.message}, evaluate click 폴백`);
+    await page.evaluate((el) => {
+      // React 합성 이벤트용 MouseEvent 디스패치
+      el.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+      el.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+      el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      el.click();
+    }, matched.handle);
+  }
+  const displayText = matched.contentsId || matched.text;
+  console.log(`[naver] 옵션 선택됨: ${displayText}`);
+  await delay(1000);
+  return { success: true, selectedValue: displayText };
 }
 
 /**
@@ -1411,6 +1505,24 @@ async function selectDeliveryAddress(page, shippingAddress) {
 
   if (popupPage) {
     console.log("[naver] 팝업 창 열림, 팝업에서 주소 선택 진행...");
+
+    // 팝업에서 뜨는 alert/confirm (제주 추가배송비 등) 자동 확인
+    const popupDialogHandler = async (dialog) => {
+      try {
+        const type = dialog.type();
+        const msg = dialog.message();
+        console.log(
+          `[naver][popup] ${type} 감지: "${msg.substring(0, 150)}" → 자동 accept`,
+        );
+        await dialog.accept();
+        console.log(`[naver][popup] ✅ ${type} 확인 클릭 완료`);
+      } catch (e) {
+        console.log(`[naver][popup] dialog 처리 에러 (무시): ${e.message}`);
+      }
+    };
+    popupPage.on("dialog", popupDialogHandler);
+    console.log("[naver] 팝업 dialog 핸들러 설치");
+
     await delay(3000); // 팝업 로딩 대기
 
 
@@ -2551,6 +2663,28 @@ async function processNaverOrder(
       const MAX_ADDRESS_ATTEMPTS = 3;
       let addressVerified = false;
 
+      // 제주/도서산간 추가배송비 alert, 결제 확인 confirm 등 모든 dialog 자동 처리
+      // 배송지 선택 직전에 설치 → 팝업 안/직후 뜨는 alert도 놓치지 않음
+      // (팝업 페이지용 핸들러는 selectDeliveryAddress 내부에서 별도 설치)
+      if (!page._naverDialogHandler) {
+        const persistentHandler = async (dialog) => {
+          try {
+            const type = dialog.type();
+            const msg = dialog.message();
+            console.log(
+              `[naver] ${type} 감지: "${msg.substring(0, 150)}" → 자동 accept`,
+            );
+            await dialog.accept();
+            console.log(`[naver] ✅ ${type} 확인 클릭 완료`);
+          } catch (e) {
+            console.log(`[naver] dialog 처리 에러 (무시): ${e.message}`);
+          }
+        };
+        page.on("dialog", persistentHandler);
+        page._naverDialogHandler = persistentHandler;
+        console.log("[naver] persistent dialog 핸들러 설치 (메인 페이지)");
+      }
+
       for (let addrAttempt = 1; addrAttempt <= MAX_ADDRESS_ATTEMPTS; addrAttempt++) {
         console.log(`[naver] 배송지 선택 시도 ${addrAttempt}/${MAX_ADDRESS_ATTEMPTS}...`);
         const addressResult = await selectDeliveryAddress(page, shippingAddress);
@@ -2600,21 +2734,8 @@ async function processNaverOrder(
           continue;
         }
 
-        // 배송지 변경 후 추가배송비 alert 처리 (제주 ↔ 일반 전환 시)
-        console.log("[naver] 배송지 변경 후 추가배송비 alert 대기...");
-        let alertDetected = false;
-        const dialogHandler = async (dialog) => {
-          console.log(`[naver] alert 감지: "${dialog.message().substring(0, 100)}"`);
-          await dialog.accept();
-          alertDetected = true;
-          console.log("[naver] ✅ alert 확인 클릭 완료");
-        };
-        page.on("dialog", dialogHandler);
-        await delay(3000);
-        page.off("dialog", dialogHandler);
-        if (!alertDetected) {
-          console.log("[naver] 추가배송비 alert 없음 (정상)");
-        }
+        // 배송지 선택 직후 alert 대기 (persistent 핸들러는 이미 선택 전에 설치됨)
+        await delay(2000);
 
         // 카카오 배송지 결제 전 검증 비활성화 (네이버/카카오 주소 구조 차이로 오탐 발생)
         console.log("[naver] 배송지 검증 스킵 (카카오 비활성화)");

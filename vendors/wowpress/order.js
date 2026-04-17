@@ -131,7 +131,9 @@ async function payOutstanding(page, browser, vendor) {
     }
     return 0;
   });
-  console.log(`[wowpress] 총 결제해야할 미납금: ${paymentAmount.toLocaleString()}원`);
+  console.log(
+    `[wowpress] 총 결제해야할 미납금: ${paymentAmount.toLocaleString()}원`,
+  );
 
   // 2. 기타결제 버튼 클릭
   console.log("[wowpress] 기타결제 버튼 클릭...");
@@ -365,9 +367,7 @@ async function processWowpressOrder(
         );
         console.log(`[wowpress] ✅ 결제내역 저장 완료`);
       } catch (e) {
-        console.log(
-          `[wowpress] ❌ 결제내역 저장 실패: ${e.message}`,
-        );
+        console.log(`[wowpress] ❌ 결제내역 저장 실패: ${e.message}`);
       }
     }
 
