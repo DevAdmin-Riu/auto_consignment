@@ -568,10 +568,26 @@ async function getProductPrice(page) {
  */
 async function selectSingleOption(page, option) {
   // 네이버 스마트스토어 옵션 버튼 찾기 (data-shp-contents-type 속성으로 매칭, 클래스명은 빌드마다 변경됨)
-  let optionBtn = await page.$(`a[data-shp-contents-type="${option.title}"]`);
-  // 폴백: input, button, div 등 다른 요소 타입도 시도
-  if (!optionBtn) {
-    optionBtn = await page.$(`[data-shp-contents-type="${option.title}"]`);
+  // 옵션 렌더링 대기 (최대 5초)
+  let optionBtn = null;
+  for (let retry = 0; retry < 5; retry++) {
+    // data 속성으로 찾기
+    optionBtn = await page.$(`a[data-shp-contents-type="${option.title}"]`);
+    if (!optionBtn) optionBtn = await page.$(`[data-shp-contents-type="${option.title}"]`);
+    // 텍스트 폴백: 드롭다운 버튼에서 옵션 타이틀 텍스트로 찾기
+    if (!optionBtn) {
+      const links = await page.$$('a[role="button"][aria-haspopup="listbox"]');
+      for (const link of links) {
+        const text = await page.evaluate(el => (el.textContent || "").trim(), link);
+        if (text.includes(option.title)) {
+          optionBtn = link;
+          break;
+        }
+      }
+    }
+    if (optionBtn) break;
+    console.log(`[naver] 옵션 버튼 대기 중... (${retry + 1}/5)`);
+    await delay(1000);
   }
 
   if (optionBtn) {
