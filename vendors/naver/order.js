@@ -654,36 +654,60 @@ async function selectSingleOption(page, option) {
     return { success: false, reason: `옵션 버튼 없음: ${option.title}` };
   }
 
-  // 옵션 드롭다운 버튼 클릭 (Puppeteer 실제 마우스 이벤트)
-  try {
-    await optionBtn.click();
-  } catch (e) {
-    // 요소가 가려진 경우: evaluate로 클릭 폴백
-    await page.evaluate((el) => el.click(), optionBtn);
-  }
-  console.log(`[naver] 옵션 드롭다운 열기: ${option.title}`);
-
-  // 드롭다운이 열릴 때까지 대기 (aria-expanded="true" 또는 listbox 표시)
-  try {
-    await page.waitForFunction(
-      (title) => {
-        const btn = document.querySelector(
-          `a[aria-haspopup="listbox"][data-shp-contents-type="${title}"]`,
-        );
-        if (btn && btn.getAttribute("aria-expanded") === "true") return true;
-        // 폴백: 화면에 보이는 listbox가 있는지
-        const lists = document.querySelectorAll("ul[role='listbox'], div[role='listbox']");
-        for (const list of lists) {
-          const rect = list.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0) return true;
-        }
-        return false;
-      },
-      { timeout: 3000 },
-      option.title,
+  // 드롭다운 이미 열려있는지 선확인 (2D 옵션 UI: 1번 선택 후 2번 옵션이 이미 펼쳐진 상태로 등장)
+  // 이미 열려 있으면 버튼 클릭 시 오히려 닫히므로 스킵
+  const alreadyExpanded = await page.evaluate((title) => {
+    const btn = document.querySelector(
+      `a[aria-haspopup="listbox"][data-shp-contents-type="${title}"]`,
     );
-  } catch (e) {
-    console.log(`[naver] 드롭다운 expand 대기 타임아웃, 진행`);
+    if (btn && btn.getAttribute("aria-expanded") === "true") return true;
+    // 폴백: 해당 title의 옵션 항목이 이미 보이는지
+    const opts = document.querySelectorAll(
+      `a[role="option"][data-shp-contents-type="${title}"]`,
+    );
+    for (const o of opts) {
+      const rect = o.getBoundingClientRect();
+      if (rect.width > 0 && rect.height > 0) return true;
+    }
+    return false;
+  }, option.title);
+
+  if (alreadyExpanded) {
+    console.log(`[naver] 드롭다운 이미 열림 (스킵): ${option.title}`);
+  } else {
+    // 옵션 드롭다운 버튼 클릭 (Puppeteer 실제 마우스 이벤트)
+    try {
+      await optionBtn.click();
+    } catch (e) {
+      // 요소가 가려진 경우: evaluate로 클릭 폴백
+      await page.evaluate((el) => el.click(), optionBtn);
+    }
+    console.log(`[naver] 옵션 드롭다운 열기: ${option.title}`);
+
+    // 드롭다운이 열릴 때까지 대기 (aria-expanded="true" 또는 listbox 표시)
+    try {
+      await page.waitForFunction(
+        (title) => {
+          const btn = document.querySelector(
+            `a[aria-haspopup="listbox"][data-shp-contents-type="${title}"]`,
+          );
+          if (btn && btn.getAttribute("aria-expanded") === "true") return true;
+          // 폴백: 해당 title 하위 옵션 항목이 보이는지
+          const opts = document.querySelectorAll(
+            `a[role="option"][data-shp-contents-type="${title}"]`,
+          );
+          for (const o of opts) {
+            const rect = o.getBoundingClientRect();
+            if (rect.width > 0 && rect.height > 0) return true;
+          }
+          return false;
+        },
+        { timeout: 5000 },
+        option.title,
+      );
+    } catch (e) {
+      console.log(`[naver] 드롭다운 expand 대기 타임아웃, 진행`);
+    }
   }
   await delay(500);
 
