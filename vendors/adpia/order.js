@@ -450,21 +450,42 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
     }
   }
 
-  // 2. 파일 선택 (업로드는 장바구니 담기 버튼 클릭 후 시작됨)
+  // 2. 파일 선택
+  // 애드피아는 업로드 컨테이너가 DOM에 항상 존재하고, 필요한 것만 display:none이 아닌 상태
+  // (upload_before_re = 활성, upload_before = 숨김 / estimateplupload2019 vs shopplupload)
+  // → input의 부모 체인에 display:none / visibility:hidden이 없는 input만 "활성"으로 간주
+  let fileInput = null;
   if (downloadedFile?.filePath) {
-    console.log(`[adpia] 파일 선택: ${downloadedFile.filePath}`);
-    const fileInput = await page.$(SELECTORS.orderPage.fileInput);
-    if (fileInput) {
-      await fileInput.uploadFile(downloadedFile.filePath);
-      console.log("[adpia] 파일 선택 완료");
-      await delay(1000);
-    } else {
-      console.log(`[adpia] 파일 입력 필드를 찾을 수 없음 (상품코드: ${product.productSku}, 셀렉터: ${SELECTORS.orderPage.fileInput})`);
-      return {
-        success: false,
-        message: "파일 입력 필드를 찾을 수 없음",
-      };
+    const fileInputHandles = await page.$$(SELECTORS.orderPage.fileInput);
+    for (const handle of fileInputHandles) {
+      const isActive = await page.evaluate((el) => {
+        // 부모부터 탐색 (input 자체는 보통 opacity:0로 숨겨도 정상)
+        let node = el.parentElement;
+        while (node && node !== document.body) {
+          const style = window.getComputedStyle(node);
+          if (style.display === "none" || style.visibility === "hidden") {
+            return false;
+          }
+          node = node.parentElement;
+        }
+        return true;
+      }, handle);
+      if (isActive) {
+        fileInput = handle;
+        break;
+      }
     }
+  }
+
+  if (downloadedFile?.filePath && fileInput) {
+    console.log(`[adpia] 파일 선택: ${downloadedFile.filePath}`);
+    await fileInput.uploadFile(downloadedFile.filePath);
+    console.log("[adpia] 파일 선택 완료");
+    await delay(1000);
+  } else if (downloadedFile?.filePath && !fileInput) {
+    console.log(`[adpia] 파일 있지만 활성 input 없음 - 업로드 스킵: ${product.productSku}`);
+  } else {
+    console.log(`[adpia] 디자인 파일 없음 - 업로드 스킵, 장바구니 진행: ${product.productSku}`);
   }
 
   // 3. 교정확인 후 인쇄 체크박스 체크 (일부 제품에는 없을 수 있음)
@@ -1824,22 +1845,13 @@ async function processAdpiaOrder(
   const priceMismatches = []; // 가격 불일치 상품들
 
   try {
-    // 0. 디자인 파일 미리 다운로드 (없는 상품은 담당자 확인 필요로 표시 후 스킵)
+    // 0. 디자인 파일 미리 다운로드 (URL 없으면 스킵 - 업로드 필요 여부는 상품 페이지에서 판정)
+    // 다운로드 실패는 여전히 담당자 확인 + 스킵 (URL은 있는데 접근 실패 = 정상 플로우 아님)
     const skippedProducts = [];
     for (const product of products) {
       const designFileUrl = product.designFileUrl;
       if (!designFileUrl) {
-        console.log(`[adpia] ⚠️ 디자인 파일 URL 없음 → 담당자 확인 필요: ${product.productSku}`);
-        try {
-          await createNeedsManagerVerification(authToken, [{
-            productVariantVendorId: product.productVariantVendorId,
-            purchaseOrderId,
-            reason: `디자인 파일 URL 없음: ${product.productSku} (${product.productName})`,
-          }]);
-        } catch (e) {
-          console.error(`[adpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
-        }
-        skippedProducts.push(product.productSku);
+        console.log(`[adpia] 디자인 파일 URL 없음 (업로드 필요 시 상품 페이지에서 판정): ${product.productSku}`);
         continue;
       }
       try {
@@ -1866,15 +1878,15 @@ async function processAdpiaOrder(
       }
     }
 
-    // 디자인 파일 있는 상품만 남기기
+    // 다운로드 실패로 스킵된 상품만 제거 (URL 없는 상품은 유지됨 — 상품 페이지에서 업로드 필요 여부 판정)
     if (skippedProducts.length > 0) {
       products = products.filter(p => !skippedProducts.includes(p.productSku));
-      console.log(`[adpia] 디자인 파일 없는 상품 ${skippedProducts.length}건 스킵, 남은 상품: ${products.length}건`);
+      console.log(`[adpia] 디자인 파일 다운로드 실패 ${skippedProducts.length}건 스킵, 남은 상품: ${products.length}건`);
     }
 
     if (products.length === 0) {
-      console.log("[adpia] 주문 가능한 상품 없음 (모두 디자인 파일 누락)");
-      return { success: false, error: "모든 상품 디자인 파일 누락" };
+      console.log("[adpia] 주문 가능한 상품 없음");
+      return { success: false, error: "주문 가능한 상품 없음" };
     }
 
     console.log("[adpia] 준비된 파일 수:", downloadedFiles.length);
