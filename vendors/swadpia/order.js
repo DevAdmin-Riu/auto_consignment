@@ -53,8 +53,14 @@ const {
 const { automateISPPayment } = require("../../lib/isp-payment");
 const { processShinhanCardPayment } = require("../../lib/shinhan-payment");
 const { getEnv } = require("../config");
-const { searchAddressInFrame, selectAddressResult } = require("../../lib/daum-address");
-const { searchAddressWithKakao, normalizeAddress } = require("../../lib/address-verify");
+const {
+  searchAddressInFrame,
+  selectAddressResult,
+} = require("../../lib/daum-address");
+const {
+  searchAddressWithKakao,
+  normalizeAddress,
+} = require("../../lib/address-verify");
 const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
 const { checkPrice } = require("../../lib/price-check");
 
@@ -223,14 +229,11 @@ const SELECTORS = {
     // 전체 선택 체크박스
     selectAllCheckbox: "#cart_all_check",
     // 장바구니 전체 비우기 버튼
-    deleteAllBtn:
-      'a[onclick*="cartAllDelete"]',
+    deleteAllBtn: 'a[onclick*="cartAllDelete"]',
     // 선택 상품 삭제 버튼 (폴백)
-    deleteSelectedBtn:
-      'a[onclick*="cartSelDelete"]',
+    deleteSelectedBtn: 'a[onclick*="cartSelDelete"]',
     // 전체 주문하기 버튼
-    orderAllBtn:
-      'a[onclick*="cartAllOrder"]',
+    orderAllBtn: 'a[onclick*="cartAllOrder"]',
   },
   // 주문서 작성 페이지 셀렉터
   orderForm: {
@@ -317,7 +320,9 @@ async function clearCart(page) {
     } else {
       // 폴백: 전체 선택 후 선택 삭제
       console.log("[swadpia] 전체 비우기 버튼 없음, 선택 삭제 폴백...");
-      const selectAllCheckbox = await page.$(SELECTORS.cartPage.selectAllCheckbox);
+      const selectAllCheckbox = await page.$(
+        SELECTORS.cartPage.selectAllCheckbox,
+      );
       if (selectAllCheckbox) {
         await selectAllCheckbox.click();
         await new Promise((resolve) => setTimeout(resolve, 500));
@@ -334,7 +339,10 @@ async function clearCart(page) {
     console.log("[swadpia] 장바구니 비우기 완료");
     return true;
   } catch (error) {
-    console.error(`[swadpia] 장바구니 비우기 실패 (URL: ${page.url()}):`, error.message);
+    console.error(
+      `[swadpia] 장바구니 비우기 실패 (URL: ${page.url()}):`,
+      error.message,
+    );
     return false;
   }
 }
@@ -504,10 +512,13 @@ async function verifySwadpiaCartItems(page, expectedProducts) {
       const openMallPrice = cartItem.unitPrice; // 성원애드피아 현재 가격 (VAT 포함)
 
       if (!openMallPrice) {
-        console.error(`[swadpia] ❌ 가격 추출 실패: ${matchedExpected.productSku} 단가를 찾을 수 없음`);
+        console.error(
+          `[swadpia] ❌ 가격 추출 실패: ${matchedExpected.productSku} 단가를 찾을 수 없음`,
+        );
         priceMismatches.push({
           purchaseOrderLineId: matchedExpected.lineId || null,
-          productVariantVendorId: matchedExpected.productVariantVendorId || null,
+          productVariantVendorId:
+            matchedExpected.productVariantVendorId || null,
           productCode: matchedExpected.productSku,
           productName: cartItem.name,
           quantity: cartItem.quantity,
@@ -608,10 +619,14 @@ async function addProductsToCart(page, products, downloadedFiles) {
     for (let i = 0; i < products.length; i++) {
       const product = products[i];
       const productCode = product.productSku || "";
-      const poLineId = product.poLineNo ? `[${product.poLineNo}]` : `[상품${i + 1}]`;
+      const poLineId = product.poLineNo
+        ? `[${product.poLineNo}]`
+        : `[상품${i + 1}]`;
 
       if (!productCode) {
-        console.log(`[swadpia] ${poLineId} 상품 ${i + 1}: productSku 없음, 건너뜀`);
+        console.log(
+          `[swadpia] ${poLineId} 상품 ${i + 1}: productSku 없음, 건너뜀`,
+        );
         continue;
       }
       console.log(
@@ -737,7 +752,10 @@ async function addProductsToCart(page, products, downloadedFiles) {
           await new Promise((resolve) => setTimeout(resolve, 2000)); // plupload 완전 초기화 대기
 
           // plupload의 숨겨진 file input 찾기
-          console.log(`[swadpia] ${poLineId} 파일 선택:`, downloadedFile.filePath);
+          console.log(
+            `[swadpia] ${poLineId} 파일 선택:`,
+            downloadedFile.filePath,
+          );
           const fileInput = await iframe.$("input[type='file']");
           if (fileInput) {
             await fileInput.uploadFile(downloadedFile.filePath);
@@ -790,7 +808,7 @@ async function addProductsToCart(page, products, downloadedFiles) {
 
               // 담당자 휴대폰 번호 입력
               const proofPhone =
-                getEnv("SWADPIA_PROOF_PHONE") || "010-7769-2905";
+                getEnv("SWADPIA_PROOF_PHONE") || "010-7749-7515";
               const phoneParts = proofPhone.split("-");
               if (phoneParts.length === 3) {
                 const [hp1, hp2, hp3] = phoneParts;
@@ -837,7 +855,9 @@ async function addProductsToCart(page, products, downloadedFiles) {
         let cartPageLoaded = false;
 
         while (!cartPageLoaded && uploadRetryCount < MAX_UPLOAD_RETRY) {
-          console.log(`[swadpia] ${poLineId} 파일 업로드 진행 및 장바구니 이동 대기...`);
+          console.log(
+            `[swadpia] ${poLineId} 파일 업로드 진행 및 장바구니 이동 대기...`,
+          );
 
           // iframe 다시 가져오기 (업로드 진행률 확인용)
           let uploadIframeElement = await page.$(
@@ -960,7 +980,10 @@ async function addProductsToCart(page, products, downloadedFiles) {
                 String(retryQuantity),
               );
             } catch (qtyError) {
-              console.log(`[swadpia] ${poLineId} 수량 재설정 실패:`, qtyError.message);
+              console.log(
+                `[swadpia] ${poLineId} 수량 재설정 실패:`,
+                qtyError.message,
+              );
             }
 
             // 다시 장바구니 담기 버튼 클릭
@@ -1179,10 +1202,14 @@ async function placeOrder(page, shippingAddress) {
           console.log(`[swadpia] 선불택배 선택 확인 완료 (시도 ${attempt}/3)`);
           break;
         }
-        console.log(`[swadpia] 선불택배 선택 안됨 (value: ${selectedValue}), 재시도 ${attempt}/3...`);
+        console.log(
+          `[swadpia] 선불택배 선택 안됨 (value: ${selectedValue}), 재시도 ${attempt}/3...`,
+        );
         await new Promise((resolve) => setTimeout(resolve, 1000));
       } catch (e) {
-        console.log(`[swadpia] 배송방법 선택 에러 (시도 ${attempt}/3): ${e.message}`);
+        console.log(
+          `[swadpia] 배송방법 선택 에러 (시도 ${attempt}/3): ${e.message}`,
+        );
         if (attempt === 3) throw e;
         await new Promise((resolve) => setTimeout(resolve, 2000));
       }
@@ -1299,7 +1326,9 @@ async function placeOrder(page, shippingAddress) {
 
     // 디버깅: 모든 페이지 URL 출력
     if (!popup) {
-      console.log(`[swadpia] 새 팝업 못찾음 (클릭한 셀렉터: ${SELECTORS.orderForm.addressSearchBtn}, before: ${pagesBefore.length}개, after: ${pagesAfter.length}개). 모든 페이지:`);
+      console.log(
+        `[swadpia] 새 팝업 못찾음 (클릭한 셀렉터: ${SELECTORS.orderForm.addressSearchBtn}, before: ${pagesBefore.length}개, after: ${pagesAfter.length}개). 모든 페이지:`,
+      );
       for (const p of pagesAfter) {
         const url = p.url();
         if (!url.startsWith("devtools://")) {
@@ -1320,7 +1349,9 @@ async function placeOrder(page, shippingAddress) {
       }
       const kakaoResult = await searchAddressWithKakao(rawAddress);
       const searchAddress = kakaoResult?.roadAddress || rawAddress;
-      console.log(`[swadpia] 카카오 정규화 주소: ${searchAddress} (원본: ${rawAddress})`);
+      console.log(
+        `[swadpia] 카카오 정규화 주소: ${searchAddress} (원본: ${rawAddress})`,
+      );
 
       // 다음 우편번호 검색 iframe 찾기
       const frames = page.frames();
@@ -1328,7 +1359,11 @@ async function placeOrder(page, shippingAddress) {
       for (const f of frames) {
         try {
           const frameUrl = f.url();
-          if (frameUrl.includes("postcode") || frameUrl.includes("daum") || frameUrl.includes("post.daum")) {
+          if (
+            frameUrl.includes("postcode") ||
+            frameUrl.includes("daum") ||
+            frameUrl.includes("post.daum")
+          ) {
             frame = f;
             console.log("[swadpia] Daum 우편번호 iframe 찾음:", frameUrl);
             break;
@@ -1341,12 +1376,22 @@ async function placeOrder(page, shippingAddress) {
       }
 
       // 공통 모듈로 주소 검색 + 선택
-      const searchResult = await searchAddressInFrame(frame, searchAddress, "#region_name", ".btn_search", "[swadpia]");
+      const searchResult = await searchAddressInFrame(
+        frame,
+        searchAddress,
+        "#region_name",
+        ".btn_search",
+        "[swadpia]",
+      );
       if (!searchResult.success) {
         throw new Error(`주소 검색 실패: ${searchResult.error}`);
       }
 
-      const selectResult = await selectAddressResult(frame, "li.list_post_item", "[swadpia]");
+      const selectResult = await selectAddressResult(
+        frame,
+        "li.list_post_item",
+        "[swadpia]",
+      );
       if (!selectResult.success) {
         throw new Error(`주소 선택 실패: ${selectResult.error}`);
       }
@@ -1368,13 +1413,17 @@ async function placeOrder(page, shippingAddress) {
       // 카카오 API로 도로명 주소 정규화
       const rawAddress = shippingAddress?.streetAddress1 || "";
       if (!rawAddress) {
-        try { if (!popup.isClosed()) await popup.close(); } catch (e) {}
+        try {
+          if (!popup.isClosed()) await popup.close();
+        } catch (e) {}
         throw new Error("검색할 주소가 없음");
       }
 
       const kakaoResult = await searchAddressWithKakao(rawAddress);
       const searchAddress = kakaoResult?.roadAddress || rawAddress;
-      console.log(`[swadpia] 카카오 정규화 주소: ${searchAddress} (원본: ${rawAddress})`);
+      console.log(
+        `[swadpia] 카카오 정규화 주소: ${searchAddress} (원본: ${rawAddress})`,
+      );
 
       try {
         // 팝업 내 다음 iframe 찾기
@@ -1396,16 +1445,30 @@ async function placeOrder(page, shippingAddress) {
         }
 
         // 공통 모듈로 주소 검색
-        const searchResult = await searchAddressInFrame(targetFrame, searchAddress, "#region_name", ".btn_search", "[swadpia]");
+        const searchResult = await searchAddressInFrame(
+          targetFrame,
+          searchAddress,
+          "#region_name",
+          ".btn_search",
+          "[swadpia]",
+        );
         if (!searchResult.success) {
-          try { if (!popup.isClosed()) await popup.close(); } catch (e) {}
+          try {
+            if (!popup.isClosed()) await popup.close();
+          } catch (e) {}
           throw new Error(`주소 검색 실패: ${searchResult.error}`);
         }
 
         // 공통 모듈로 검색 결과 선택
-        const selectResult = await selectAddressResult(targetFrame, "li.list_post_item", "[swadpia]");
+        const selectResult = await selectAddressResult(
+          targetFrame,
+          "li.list_post_item",
+          "[swadpia]",
+        );
         if (!selectResult.success) {
-          try { if (!popup.isClosed()) await popup.close(); } catch (e) {}
+          try {
+            if (!popup.isClosed()) await popup.close();
+          } catch (e) {}
           throw new Error(`주소 선택 실패: ${selectResult.error}`);
         }
 
@@ -1413,10 +1476,14 @@ async function placeOrder(page, shippingAddress) {
 
         // 팝업 닫힘 대기
         await new Promise((r) => setTimeout(r, 2000));
-        try { if (!popup.isClosed()) await popup.close(); } catch (e) {}
+        try {
+          if (!popup.isClosed()) await popup.close();
+        } catch (e) {}
       } catch (popupError) {
         console.error("[swadpia] 주소 검색 실패:", popupError.message);
-        try { if (!popup.isClosed()) await popup.close(); } catch (e) {}
+        try {
+          if (!popup.isClosed()) await popup.close();
+        } catch (e) {}
         throw popupError;
       }
     }
@@ -1446,12 +1513,21 @@ async function placeOrder(page, shippingAddress) {
     if (!kakaoVerifyResult) {
       console.log("[swadpia] 카카오 API 결과 없음 - 검증 스킵");
     } else {
-      const jibunAddr = await page.$eval("#recv_addr_1", (el) => el.value).catch(() => "");
-      const roadAddr = await page.$eval("#recv_addr_1_new", (el) => el.value).catch(() => "");
+      const jibunAddr = await page
+        .$eval("#recv_addr_1", (el) => el.value)
+        .catch(() => "");
+      const roadAddr = await page
+        .$eval("#recv_addr_1_new", (el) => el.value)
+        .catch(() => "");
       console.log("[swadpia] 화면 지번주소:", jibunAddr);
       console.log("[swadpia] 화면 도로명주소:", roadAddr);
 
-      const displayAddrs = [jibunAddr, roadAddr, normalizeAddress(jibunAddr), normalizeAddress(roadAddr)].filter(Boolean);
+      const displayAddrs = [
+        jibunAddr,
+        roadAddr,
+        normalizeAddress(jibunAddr),
+        normalizeAddress(roadAddr),
+      ].filter(Boolean);
       const kakaoChecks = [
         kakaoVerifyResult.roadAddress,
         kakaoVerifyResult.jibunAddress,
@@ -1459,16 +1535,26 @@ async function placeOrder(page, shippingAddress) {
         normalizeAddress(kakaoVerifyResult.jibunAddress),
       ].filter(Boolean);
 
-      const matched = kakaoChecks.some(k => displayAddrs.some(d => d.includes(k) || k.includes(d)));
+      const matched = kakaoChecks.some((k) =>
+        displayAddrs.some((d) => d.includes(k) || k.includes(d)),
+      );
 
       if (matched) {
         console.log("[swadpia] ✅ 주소 검증 성공");
       } else {
         console.error("[swadpia] ❌ 주소 검증 실패!");
-        console.error(`[swadpia]   카카오 도로명: ${kakaoVerifyResult.roadAddress}`);
-        console.error(`[swadpia]   카카오 지번: ${kakaoVerifyResult.jibunAddress}`);
-        console.error(`[swadpia]   화면 지번: ${jibunAddr}, 도로명: ${roadAddr}`);
-        throw new Error(`주소 검증 실패 - 카카오: ${kakaoVerifyResult.roadAddress}, 화면: ${jibunAddr} / ${roadAddr}`);
+        console.error(
+          `[swadpia]   카카오 도로명: ${kakaoVerifyResult.roadAddress}`,
+        );
+        console.error(
+          `[swadpia]   카카오 지번: ${kakaoVerifyResult.jibunAddress}`,
+        );
+        console.error(
+          `[swadpia]   화면 지번: ${jibunAddr}, 도로명: ${roadAddr}`,
+        );
+        throw new Error(
+          `주소 검증 실패 - 카카오: ${kakaoVerifyResult.roadAddress}, 화면: ${jibunAddr} / ${roadAddr}`,
+        );
       }
     }
 
@@ -1503,7 +1589,9 @@ async function placeOrder(page, shippingAddress) {
     // 11. 카드 종류 선택 (PAYMENT_CARD_TYPE에 따라 분기)
     const paymentCardType = getEnv("PAYMENT_CARD_TYPE") || "shinhan";
     const swadpiaCardValue = paymentCardType === "bc" ? "31" : "41";
-    console.log(`[swadpia] 카드 종류 선택 (${paymentCardType === "bc" ? "비씨" : "신한"})...`);
+    console.log(
+      `[swadpia] 카드 종류 선택 (${paymentCardType === "bc" ? "비씨" : "신한"})...`,
+    );
     await page.waitForSelector(SELECTORS.paymentPage.cardTypeSelect, {
       timeout: 60000,
     });
@@ -1527,20 +1615,38 @@ async function placeOrder(page, shippingAddress) {
         const result = { fromSelector: 0, fromId: 0 };
 
         // 1. 기존 셀렉터 기반
-        const selectorEl = document.querySelector("#div_order_price_label11 > span.re_e_text.red.size18.nls");
-        if (selectorEl) result.fromSelector = parseInt((selectorEl.textContent || "").replace(/[^0-9]/g, ""), 10) || 0;
+        const selectorEl = document.querySelector(
+          "#div_order_price_label11 > span.re_e_text.red.size18.nls",
+        );
+        if (selectorEl)
+          result.fromSelector =
+            parseInt(
+              (selectorEl.textContent || "").replace(/[^0-9]/g, ""),
+              10,
+            ) || 0;
 
         // 2. #pnl_pay_amt id 기반
         const idEl = document.querySelector("#pnl_pay_amt");
-        if (idEl) result.fromId = parseInt((idEl.textContent || "").replace(/[^0-9]/g, ""), 10) || 0;
+        if (idEl)
+          result.fromId =
+            parseInt((idEl.textContent || "").replace(/[^0-9]/g, ""), 10) || 0;
 
         return result;
       });
 
-      paymentParsingDetail = { 셀렉터: amounts.fromSelector, pnl_pay_amt: amounts.fromId };
-      console.log(`[swadpia] 결제금액 파싱 - 셀렉터: ${amounts.fromSelector}원, #pnl_pay_amt: ${amounts.fromId}원`);
+      paymentParsingDetail = {
+        셀렉터: amounts.fromSelector,
+        pnl_pay_amt: amounts.fromId,
+      };
+      console.log(
+        `[swadpia] 결제금액 파싱 - 셀렉터: ${amounts.fromSelector}원, #pnl_pay_amt: ${amounts.fromId}원`,
+      );
 
-      if (amounts.fromSelector > 0 && amounts.fromId > 0 && amounts.fromSelector !== amounts.fromId) {
+      if (
+        amounts.fromSelector > 0 &&
+        amounts.fromId > 0 &&
+        amounts.fromSelector !== amounts.fromId
+      ) {
         console.log(`[swadpia] ⚠️ 결제금액 불일치! → #pnl_pay_amt 사용`);
       }
       actualPaymentAmount = amounts.fromId || amounts.fromSelector || 0;
@@ -1607,7 +1713,12 @@ async function placeOrder(page, shippingAddress) {
 
       await new Promise((r) => setTimeout(r, 1000));
       console.log("[swadpia] 신한카드 결제 자동화 시작...");
-      const shinhanResult = await processShinhanCardPayment(paymentFrame, page, "phone", page);
+      const shinhanResult = await processShinhanCardPayment(
+        paymentFrame,
+        page,
+        "phone",
+        page,
+      );
 
       if (shinhanResult.success) {
         console.log("[swadpia] ✅ 신한카드 결제 자동화 완료");
@@ -1672,7 +1783,11 @@ async function placeOrder(page, shippingAddress) {
       }
 
       const paymentDialogHandler = async (dialog) => {
-        console.log("[swadpia] 결제창 Dialog:", dialog.type(), dialog.message());
+        console.log(
+          "[swadpia] 결제창 Dialog:",
+          dialog.type(),
+          dialog.message(),
+        );
         await dialog.accept();
       };
       paymentPopup.on("dialog", paymentDialogHandler);
@@ -1692,7 +1807,9 @@ async function placeOrder(page, shippingAddress) {
         const certPaymentBtn =
           "#inapppay-dap2 > div.block1 > div.left > a.pay-item-s.pay-ctf";
         try {
-          await paymentPopup.waitForSelector(certPaymentBtn, { timeout: 60000 });
+          await paymentPopup.waitForSelector(certPaymentBtn, {
+            timeout: 60000,
+          });
           await paymentPopup.click(certPaymentBtn);
           console.log("[swadpia] ✅ 인증서 등록/결제 버튼 클릭 완료");
           await new Promise((r) => setTimeout(r, 3000));
@@ -1794,15 +1911,21 @@ async function processSwadpiaOrder(
       const designFileUrl = product.designFileUrl;
 
       if (!designFileUrl) {
-        console.log(`[swadpia] ⚠️ 디자인 파일 URL 없음 → 담당자 확인 필요: ${product.productSku}`);
+        console.log(
+          `[swadpia] ⚠️ 디자인 파일 URL 없음 → 담당자 확인 필요: ${product.productSku}`,
+        );
         try {
-          await createNeedsManagerVerification(authToken, [{
-            productVariantVendorId: product.productVariantVendorId,
-            purchaseOrderId,
-            reason: `디자인 파일 URL 없음: ${product.productSku} (${product.productName})`,
-          }]);
+          await createNeedsManagerVerification(authToken, [
+            {
+              productVariantVendorId: product.productVariantVendorId,
+              purchaseOrderId,
+              reason: `디자인 파일 URL 없음: ${product.productSku} (${product.productName})`,
+            },
+          ]);
         } catch (e) {
-          console.error(`[swadpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
+          console.error(
+            `[swadpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`,
+          );
         }
         skippedProducts.push(product.productSku);
         continue;
@@ -1821,15 +1944,21 @@ async function processSwadpiaOrder(
           productSku: product.productSku,
         });
       } catch (err) {
-        console.log(`[swadpia] ⚠️ 디자인 파일 다운로드 실패 → 담당자 확인 필요: ${product.productSku} - ${err.message}`);
+        console.log(
+          `[swadpia] ⚠️ 디자인 파일 다운로드 실패 → 담당자 확인 필요: ${product.productSku} - ${err.message}`,
+        );
         try {
-          await createNeedsManagerVerification(authToken, [{
-            productVariantVendorId: product.productVariantVendorId,
-            purchaseOrderId,
-            reason: `디자인 파일 다운로드 실패: ${product.productSku} - ${err.message}`,
-          }]);
+          await createNeedsManagerVerification(authToken, [
+            {
+              productVariantVendorId: product.productVariantVendorId,
+              purchaseOrderId,
+              reason: `디자인 파일 다운로드 실패: ${product.productSku} - ${err.message}`,
+            },
+          ]);
         } catch (e) {
-          console.error(`[swadpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
+          console.error(
+            `[swadpia] ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`,
+          );
         }
         skippedProducts.push(product.productSku);
         continue;
@@ -1838,8 +1967,12 @@ async function processSwadpiaOrder(
 
     // 디자인 파일 있는 상품만 남기기
     if (skippedProducts.length > 0) {
-      products = products.filter(p => !skippedProducts.includes(p.productSku));
-      console.log(`[swadpia] 디자인 파일 없는 상품 ${skippedProducts.length}건 스킵, 남은 상품: ${products.length}건`);
+      products = products.filter(
+        (p) => !skippedProducts.includes(p.productSku),
+      );
+      console.log(
+        `[swadpia] 디자인 파일 없는 상품 ${skippedProducts.length}건 스킵, 남은 상품: ${products.length}건`,
+      );
     }
 
     if (products.length === 0) {
@@ -1870,12 +2003,35 @@ async function processSwadpiaOrder(
     const clearResult = await clearCart(page);
     if (clearResult === false) {
       console.error("[swadpia] ❌ 장바구니 비우기 실패");
-      errorCollector.addError(ORDER_STEPS.CART_CLEARING, ERROR_CODES.CLICK_FAILED,
-        "장바구니 비우기 실패", { purchaseOrderId });
+      errorCollector.addError(
+        ORDER_STEPS.CART_CLEARING,
+        ERROR_CODES.CLICK_FAILED,
+        "장바구니 비우기 실패",
+        { purchaseOrderId },
+      );
       // poLine 실패 기록
-      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: "장바구니 비우기 실패" }); } } catch (e2) { console.error("[swadpia] poLine 실패 기록 에러 (무시):", e2.message); }
-      await saveOrderResults(authToken, { purchaseOrderId, products: [], automationErrors: errorCollector.getErrors(), poLineIds, success: false, vendor: "swadpia" });
-      return res.json({ success: false, vendor: vendor.name, error: "장바구니 비우기 실패" });
+      try {
+        for (const plId of poLineIds || []) {
+          await updatePoLineFailure(authToken, plId, purchaseOrderId, {
+            lastError: "장바구니 비우기 실패",
+          });
+        }
+      } catch (e2) {
+        console.error("[swadpia] poLine 실패 기록 에러 (무시):", e2.message);
+      }
+      await saveOrderResults(authToken, {
+        purchaseOrderId,
+        products: [],
+        automationErrors: errorCollector.getErrors(),
+        poLineIds,
+        success: false,
+        vendor: "swadpia",
+      });
+      return res.json({
+        success: false,
+        vendor: vendor.name,
+        error: "장바구니 비우기 실패",
+      });
     }
 
     // 3. 옵션 목록 페이지로 이동
@@ -1926,27 +2082,39 @@ async function processSwadpiaOrder(
         if (!needsRetry) {
           // 가격 체크 (checkPrice 사용)
           let priceStopRequired = false;
-          for (const pm of (cartVerification.priceMismatches || [])) {
-            const priceResult = checkPrice(pm.openMallPrice, pm.vendorPriceExcludeVat);
+          for (const pm of cartVerification.priceMismatches || []) {
+            const priceResult = checkPrice(
+              pm.openMallPrice,
+              pm.vendorPriceExcludeVat,
+            );
             if (priceResult.shouldStop) {
               if (priceResult.isExtractionFailure) {
                 const reason = `가격 추출 실패로 결제 중단: ${pm.productCode}`;
                 console.error(`[swadpia] ❌ ${reason}`);
-                errorCollector.addError(ORDER_STEPS.ORDER_PLACEMENT, null, reason, {
-                  purchaseOrderId,
-                  productVariantVendorId: pm.productVariantVendorId,
-                });
+                errorCollector.addError(
+                  ORDER_STEPS.ORDER_PLACEMENT,
+                  null,
+                  reason,
+                  {
+                    purchaseOrderId,
+                    productVariantVendorId: pm.productVariantVendorId,
+                  },
+                );
               } else {
                 const reason = `가격 차이 초과로 결제 중단: ${priceResult.reason}`;
                 console.error(`[swadpia] ❌ ${reason}`);
                 try {
-                  await createNeedsManagerVerification(authToken, [{
-                    purchaseOrderId,
-                    productVariantVendorId: pm.productVariantVendorId,
-                    reason,
-                  }]);
+                  await createNeedsManagerVerification(authToken, [
+                    {
+                      purchaseOrderId,
+                      productVariantVendorId: pm.productVariantVendorId,
+                      reason,
+                    },
+                  ]);
                 } catch (e) {
-                  console.error(`[swadpia] 담당자 확인 필요 저장 실패: ${e.message}`);
+                  console.error(
+                    `[swadpia] 담당자 확인 필요 저장 실패: ${e.message}`,
+                  );
                 }
               }
               priceStopRequired = true;
@@ -1954,8 +2122,24 @@ async function processSwadpiaOrder(
           }
           if (priceStopRequired) {
             // poLine 가격 차이 초과 기록 (failCount 증가 안함)
-            try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { isPriceGapExceeded: true, lastError: "가격 차이 초과로 결제 중단" }); } } catch (e) { console.error("[swadpia] poLine 가격 차이 기록 에러 (무시):", e.message); }
-            return res.json({ success: false, vendor: vendor.name, error: `가격 차이 초과로 결제 중단` });
+            try {
+              for (const plId of poLineIds || []) {
+                await updatePoLineFailure(authToken, plId, purchaseOrderId, {
+                  isPriceGapExceeded: true,
+                  lastError: "가격 차이 초과로 결제 중단",
+                });
+              }
+            } catch (e) {
+              console.error(
+                "[swadpia] poLine 가격 차이 기록 에러 (무시):",
+                e.message,
+              );
+            }
+            return res.json({
+              success: false,
+              vendor: vendor.name,
+              error: `가격 차이 초과로 결제 중단`,
+            });
           }
           console.log("[swadpia] 장바구니 검증 통과");
           break; // 검증 통과, 루프 종료
@@ -2079,8 +2263,12 @@ async function processSwadpiaOrder(
       // 주문번호 못 찾음 → 결제 후이므로 에러 로그만
       if (!orderResult?.vendorOrderNumber) {
         console.error("[swadpia] ⚠️ 결제 완료, 주문번호 수동 확인 필요");
-        errorCollector.addError(ORDER_STEPS.ORDER_CONFIRMATION, ERROR_CODES.ELEMENT_NOT_FOUND,
-          `결제 완료, 주문번호 추출 실패 - 수동 확인 필요`, { purchaseOrderId });
+        errorCollector.addError(
+          ORDER_STEPS.ORDER_CONFIRMATION,
+          ERROR_CODES.ELEMENT_NOT_FOUND,
+          `결제 완료, 주문번호 추출 실패 - 수동 확인 필요`,
+          { purchaseOrderId },
+        );
       }
       // 성공: 결제 완료
       await saveOrderResults(authToken, {
@@ -2111,10 +2299,16 @@ async function processSwadpiaOrder(
           await updatePoLineSuccess(authToken, plId, {
             openMallProductId: p.productSku || null,
             openMallProductName: p.productName || null,
-            openMallOption: p.openMallOptions ? (typeof p.openMallOptions === "string" ? p.openMallOptions : JSON.stringify(p.openMallOptions)) : null,
+            openMallOption: p.openMallOptions
+              ? typeof p.openMallOptions === "string"
+                ? p.openMallOptions
+                : JSON.stringify(p.openMallOptions)
+              : null,
           });
         }
-      } catch (e) { console.error("[swadpia] poLine 성공 기록 에러 (무시):", e.message); }
+      } catch (e) {
+        console.error("[swadpia] poLine 성공 기록 에러 (무시):", e.message);
+      }
 
       // 결제 로그 저장 (파싱 실패 시 0원으로 저장 → 대시보드에서 수동 수정)
       const actualAmount = orderResult?.actualPaymentAmount || 0;
@@ -2127,15 +2321,43 @@ async function processSwadpiaOrder(
             paymentCard: "SHINHAN",
           },
         ]);
-        alertPaymentParsingFailed({ vendor: "성원애드피아", purchaseOrderId, openMallOrderNumber: orderResult?.vendorOrderNumber, paymentAmount: actualAmount, parsingDetail: orderResult?.paymentParsingDetail || {} });
+        alertPaymentParsingFailed({
+          vendor: "성원애드피아",
+          purchaseOrderId,
+          openMallOrderNumber: orderResult?.vendorOrderNumber,
+          paymentAmount: actualAmount,
+          parsingDetail: orderResult?.paymentParsingDetail || {},
+        });
       } catch (e) {
         console.error("[swadpia] ⚠️ 결제 로그 저장 실패:", e.message);
-        try { await createAutomationErrors(authToken, [{ vendor: "swadpia", automationType: "ORDER", step: "ORDER_CONFIRMATION", errorCode: "UNEXPECTED_ERROR", errorMessage: `결제 로그 저장 실패: ${e.message}`, purchaseOrderId }]); } catch (e2) { console.error("[swadpia] 에러 기록도 실패:", e2.message); }
+        try {
+          await createAutomationErrors(authToken, [
+            {
+              vendor: "swadpia",
+              automationType: "ORDER",
+              step: "ORDER_CONFIRMATION",
+              errorCode: "UNEXPECTED_ERROR",
+              errorMessage: `결제 로그 저장 실패: ${e.message}`,
+              purchaseOrderId,
+            },
+          ]);
+        } catch (e2) {
+          console.error("[swadpia] 에러 기록도 실패:", e2.message);
+        }
       }
     } else {
       // 실패: 장바구니 검증 실패 또는 결제 실패
       // poLine 실패 기록
-      try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: orderResult?.error || "장바구니 검증 실패 또는 결제 실패" }); } } catch (e) { console.error("[swadpia] poLine 실패 기록 에러 (무시):", e.message); }
+      try {
+        for (const plId of poLineIds || []) {
+          await updatePoLineFailure(authToken, plId, purchaseOrderId, {
+            lastError:
+              orderResult?.error || "장바구니 검증 실패 또는 결제 실패",
+          });
+        }
+      } catch (e) {
+        console.error("[swadpia] poLine 실패 기록 에러 (무시):", e.message);
+      }
 
       await saveOrderResults(authToken, {
         purchaseOrderId,
@@ -2200,7 +2422,15 @@ async function processSwadpiaOrder(
     console.error("[swadpia] 주문 처리 에러:", error);
 
     // poLine 실패 기록
-    try { for (const plId of (poLineIds || [])) { await updatePoLineFailure(authToken, plId, purchaseOrderId, { lastError: error.message }); } } catch (e) { console.error("[swadpia] poLine 실패 기록 에러 (무시):", e.message); }
+    try {
+      for (const plId of poLineIds || []) {
+        await updatePoLineFailure(authToken, plId, purchaseOrderId, {
+          lastError: error.message,
+        });
+      }
+    } catch (e) {
+      console.error("[swadpia] poLine 실패 기록 에러 (무시):", e.message);
+    }
 
     // 에러 발생 시에도 임시 파일 정리
     console.log("[swadpia] 임시 파일 정리 (에러)...");
