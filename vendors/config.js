@@ -216,6 +216,7 @@ function wrapVendorConfig(name, config) {
  */
 const VENDOR_ALIASES = {
   위탁전용_임시협력사: "네이버",
+  패키지리퍼블릭: "네이버", // 네이버 스마트스토어 이용
   // 추후 다른 별칭 추가
 };
 
