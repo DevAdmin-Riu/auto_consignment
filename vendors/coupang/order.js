@@ -224,17 +224,28 @@ async function processCoupangOrder(
         });
         await delay(2000);
 
-        // 상품명 추출
+        // 상품명 추출 — 쿠팡 셀렉터 변경 대응 (h1.product-title이 신규, prod-buy-header__title은 구버전)
         let extractedName = "";
         try {
           const titleElem = await page.$(
-            "h1.prod-buy-header__title, h2.prod-buy-header__title, .prod-buy-header__title",
+            "h1.product-title, h1.product-title span, h1.prod-buy-header__title, h2.prod-buy-header__title, .prod-buy-header__title",
           );
           if (titleElem) {
             extractedName = await page.evaluate(
               (el) => el.textContent,
               titleElem,
             );
+          }
+          // 폴백: 진단 로그 (어떤 h1이 있는지)
+          if (!extractedName?.trim()) {
+            const diag = await page.evaluate(() => {
+              const h1s = document.querySelectorAll("h1");
+              return Array.from(h1s).slice(0, 3).map((h) => ({
+                cls: h.className,
+                text: (h.textContent || "").trim().substring(0, 80),
+              }));
+            });
+            console.log(`[coupang] 상품명 추출 실패, h1 후보:`, JSON.stringify(diag));
           }
         } catch (e) {}
 
