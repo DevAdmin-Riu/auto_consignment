@@ -139,6 +139,18 @@ async function getSwadpiaTrackingNumbers(page, vendor, openMallOrderNumbers, ful
           console.log(
             `[swadpia 송장조회] ${openMallOrderNumber} → ${trackingNumber} (${carrier})`,
           );
+
+          // 즉시 업데이트 콜백 (fulfillmentMap 있을 때)
+          const fulfillmentInfo = fulfillmentMap?.[openMallOrderNumber];
+          const fulfillmentId = fulfillmentInfo?.fulfillments?.[0]?.fulfillmentId;
+          if (onTrackingFound && fulfillmentId) {
+            await onTrackingFound({
+              openMallOrderNumber,
+              trackingNumber,
+              carrier,
+              fulfillmentId,
+            });
+          }
         } else {
           console.log(
             `[swadpia 송장조회] ${openMallOrderNumber} → 송장번호 추출 실패`,

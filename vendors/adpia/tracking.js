@@ -116,17 +116,33 @@ async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers, fulfi
         const searchBtn = await page.$(SELECTORS.orderHistory.searchBtn);
         if (searchBtn) {
           await searchBtn.click();
-          await delay(2000);
+          // 검색 결과 로딩 대기 — 현재 페이지에 조회한 주문번호가 실제로 나타날 때까지
+          try {
+            await page.waitForFunction(
+              (orderNum) => document.body.textContent.includes(orderNum),
+              { timeout: 8000 },
+              openMallOrderNumber,
+            );
+          } catch (e) {
+            console.log(
+              `[adpia 송장조회] ${openMallOrderNumber}: 검색 결과 대기 타임아웃`,
+            );
+          }
+          await delay(800); // 테이블 렌더 안정화
         }
 
-        // 6. 배송조회 버튼 찾기 (텍스트로 검색)
-        const trackingBtn = await page.evaluateHandle(() => {
-          const buttons = document.querySelectorAll("button");
-          for (const btn of buttons) {
-            if (btn.textContent.trim() === "배송조회") return btn;
+        // 6. 배송조회 버튼 찾기 — 해당 주문번호 행(tr) 내에서만 검색하여 이전 결과와 섞이지 않게 함
+        const trackingBtn = await page.evaluateHandle((orderNum) => {
+          const rows = document.querySelectorAll("tr");
+          for (const row of rows) {
+            if (!row.textContent.includes(orderNum)) continue;
+            const buttons = row.querySelectorAll("button");
+            for (const btn of buttons) {
+              if (btn.textContent.trim() === "배송조회") return btn;
+            }
           }
           return null;
-        });
+        }, openMallOrderNumber);
 
         if (trackingBtn && trackingBtn.asElement()) {
           console.log(`[adpia 송장조회] 배송조회 버튼 클릭...`);
@@ -154,6 +170,18 @@ async function getAdpiaTrackingNumbers(page, vendor, openMallOrderNumbers, fulfi
                 trackingNumber: trackingInfo.trackingNumber,
                 carrier: DEFAULT_CARRIER,
               });
+
+              // 즉시 업데이트 콜백 (fulfillmentMap 있을 때)
+              const fulfillmentInfo = fulfillmentMap?.[openMallOrderNumber];
+              const fulfillmentId = fulfillmentInfo?.fulfillments?.[0]?.fulfillmentId;
+              if (onTrackingFound && fulfillmentId) {
+                await onTrackingFound({
+                  openMallOrderNumber,
+                  trackingNumber: trackingInfo.trackingNumber,
+                  carrier: DEFAULT_CARRIER,
+                  fulfillmentId,
+                });
+              }
             }
           } else {
             console.log(
