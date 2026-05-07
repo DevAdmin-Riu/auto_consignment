@@ -20,9 +20,10 @@ const { sendAlertMail } = require("../../lib/alert-mail");
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 // 배송 추적 페이지 셀렉터
+// 클래스 해시는 네이버 빌드마다 바뀌므로 prefix 매칭 사용
 const DELIVERY_SELECTORS = {
-  carrier: "span.Courier_company__WpuEg",
-  trackingNumber: "span.Courier_number__5MVoy",
+  carrier: "span[class*='Courier_company']",
+  trackingNumber: "span[class*='Courier_number']",
 };
 
 /**
