@@ -880,6 +880,9 @@ async function processNapkinOrder(
     }
 
     const results = [];
+    // 같은 발주(PO) 그룹 내 한 라인이라도 실패하면 그룹 전체를 건너뜀
+    // (실패 발생 시 결제 단계로 진행하지 않음 - 장바구니는 다음 실행 시 비워짐)
+    const failedPoIds = new Set();
 
     // 3. 각 상품 처리
     for (let i = 0; i < products.length; i++) {
@@ -891,6 +894,42 @@ async function processNapkinOrder(
       console.log(`[napkin] ${poLineId} 상품명: ${product.productName}`);
       console.log(`[napkin] ${poLineId} URL: ${product.productUrl}`);
       console.log(`[napkin] ${poLineId} 수량: ${product.quantity}`);
+
+      // 같은 PO 그룹 내 다른 라인이 이미 실패한 경우 → 이 라인도 건너뜀 (담당자 확인)
+      if (product.purchaseOrderId && failedPoIds.has(product.purchaseOrderId)) {
+        const reason = `같은 발주(${product.purchaseOrderId}) 내 다른 라인 실패로 그룹 건너뜀: ${product.productSku} (${product.productName})`;
+        console.log(`[napkin] ${poLineId} ⚠️ ${reason}`);
+        try {
+          await createNeedsManagerVerification(authToken, [{
+            productVariantVendorId: product.productVariantVendorId,
+            purchaseOrderId: product.purchaseOrderId,
+            reason,
+          }]);
+        } catch (e) {
+          console.error(`[napkin] ${poLineId} 담당자 확인 필요 저장 실패: ${e.message}`);
+        }
+        errorCollector.addError(
+          ORDER_STEPS.OPTION_SELECTION,
+          ERROR_CODES.OPTION_SELECT_FAILED,
+          reason,
+          {
+            purchaseOrderId: product.purchaseOrderId,
+            purchaseOrderLineId: lineId,
+            productVariantVendorId: product.productVariantVendorId,
+          },
+        );
+        results.push({
+          lineId,
+          productName: product.productName,
+          productSku: product.productSku,
+          productVariantVendorId: product.productVariantVendorId,
+          purchaseOrderId: product.purchaseOrderId,
+          success: false,
+          message: reason,
+          groupSkipped: true,
+        });
+        continue;
+      }
 
       // productUrl이 없으면 스킵
       if (!product.productUrl) {
@@ -906,6 +945,7 @@ async function processNapkinOrder(
         } catch (e) {
           console.error(`[napkin] ${poLineId} ⚠️ 담당자 확인 필요 저장 실패: ${e.message}`);
         }
+        if (product.purchaseOrderId) failedPoIds.add(product.purchaseOrderId);
         results.push({
           success: false,
           productName: product.productName,
@@ -988,6 +1028,7 @@ async function processNapkinOrder(
                 vendor: "napkin",
               });
             }
+            if (product.purchaseOrderId) failedPoIds.add(product.purchaseOrderId);
             results.push({
               lineId,
               productName: product.productName,
@@ -1017,6 +1058,7 @@ async function processNapkinOrder(
                 productVariantVendorId: product.productVariantVendorId,
               },
             );
+            if (product.purchaseOrderId) failedPoIds.add(product.purchaseOrderId);
             results.push({
               lineId,
               productName: product.productName,
@@ -1079,6 +1121,7 @@ async function processNapkinOrder(
               productVariantVendorId: product.productVariantVendorId,
             },
           );
+          if (product.purchaseOrderId) failedPoIds.add(product.purchaseOrderId);
           results.push({
             lineId,
             productName: product.productName,
@@ -1117,6 +1160,7 @@ async function processNapkinOrder(
             productVariantVendorId: product.productVariantVendorId,
           },
         );
+        if (product.purchaseOrderId) failedPoIds.add(product.purchaseOrderId);
         results.push({
           lineId,
           productName: product.productName,
@@ -1126,6 +1170,28 @@ async function processNapkinOrder(
           success: false,
           message: productError.message,
         });
+      }
+    }
+
+    // 그룹 내 한 라인이라도 실패가 있으면 안전을 위해 전체 결제 중단
+    // (이미 담긴 같은 PO 상품이 결제될 수 있으므로 - 장바구니는 다음 실행 시 자동 비워짐)
+    if (failedPoIds.size > 0) {
+      console.log(`\n[napkin] ⚠️ ${failedPoIds.size}개 PO에서 실패 발생 - 안전을 위해 전체 결제 중단 (장바구니는 다음 실행 시 자동 정리)`);
+      for (const r of results) {
+        if (!r.success) continue;
+        const reason = `같은 배치 내 다른 라인 실패로 결제 중단: ${r.productSku} (${r.productName})`;
+        r.success = false;
+        r.message = reason;
+        r.groupSkipped = true;
+        try {
+          await createNeedsManagerVerification(authToken, [{
+            productVariantVendorId: r.productVariantVendorId,
+            purchaseOrderId: r.purchaseOrderId,
+            reason,
+          }]);
+        } catch (e) {
+          console.error(`[napkin] [중단] 담당자 확인 필요 저장 실패: ${e.message}`);
+        }
       }
     }
 
