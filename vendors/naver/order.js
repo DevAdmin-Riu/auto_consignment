@@ -1196,14 +1196,27 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
     // 배송지명 = 받는이 (동일하게)
     const deliveryName = receiverName || "배송지";
 
-    // 전체 지우기 버튼 셀렉터
-    const clearBtnSelectors = {
-      receiver:
-        "#content > div > div.InputAnimationWrapper_article__RjFjk.InputAnimationWrapper_show__835Gz > div > div.InputLineBasic_article__VC\\+ru.InputLineBasic_focus__BJYnn > button",
-      contact:
-        "#content > div > div.Contact_article__iwSg7 > div.InputAnimationWrapper_article__RjFjk.InputAnimationWrapper_show__835Gz > div > div.InputLineBasic_article__VC\\+ru > button",
-      deliveryName:
-        "#content > div > div.InputDeliveryName_article__DaSdG > div:nth-child(2) > div > div > button",
+    // input 기준 상대 탐색으로 지우기 버튼 찾기 (네이버 빌드별 클래스 해시 변경 대응)
+    // 구조: <div class="InputLineBasic_article__XXXX"> <input> <button class="InputLineBasic_button-clear__XXXX">
+    const findClearBtn = async (inputSelector) => {
+      return popupPage.evaluateHandle((sel) => {
+        const input = document.querySelector(sel);
+        if (!input) return null;
+        // 1순위: 가장 가까운 InputLineBasic_article 컨테이너 안의 button-clear
+        const container = input.closest('[class*="InputLineBasic_article"]');
+        if (container) {
+          const btn = container.querySelector('button[class*="button-clear"]');
+          if (btn) return btn;
+        }
+        // 폴백: 부모 체인 따라 올라가며 탐색
+        let node = input.parentElement;
+        while (node && node !== document.body) {
+          const btn = node.querySelector('button[class*="button-clear"]');
+          if (btn) return btn;
+          node = node.parentElement;
+        }
+        return null;
+      }, inputSelector);
     };
 
     // 받는 이: 지우기 → 입력
@@ -1216,14 +1229,17 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
 
         // 전체 지우기 버튼 클릭
         try {
-          const clearBtn = await popupPage.$(clearBtnSelectors.receiver);
-          if (clearBtn) {
-            await clearBtn.click();
+          const clearBtn = await findClearBtn("#receiver");
+          if (clearBtn && (await clearBtn.asElement())) {
+            await clearBtn.asElement().click();
             console.log("[naver] 받는 이 지우기 버튼 클릭");
             await delay(300);
+          } else {
+            console.log("[naver] 받는 이 지우기 버튼 없음, 직접 선택");
+            await receiverInput.click({ clickCount: 3 });
           }
         } catch (e) {
-          console.log("[naver] 받는 이 지우기 버튼 없음, 직접 선택");
+          console.log("[naver] 받는 이 지우기 버튼 에러, 직접 선택:", e.message);
           await receiverInput.click({ clickCount: 3 });
         }
 
@@ -1245,14 +1261,17 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
 
         // 전체 지우기 버튼 클릭
         try {
-          const clearBtn = await popupPage.$(clearBtnSelectors.contact);
-          if (clearBtn) {
-            await clearBtn.click();
+          const clearBtn = await findClearBtn("#contact-1");
+          if (clearBtn && (await clearBtn.asElement())) {
+            await clearBtn.asElement().click();
             console.log("[naver] 연락처 지우기 버튼 클릭");
             await delay(300);
+          } else {
+            console.log("[naver] 연락처 지우기 버튼 없음, 직접 선택");
+            await contactInput.click({ clickCount: 3 });
           }
         } catch (e) {
-          console.log("[naver] 연락처 지우기 버튼 없음, 직접 선택");
+          console.log("[naver] 연락처 지우기 버튼 에러, 직접 선택:", e.message);
           await contactInput.click({ clickCount: 3 });
         }
 
@@ -1275,14 +1294,17 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
 
         // 전체 지우기 버튼 클릭
         try {
-          const clearBtn = await popupPage.$(clearBtnSelectors.deliveryName);
-          if (clearBtn) {
-            await clearBtn.click();
+          const clearBtn = await findClearBtn("#delivery-name");
+          if (clearBtn && (await clearBtn.asElement())) {
+            await clearBtn.asElement().click();
             console.log("[naver] 배송지 명 지우기 버튼 클릭");
             await delay(300);
+          } else {
+            console.log("[naver] 배송지 명 지우기 버튼 없음, 직접 선택");
+            await deliveryNameInput.click({ clickCount: 3 });
           }
         } catch (e) {
-          console.log("[naver] 배송지 명 지우기 버튼 없음, 직접 선택");
+          console.log("[naver] 배송지 명 지우기 버튼 에러, 직접 선택:", e.message);
           await deliveryNameInput.click({ clickCount: 3 });
         }
 
@@ -1469,27 +1491,46 @@ async function modifyDeliveryAddress(popupPage, shippingAddress) {
       }
     }
 
-    // 4. 저장 버튼 클릭
+    // 4. 저장 버튼 클릭 — ButtonRegister_article 클래스 prefix + "저장하기" 텍스트로 매칭
     await delay(500);
-    const saveBtnSelector =
-      "#content > div > div.ButtonRegister_article__W3rjR > button";
-    const saveBtn = await popupPage.$(saveBtnSelector);
+    const findSaveBtn = async () => {
+      // 1순위: ButtonRegister_article 컨테이너 안의 button
+      const handle1 = await popupPage.evaluateHandle(() => {
+        const container = document.querySelector('[class*="ButtonRegister_article"]');
+        return container ? container.querySelector("button") : null;
+      });
+      if (handle1 && (await handle1.asElement())) return handle1;
+      // 2순위: 텍스트 "저장하기"인 button
+      const handle2 = await popupPage.evaluateHandle(() => {
+        const btns = document.querySelectorAll("button");
+        for (const b of btns) {
+          if ((b.textContent || "").trim() === "저장하기") return b;
+        }
+        return null;
+      });
+      if (handle2 && (await handle2.asElement())) return handle2;
+      return null;
+    };
+
+    const saveBtn = await findSaveBtn();
     if (saveBtn) {
-      await saveBtn.click();
+      await saveBtn.asElement().click();
       console.log("[naver] 저장 버튼 클릭");
       await delay(1000);
 
       // 저장 버튼이 아직 있으면 (동일 데이터로 disabled 상태) 뒤로가기 버튼으로 목록 복귀
-      const saveBtnStillExists = await popupPage.$(saveBtnSelector);
+      const saveBtnStillExists = await findSaveBtn();
       if (saveBtnStillExists) {
         console.log(
           "[naver] 저장 버튼 아직 존재 (동일 주문자) - 뒤로가기 버튼 클릭",
         );
-        const backBtnSelector =
-          "#root > div > div.FlexibleLayout-module_row__P4p6X > header > div > div > button";
-        const backBtn = await popupPage.$(backBtnSelector);
-        if (backBtn) {
-          await backBtn.click();
+        // 뒤로가기 버튼: header 내부 첫 번째 button (FlexibleLayout 클래스 해시 변경 대응)
+        const backBtn = await popupPage.evaluateHandle(() => {
+          const header = document.querySelector("header");
+          return header ? header.querySelector("button") : null;
+        });
+        if (backBtn && (await backBtn.asElement())) {
+          await backBtn.asElement().click();
           console.log("[naver] 뒤로가기 버튼 클릭 - 배송지 목록으로 복귀");
           await delay(1500);
         } else {
@@ -1699,13 +1740,45 @@ async function selectDeliveryAddress(page, shippingAddress) {
       return { success: true, note: "popup_closed_after_save" };
     }
 
-    // 첫 번째 주소 선택 버튼 클릭 (재시도 로직)
-    const selectBtnSelector =
-      "#content > div > ul > li:nth-child(1) > div > div.DeliveryList_area-address__oaMRW > button";
+    // 첫 번째 주소 선택 버튼 — 클래스 해시 변경 대응 (prefix 매칭 + 텍스트 폴백)
+    const findSelectBtn = async () => {
+      // 1순위: DeliveryList_button-address 클래스 가진 button 직접 매칭
+      const handle1 = await popupPage.evaluateHandle(() => {
+        const li = document.querySelector("#content ul li:nth-child(1)");
+        if (!li) return null;
+        const btn = li.querySelector('button[class*="DeliveryList_button-address"]');
+        return btn || null;
+      });
+      if (handle1 && (await handle1.asElement())) return handle1;
+      // 2순위: DeliveryList_area-address 컨테이너(구버전) 안의 button
+      const handle2 = await popupPage.evaluateHandle(() => {
+        const li = document.querySelector("#content ul li:nth-child(1)");
+        if (!li) return null;
+        const area = li.querySelector('[class*="DeliveryList_area-address"]');
+        if (area) {
+          const btn = area.querySelector("button");
+          if (btn) return btn;
+        }
+        return null;
+      });
+      if (handle2 && (await handle2.asElement())) return handle2;
+      // 3순위: 첫 li 안에서 텍스트 "선택"인 button
+      const handle3 = await popupPage.evaluateHandle(() => {
+        const li = document.querySelector("#content ul li:nth-child(1)");
+        if (!li) return null;
+        const buttons = li.querySelectorAll("button");
+        for (const b of buttons) {
+          if ((b.textContent || "").trim() === "선택") return b;
+        }
+        return null;
+      });
+      if (handle3 && (await handle3.asElement())) return handle3;
+      return null;
+    };
 
     let selectBtn = null;
     for (let retry = 0; retry < 5; retry++) {
-      selectBtn = await popupPage.$(selectBtnSelector);
+      selectBtn = await findSelectBtn();
       if (selectBtn) {
         console.log(`[naver] 주소 선택 버튼 발견 (시도 ${retry + 1}/5)`);
         break;
@@ -1715,7 +1788,7 @@ async function selectDeliveryAddress(page, shippingAddress) {
     }
 
     if (selectBtn) {
-      await selectBtn.click();
+      await selectBtn.asElement().click();
       console.log("[naver] 첫 번째 주소 선택 버튼 클릭 완료");
       await delay(3000);
 
