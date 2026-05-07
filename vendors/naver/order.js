@@ -566,7 +566,7 @@ async function getProductPrice(page) {
  * @param {Object} option - { title: "상품선택", value: "..." }
  * @returns {Object} { success: boolean, reason?: string }
  */
-async function selectSingleOption(page, option) {
+async function selectSingleOption(page, option, _retryOptions = {}) {
   // 네이버 스마트스토어 옵션 버튼 찾기 (data-shp-contents-type 속성으로 매칭, 클래스명은 빌드마다 변경됨)
   // 주의: 옵션 드롭다운 "버튼"에는 aria-haspopup="listbox", "옵션 항목"에는 role="option"이 있음
   // 둘 다 data-shp-contents-type 속성을 가지므로 버튼만 정확히 잡아야 함
@@ -651,6 +651,26 @@ async function selectSingleOption(page, option) {
     } catch (e) {
       console.log(`[naver] ❌ 옵션 버튼 없음: ${option.title} (진단 실패: ${e.message})`);
     }
+
+    // 캡챠 감지 시 솔버 호출 후 재시도 (1회만)
+    if (!_retryOptions.captchaRetried) {
+      try {
+        const { detectCaptcha, solveCaptcha } = require("../../lib/captcha-solver");
+        if (await detectCaptcha(page)) {
+          console.log("[naver] 캡챠 감지됨, 풀이 시도...");
+          const result = await solveCaptcha(page, { logPrefix: "[naver]" });
+          if (result.solved) {
+            console.log("[naver] 캡챠 풀이 성공, 옵션 선택 재시도");
+            await delay(2000);
+            return selectSingleOption(page, option, { captchaRetried: true });
+          }
+          console.log(`[naver] 캡챠 풀이 실패: ${result.error}`);
+        }
+      } catch (e) {
+        console.log(`[naver] 캡챠 처리 에러: ${e.message}`);
+      }
+    }
+
     return { success: false, reason: `옵션 버튼 없음: ${option.title}` };
   }
 
@@ -1798,7 +1818,7 @@ async function selectDeliveryAddress(page, shippingAddress) {
 /**
  * 장바구니에 상품 담기
  */
-async function addToCart(page) {
+async function addToCart(page, _retryOptions = {}) {
   console.log("[naver] 장바구니 담기...");
 
   // alert 감지 준비
@@ -1833,6 +1853,26 @@ async function addToCart(page) {
   if (!cartClicked) {
     page.off("dialog", dialogHandler);
     console.log("[naver] 장바구니 버튼 없음");
+
+    // 캡챠 감지 시 솔버 호출 후 재시도 (1회만)
+    if (!_retryOptions.captchaRetried) {
+      try {
+        const { detectCaptcha, solveCaptcha } = require("../../lib/captcha-solver");
+        if (await detectCaptcha(page)) {
+          console.log("[naver] 캡챠 감지됨, 풀이 시도...");
+          const result = await solveCaptcha(page, { logPrefix: "[naver]" });
+          if (result.solved) {
+            console.log("[naver] 캡챠 풀이 성공, 장바구니 담기 재시도");
+            await delay(2000);
+            return addToCart(page, { captchaRetried: true });
+          }
+          console.log(`[naver] 캡챠 풀이 실패: ${result.error}`);
+        }
+      } catch (e) {
+        console.log(`[naver] 캡챠 처리 에러: ${e.message}`);
+      }
+    }
+
     return { success: false, error: "장바구니 버튼 없음" };
   }
 
