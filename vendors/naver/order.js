@@ -53,6 +53,31 @@ const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
 // 딜레이 함수
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/**
+ * 네이버 스마트스토어 URL이면 nl-au={uuid4-32hex} 쿼리 파라미터 추가
+ * 봇 감지 우회용 — 매 요청마다 새 UUID4 생성
+ */
+function withNlAu(url) {
+  try {
+    if (!url || typeof url !== "string") return url;
+    const u = new URL(url);
+    // 네이버 스마트스토어 도메인만 적용 (shopping.naver.com 등은 제외)
+    if (!/(^|\.)smartstore\.naver\.com$/.test(u.hostname)) {
+      return url;
+    }
+    // 이미 nl-au 값이 있으면 그대로 사용 (덮어쓰지 않음)
+    if (u.searchParams.has("nl-au") && (u.searchParams.get("nl-au") || "").trim()) {
+      return url;
+    }
+    // 32자 hex (uuid4 from dashes 제거)
+    const hex = require("crypto").randomUUID().replace(/-/g, "");
+    u.searchParams.set("nl-au", hex);
+    return u.toString();
+  } catch (e) {
+    return url;
+  }
+}
+
 // 통관정보 동적으로 가져오기
 function getCustomsInfo() {
   return {
@@ -1984,12 +2009,16 @@ async function processProduct(page, product) {
     console.log(`[naver] 추가옵션: ${Array.isArray(openMallAdditionalOptions) ? openMallAdditionalOptions.length + '개' : '없음'}`);
   }
 
-  // 1. 상품 페이지로 이동
+  // 1. 상품 페이지로 이동 (nl-au 파라미터 추가 — 봇 감지 우회용)
   if (!productUrl || !productUrl.trim() || !productUrl.startsWith("https")) {
     console.log(`[naver] ⚠️ 오픈몰 상품 링크 비어 있음: ${product.productSku} (${product.productName})`);
     return { success: false, error: `오픈몰 상품 링크 비어 있음: ${product.productSku}`, needsManagerVerification: true };
   }
-  await page.goto(productUrl, {
+  const navUrl = withNlAu(productUrl);
+  if (navUrl !== productUrl) {
+    console.log(`[naver] URL nl-au 부여: ${navUrl}`);
+  }
+  await page.goto(navUrl, {
     waitUntil: "networkidle2",
     timeout: 30000,
   });
