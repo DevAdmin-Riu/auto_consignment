@@ -190,12 +190,11 @@ const SELECTORS = {
     fileInput: 'input[type="file"]',
     // 교정확인 후 인쇄 체크박스
     proofCheckbox: "#is_proof_file",
-    // 장바구니 담기 버튼
-    addToCartBtn:
-      "#calcarea > div.order_list_re > div.ng-star-inserted > button.btn_m.or_white_02.ng-star-inserted",
-    // RTN-112326 등 일부 제품의 대체 장바구니 담기 버튼
-    addToCartBtnAlt:
-      "#calcarea > div.order_list_re > div:nth-child(4) > button.btn_m.or_white_02",
+    // 장바구니 담기 버튼 - 클래스 prefix + 텍스트 매칭 (ng-star-inserted/부모 구조 변경에 견고)
+    // <button class="btn_m or_white_02 ng-star-inserted">장바구니</button>
+    addToCartBtn: "button.btn_m.or_white_02",
+    // 텍스트로 정확히 매칭할 후보 (다국어/공백 변형 대비)
+    addToCartBtnText: "장바구니",
     // 모달 확인 버튼 (alertify.js)
     modalConfirmBtn: ".ajs-modal button.ajs-button.btn_orange",
   },
@@ -203,7 +202,8 @@ const SELECTORS = {
   favor: {
     url: "https://www.adpiamall.com/order/favor",
     table: "table.table01",
-    row: "tbody tr.ng-star-inserted",
+    // ng-star-inserted 클래스가 빌드별로 빠짐 - tbody 직계 tr 모두 잡고 내부에서 코드 span 유무로 필터
+    row: "table.table01 tbody tr",
     productCode: 'span[style*="color: #4874db"]', // 제품코드 (RTN-XXXXXX)
     orderBtn: "button.btn_small.btn_grey_2019", // 주문하러 가기 버튼
     // 페이지네이션
@@ -213,33 +213,32 @@ const SELECTORS = {
     nextPage: "li.pagination-next:not(.disabled) a.page-link",
   },
   // 장바구니
+  // 셀렉터는 deep `>` 체인 대신 클래스/텍스트 기반으로 — Angular `ng-star-inserted` 클래스는 빌드별로 붙고 빠짐
   cart: {
     url: "https://www.adpiamall.com/cart",
-    selectAll:
-      "#sub_container > div > app-root > cartlist > div > div.list-str > div.list01 > div > div > a:nth-child(1)",
-    deleteBtn:
-      "#sub_container > div > app-root > cartlist > div > div.list-str > div.list01 > div > div > a.big_btn08.ng-star-inserted",
-    orderBtn:
-      "#sub_container > div > app-root > cartlist > div > div.list-str > div.cart_menu > div.list02 > button",
-    // 상품 행: 체크박스가 있는 tr만 (빈 장바구니 메시지 제외)
-    itemRow:
-      "app-root cartlist table tbody tr.ng-star-inserted:has(input[type='checkbox'])",
+    // 전체선택 체크박스 (헤더의 #allchk 직접 사용 - 텍스트 링크보다 안정)
+    selectAllCheckbox: "#allchk",
+    // 폴백: 텍스트 "전체 선택"인 a.big_btn08
+    selectAllText: "전체 선택",
+    // 선택삭제 버튼 텍스트 (a.big_btn08 중 텍스트 매칭)
+    deleteBtnText: "선택 삭제",
+    // 주문하기 버튼 (cart_menu 내 big_btn01 클래스)
+    orderBtnText: "주문하기",
+    // 상품 행 카운트: 체크박스가 있는 행은 상품행만 (총합계 행에는 체크박스 없음)
+    itemCheckbox: "app-root cartlist table tbody td.che1 input[type='checkbox']",
     emptyMessage: "span.empty_cart", // "장바구니가 비었습니다"
   },
-  // 주문서
+  // 주문서 — 모두 ID/name/클래스 기반으로 변경 (deep `>` chain & ng-star-inserted 의존 제거)
   order: {
     // 배송 방법
     deliveryMethod: "#deliv_method",
     deliveryMethodValue: "DVM11", // 선불택배
-    // 보내는 사람 - 주문자와 동일
-    senderSameAsOrderer:
-      "#ordersForm > div.list01 > div:nth-child(4) > table > tbody > tr:nth-child(1) > td:nth-child(2) > div:nth-child(1) > label > span",
-    // 배송지 - 새로운 배송지
-    newAddressBtn:
-      "#ordersForm > div.list01 > div:nth-child(2) > table > tbody > tr.ng-star-inserted > td:nth-child(2) > div.lineinput.ml20.ml2 > label > span",
-    // 주소 찾기 버튼
-    addressSearchBtn:
-      "#ordersForm > div.list01 > div:nth-child(2) > table > tbody > tr:nth-child(2) > td:nth-child(2) > div > daumpost > a",
+    // 보내는 사람 - "주문자와 동일" 라디오 (name="address01"의 첫 번째 = 주문자와 동일)
+    senderSameAsOrderer: 'input[name="address01"]',
+    // 배송지 - "새로운 배송지" 라디오 (id 직접)
+    newAddressBtn: "#sel_deliv_info",
+    // 주소 찾기 버튼 - 호출 코드에서 텍스트 기반으로 직접 처리하므로 placeholder만 유지
+    addressSearchBtn: "daumpost a.big_btn02",
     // 주소 입력 필드 (iframe 닫힌 후 상세주소 추가용)
     addressDetail: "#recv_addr_2",
     // 수령인
@@ -257,11 +256,10 @@ const SELECTORS = {
     cardTypeValue: "31", // 비씨
     // 전체 동의 체크박스
     agreeAll: "#agree_buy_all",
-    // 결제하기 버튼
-    payBtn: "#ordersForm > div.cart_menu > div > div.list02 > button",
-    // 결제 확인 모달 버튼 (alertify.js)
-    payConfirmBtn:
-      "body > div.alertify.ajs-movable.ajs-closable.ajs-pinnable.ajs-fade > div.ajs-modal > div > div.ajs-footer > div.ajs-primary.ajs-buttons > button.ajs-button.btn.btn_orange",
+    // 결제하기 버튼 - 주문서 페이지 내 유일한 big_btn01
+    payBtn: "button.big_btn01",
+    // 결제 확인 모달 버튼 (alertify.js) - 단순 클래스 매칭
+    payConfirmBtn: ".ajs-modal button.ajs-button.btn_orange",
     // 주문 완료 후 주문번호
     orderNumber:
       "#sub_container > div > app-root > orderresult > div > div.list-str > div > div:nth-child(1) > div > div > p > span",
@@ -546,37 +544,42 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
 
     await delay(1000);
     console.log("[adpia] 장바구니 담기 버튼 클릭");
-    // 기본 셀렉터 시도
-    let addToCartBtn = await waitFor(
-      page,
-      SELECTORS.orderPage.addToCartBtn,
-      5000,
-    );
-    // 기본 셀렉터 없으면 대체 셀렉터 시도 (RTN-112326 등)
-    if (!addToCartBtn) {
-      console.log("[adpia] 기본 장바구니 버튼 없음, 대체 셀렉터 시도...");
-      addToCartBtn = await waitFor(
-        page,
-        SELECTORS.orderPage.addToCartBtnAlt,
-        5000,
-      );
-    }
 
-    if (!addToCartBtn) {
-      console.log(`[adpia] 장바구니 담기 버튼을 찾을 수 없음 (상품코드: ${product.productSku}, URL: ${page.url()})`);
+    // 텍스트 "장바구니" + 클래스 매칭 (ng-star-inserted 의존 제거)
+    // 1차: 클래스 매칭 후 텍스트 검증
+    // 2차: 텍스트만으로 button 전체 스캔
+    const cartClickResult = await page.evaluate((classSel, targetTxt) => {
+      // 1차: btn_m.or_white_02 중 텍스트 매칭
+      const candidates = document.querySelectorAll(classSel);
+      for (const btn of candidates) {
+        const txt = (btn.textContent || "").trim();
+        if (txt === targetTxt) {
+          btn.click();
+          return { clicked: true, via: "class+text", count: candidates.length };
+        }
+      }
+      // 2차 폴백: 모든 button 중 텍스트 매칭
+      const allBtns = document.querySelectorAll("button");
+      for (const btn of allBtns) {
+        const txt = (btn.textContent || "").trim();
+        if (txt === targetTxt) {
+          btn.click();
+          return { clicked: true, via: "text-fallback", count: allBtns.length };
+        }
+      }
+      // 3차: 클래스만 (텍스트 검증 없이) - 딱 1개일 때만
+      if (candidates.length === 1) {
+        candidates[0].click();
+        return { clicked: true, via: "class-only", count: 1 };
+      }
+      return { clicked: false, count: candidates.length };
+    }, SELECTORS.orderPage.addToCartBtn, SELECTORS.orderPage.addToCartBtnText);
+
+    if (!cartClickResult.clicked) {
+      console.log(`[adpia] 장바구니 담기 버튼을 찾을 수 없음 (상품코드: ${product.productSku}, URL: ${page.url()}, 후보수: ${cartClickResult.count})`);
       return { success: false, message: "장바구니 담기 버튼을 찾을 수 없음" };
     }
-
-    try {
-      await addToCartBtn.click();
-    } catch (clickErr) {
-      // "Node is not clickable" 등 → evaluate로 직접 클릭 폴백
-      console.log(`[adpia] 장바구니 버튼 click 실패 (${clickErr.message}), evaluate 폴백...`);
-      await page.evaluate((sel) => {
-        const btn = document.querySelector(sel);
-        if (btn) btn.click();
-      }, SELECTORS.orderPage.addToCartBtn);
-    }
+    console.log(`[adpia] 장바구니 버튼 클릭 (${cartClickResult.via})`);
     console.log("[adpia] 파일 업로드 진행 중...");
     await delay(3000); // 업로드 시작 대기
 
@@ -624,12 +627,63 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
             console.error("[adpia] 파일 업로드 3회 실패 - 중단");
             return { success: false, message: `파일 업로드 3회 실패: ${product.productSku} (${product.productName}) - 파일 형식 또는 용량 확인 필요`, needsManagerVerification: true };
           }
-          // 장바구니 담기 버튼 다시 클릭
-          const retryBtn = await page.$(SELECTORS.orderPage.addToCartBtn);
-          if (retryBtn) {
-            await retryBtn.click();
-            console.log("[adpia] 장바구니 담기 버튼 재클릭");
+          // ⭐ 재시도 전 파일 다시 첨부 (실패 후 페이지 상태에서 파일이 떨어진 상태일 수 있음)
+          if (downloadedFile?.filePath) {
+            const fileInputForRetry = await page.$(SELECTORS.orderPage.fileInput);
+            if (fileInputForRetry) {
+              await fileInputForRetry.uploadFile(downloadedFile.filePath);
+              console.log(`[adpia] 파일 재첨부: ${downloadedFile.filePath}`);
+              await delay(1500);
+            }
           }
+          // 장바구니 담기 버튼 다시 클릭
+          const retryClicked = await page.evaluate((classSel, targetTxt) => {
+            const cands = document.querySelectorAll(classSel);
+            for (const b of cands) {
+              if ((b.textContent || "").trim() === targetTxt) { b.click(); return true; }
+            }
+            for (const b of document.querySelectorAll("button")) {
+              if ((b.textContent || "").trim() === targetTxt) { b.click(); return true; }
+            }
+            return false;
+          }, SELECTORS.orderPage.addToCartBtn, SELECTORS.orderPage.addToCartBtnText);
+          if (retryClicked) console.log("[adpia] 장바구니 담기 버튼 재클릭");
+          await delay(3000);
+        } else if (modalText.includes("파일") && (modalText.includes("등록") || modalText.includes("첨부"))) {
+          // "주문에 사용할 파일을 등록해야 합니다" 등 - 파일 재첨부 후 재클릭
+          uploadRetryCount++;
+          console.log(`[adpia] ⚠️ 파일 미첨부 모달 감지 (${uploadRetryCount}/3): "${modalText}"`);
+          await page.evaluate(() => {
+            const btn = document.querySelector(".ajs-modal button.ajs-button.btn_orange");
+            if (btn) btn.click();
+          });
+          await delay(1500);
+          if (uploadRetryCount >= 3) {
+            console.error("[adpia] 파일 미첨부 3회 - 중단");
+            return { success: false, message: `파일 미첨부 3회: ${product.productSku} (${product.productName})`, needsManagerVerification: true };
+          }
+          if (downloadedFile?.filePath) {
+            const fileInputForRetry = await page.$(SELECTORS.orderPage.fileInput);
+            if (fileInputForRetry) {
+              await fileInputForRetry.uploadFile(downloadedFile.filePath);
+              console.log(`[adpia] 파일 재첨부: ${downloadedFile.filePath}`);
+              await delay(1500);
+            } else {
+              console.log("[adpia] ⚠️ 파일 입력 요소 못찾음");
+            }
+          }
+          // 장바구니 다시 클릭
+          const retryClicked2 = await page.evaluate((classSel, targetTxt) => {
+            const cands = document.querySelectorAll(classSel);
+            for (const b of cands) {
+              if ((b.textContent || "").trim() === targetTxt) { b.click(); return true; }
+            }
+            for (const b of document.querySelectorAll("button")) {
+              if ((b.textContent || "").trim() === targetTxt) { b.click(); return true; }
+            }
+            return false;
+          }, SELECTORS.orderPage.addToCartBtn, SELECTORS.orderPage.addToCartBtnText);
+          if (retryClicked2) console.log("[adpia] 장바구니 재클릭 (파일 재첨부 후)");
           await delay(3000);
         } else {
           // 빈 모달이나 알 수 없는 모달 → 3초 대기 후 재확인
@@ -681,11 +735,17 @@ async function processOrderPage(page, product, downloadedFile, retryCount = 0) {
               if (btn) btn.click();
             });
             await delay(2000);
-            const retryBtn = await page.$(SELECTORS.orderPage.addToCartBtn) || await page.$(SELECTORS.orderPage.addToCartBtnAlt);
-            if (retryBtn) {
-              await retryBtn.click();
-              console.log("[adpia] 장바구니 담기 버튼 재클릭 (업로드 재시도)");
-            }
+            const retryClicked2 = await page.evaluate((classSel, targetTxt) => {
+              const cands = document.querySelectorAll(classSel);
+              for (const b of cands) {
+                if ((b.textContent || "").trim() === targetTxt) { b.click(); return true; }
+              }
+              for (const b of document.querySelectorAll("button")) {
+                if ((b.textContent || "").trim() === targetTxt) { b.click(); return true; }
+              }
+              return false;
+            }, SELECTORS.orderPage.addToCartBtn, SELECTORS.orderPage.addToCartBtnText);
+            if (retryClicked2) console.log("[adpia] 장바구니 담기 버튼 재클릭 (업로드 재시도)");
             stuckAt1PercentSince = null;
             maxProgress = 0;
             await delay(3000);
@@ -905,29 +965,64 @@ async function clearCart(page) {
       return { success: true, message: "장바구니 비어있음" };
     }
 
-    // 상품 행 개수 확인
-    const cartItems = await page.$$(
-      "app-root cartlist table tbody tr.ng-star-inserted input[type='checkbox']",
-    );
+    // 상품 행 개수 확인 (td.che1 안의 체크박스 - 총합계 행 제외)
+    const cartItems = await page.$$(SELECTORS.cart.itemCheckbox);
     if (cartItems.length === 0) {
-      console.log("[adpia] 장바구니가 이미 비어있음");
+      console.log("[adpia] 장바구니가 이미 비어있음 (상품 체크박스 없음)");
       page.off("dialog", dialogHandler);
       return { success: true, message: "장바구니 비어있음" };
     }
     console.log(`[adpia] 장바구니 상품 ${cartItems.length}개 발견`);
 
-    // 4. 전체 선택 클릭
-    const selectAll = await waitFor(page, SELECTORS.cart.selectAll, 5000);
-    if (selectAll) {
-      await selectAll.click();
-      console.log("[adpia] 전체 선택 클릭");
-      await delay(500);
+    // 4. 전체 선택 (헤더 #allchk 체크박스 우선, 폴백: 텍스트 링크)
+    let selectAllClicked = false;
+    try {
+      selectAllClicked = await page.evaluate((sel) => {
+        const cb = document.querySelector(sel);
+        if (cb && !cb.checked) {
+          cb.click();
+          return true;
+        }
+        return !!cb; // 이미 체크되어 있어도 OK로 간주
+      }, SELECTORS.cart.selectAllCheckbox);
+    } catch (e) {
+      console.log("[adpia] #allchk 클릭 실패:", e.message);
     }
+    if (selectAllClicked) {
+      console.log("[adpia] 전체 선택 (#allchk) 클릭");
+    } else {
+      // 폴백: 텍스트 "전체 선택" 링크
+      const txtClicked = await page.evaluate((txt) => {
+        const links = document.querySelectorAll("a.big_btn08");
+        for (const a of links) {
+          if ((a.textContent || "").trim() === txt) {
+            a.click();
+            return true;
+          }
+        }
+        return false;
+      }, SELECTORS.cart.selectAllText);
+      if (txtClicked) {
+        console.log("[adpia] 전체 선택 (텍스트 폴백) 클릭");
+      } else {
+        console.log("[adpia] ⚠️ 전체 선택 버튼 못찾음");
+      }
+    }
+    await delay(500);
 
-    // 5. 선택삭제 클릭
-    const deleteBtn = await waitFor(page, SELECTORS.cart.deleteBtn, 5000);
-    if (deleteBtn) {
-      await deleteBtn.click();
+    // 5. 선택삭제 (텍스트 매칭)
+    const deleteClicked = await page.evaluate((txt) => {
+      const links = document.querySelectorAll("a.big_btn08");
+      for (const a of links) {
+        if ((a.textContent || "").trim() === txt) {
+          a.click();
+          return true;
+        }
+      }
+      return false;
+    }, SELECTORS.cart.deleteBtnText);
+
+    if (deleteClicked) {
       console.log("[adpia] 선택삭제 클릭");
       await delay(2000);
 
@@ -938,6 +1033,8 @@ async function clearCart(page) {
         console.log("[adpia] 모달 확인 클릭");
         await delay(1500);
       }
+    } else {
+      console.log("[adpia] ⚠️ 선택삭제 버튼 못찾음");
     }
 
     // 6. dialog 핸들러 제거
@@ -965,7 +1062,26 @@ async function findProductByCode(page, productCode) {
     waitUntil: "networkidle2",
     timeout: 30000,
   });
-  await delay(2000);
+
+  // Angular 렌더 완료 대기: row 또는 페이지네이션 또는 빈 즐겨찾기 마커 출현 시까지
+  await page
+    .waitForFunction(
+      (rowSel, paginationSel) => {
+        const hasRows = document.querySelectorAll(rowSel).length > 0;
+        const hasPagination = !!document.querySelector(paginationSel);
+        // 즐겨찾기 비어있을 때 보이는 안내 텍스트도 종료 조건으로 추가
+        const bodyTxt = document.body ? document.body.innerText : "";
+        const hasEmptyHint = /등록된\s*상품이\s*없습니다|즐겨찾기.*없습니다/.test(bodyTxt);
+        return hasRows || hasPagination || hasEmptyHint;
+      },
+      { timeout: 15000 },
+      SELECTORS.favor.row,
+      SELECTORS.favor.pagination,
+    )
+    .catch(() => {
+      console.log("[adpia] favor 렌더 대기 타임아웃 (계속 진행)");
+    });
+  await delay(2000); // 안전 지연 - row 추가 hydration 여유
 
   let currentPage = 1;
   const maxPages = 100; // 무한 루프 방지
@@ -977,13 +1093,17 @@ async function findProductByCode(page, productCode) {
     const result = await page.evaluate(
       (selectors, targetCode) => {
         const rows = document.querySelectorAll(selectors.row);
+        const codesFound = []; // 진단용
+        let codeElCount = 0;
 
         for (let i = 0; i < rows.length; i++) {
           const row = rows[i];
           const codeEl = row.querySelector(selectors.productCode);
 
           if (codeEl) {
+            codeElCount++;
             const code = codeEl.textContent.trim();
+            codesFound.push(code);
             if (code === targetCode) {
               // 가격 추출
               const priceCell = row.querySelector("td:nth-child(4)");
@@ -994,16 +1114,40 @@ async function findProductByCode(page, productCode) {
                 found: true,
                 rowIndex: i,
                 price,
+                rowCount: rows.length,
+                codeElCount,
+                codesFound,
               };
             }
           }
         }
 
-        return { found: false };
+        // 진단: 셀렉터로 row 자체가 안 잡히는지 확인
+        const fallbackRowCount = document.querySelectorAll("table tr").length;
+        const tbodyRowCount = document.querySelectorAll("tbody tr").length;
+        const allBlueSpans = Array.from(
+          document.querySelectorAll('span[style*="color: #4874db"]'),
+        ).map((el) => el.textContent.trim());
+
+        return {
+          found: false,
+          rowCount: rows.length,
+          codeElCount,
+          codesFound,
+          fallbackRowCount,
+          tbodyRowCount,
+          allBlueSpans,
+        };
       },
       SELECTORS.favor,
       productCode,
     );
+
+    if (!result.found) {
+      console.log(
+        `[adpia] [진단] ${currentPage}페이지: row(${SELECTORS.favor.row}) ${result.rowCount}개, 코드span ${result.codeElCount}개, 발견된 코드: ${JSON.stringify(result.codesFound?.slice(0, 10))}${result.codesFound?.length > 10 ? "..." : ""}, table tr ${result.fallbackRowCount}개, tbody tr ${result.tbodyRowCount}개, 모든 #4874db span ${result.allBlueSpans?.length}개: ${JSON.stringify(result.allBlueSpans?.slice(0, 10))}${result.allBlueSpans?.length > 10 ? "..." : ""}`,
+      );
+    }
 
     if (result.found) {
       console.log(
@@ -1054,12 +1198,34 @@ async function findProductByCode(page, productCode) {
     }
 
     // 5. 다음 페이지로 이동
+    // 클릭 전 현재 active 페이지 번호 캡처 (렌더 대기 종료 조건)
+    const beforeActive = await page.evaluate((sel) => {
+      const el = document.querySelector(sel);
+      return el ? (el.textContent || "").trim() : null;
+    }, SELECTORS.favor.activePage);
+
     // "›" 버튼 (바로 다음 페이지) 클릭
     const nextBtns = await page.$$("li.pagination-next a.page-link");
     if (nextBtns.length > 0) {
       // 첫 번째 › 버튼 클릭
       await nextBtns[0].click();
-      await delay(2000);
+
+      // active 페이지 번호 변경될 때까지 대기 = Angular 렌더 완료 신호
+      await page
+        .waitForFunction(
+          (sel, prev) => {
+            const el = document.querySelector(sel);
+            const cur = el ? (el.textContent || "").trim() : null;
+            return cur && cur !== prev;
+          },
+          { timeout: 10000 },
+          SELECTORS.favor.activePage,
+          beforeActive,
+        )
+        .catch(() => {
+          console.log("[adpia] 페이지 변경 대기 타임아웃");
+        });
+      await delay(2000); // 안전 지연
       currentPage++;
     } else {
       break;
@@ -1097,30 +1263,48 @@ async function goToOrderForm(page) {
       return { success: false, message: "장바구니가 비어있음" };
     }
 
-    const cartItems = await page.$$(
-      "app-root cartlist table tbody tr.ng-star-inserted input[type='checkbox']",
-    );
+    const cartItems = await page.$$(SELECTORS.cart.itemCheckbox);
     if (cartItems.length === 0) {
       console.log("[adpia] 장바구니가 비어있음");
       return { success: false, message: "장바구니가 비어있음" };
     }
     console.log(`[adpia] 장바구니 상품 ${cartItems.length}개`);
 
-    // 3. 전체 선택 클릭
-    const selectAll = await waitFor(page, SELECTORS.cart.selectAll, 5000);
-    if (selectAll) {
-      await selectAll.click();
-      console.log("[adpia] 전체 선택 클릭");
-      await delay(500);
+    // 3. 전체 선택 (#allchk 헤더 체크박스)
+    const allChecked = await page.evaluate((sel) => {
+      const cb = document.querySelector(sel);
+      if (!cb) return false;
+      if (!cb.checked) cb.click();
+      return true;
+    }, SELECTORS.cart.selectAllCheckbox);
+    if (allChecked) {
+      console.log("[adpia] 전체 선택 (#allchk) 클릭");
+    } else {
+      console.log("[adpia] ⚠️ #allchk 못찾음, 텍스트 폴백 시도");
+      await page.evaluate((txt) => {
+        const links = document.querySelectorAll("a.big_btn08");
+        for (const a of links) {
+          if ((a.textContent || "").trim() === txt) { a.click(); return; }
+        }
+      }, SELECTORS.cart.selectAllText);
     }
+    await delay(500);
 
-    // 4. 주문하기 버튼 클릭
-    const orderBtn = await waitFor(page, SELECTORS.cart.orderBtn, 5000);
-    if (!orderBtn) {
+    // 4. 주문하기 버튼 클릭 (button.big_btn01 + 텍스트 매칭)
+    const orderClicked = await page.evaluate((txt) => {
+      const btns = document.querySelectorAll("button.big_btn01, button");
+      for (const b of btns) {
+        if ((b.textContent || "").trim() === txt) {
+          b.click();
+          return true;
+        }
+      }
+      return false;
+    }, SELECTORS.cart.orderBtnText);
+    if (!orderClicked) {
       console.log("[adpia] 주문하기 버튼을 찾을 수 없음");
       return { success: false, message: "주문하기 버튼을 찾을 수 없음" };
     }
-    await orderBtn.click();
     console.log("[adpia] 주문하기 버튼 클릭");
 
     await delay(2000);
@@ -1531,6 +1715,44 @@ async function fillShippingInfo(page, shippingInfo, ispPassword) {
       }
     };
     payBrowser.on("targetcreated", targetCreatedHandler);
+
+    // 14-1. 결제하기 클릭 직전: 주문서 페이지의 최종 총액 캡처 (배송비 포함)
+    // 결제 후 페이지가 result로 넘어가면 이 값이 사라지므로 page 객체에 저장
+    try {
+      const capturedTotal = await page.evaluate(() => {
+        // 1) 합계금액 영역의 t3 t6 클래스 (사이드바 큰 숫자)
+        const t3el = document.querySelector(".t3.t6");
+        if (t3el) {
+          const v = parseInt((t3el.textContent || "").replace(/[^0-9]/g, ""), 10) || 0;
+          if (v > 0) return v;
+        }
+        // 2) "총 합계금액" 텍스트 라벨 다음 숫자
+        const labels = document.querySelectorAll("h6, p, h5");
+        for (const el of labels) {
+          if ((el.textContent || "").trim() === "총 합계금액") {
+            const parent = el.parentElement;
+            if (parent) {
+              const m = parent.textContent.match(/([\d,]+)\s*원/);
+              if (m) {
+                const v = parseInt(m[1].replace(/,/g, ""), 10) || 0;
+                if (v > 0) return v;
+              }
+            }
+          }
+        }
+        // 3) hidden input pay_amt_total / sum_pay_amt
+        const payAmtEl = document.querySelector("#pay_amt_total, #sum_pay_amt, #order_amt_total");
+        if (payAmtEl) {
+          const v = parseInt((payAmtEl.value || "").replace(/[^0-9]/g, ""), 10) || 0;
+          if (v > 0) return v;
+        }
+        return 0;
+      });
+      page._adpiaCapturedTotal = capturedTotal;
+      console.log(`[adpia] 결제 직전 주문서 총액 캡처: ${capturedTotal}원`);
+    } catch (e) {
+      console.log(`[adpia] 결제 직전 총액 캡처 실패 (무시): ${e.message}`);
+    }
 
     console.log("[adpia] 14. 결제하기 버튼 클릭...");
     const payBtn = await page.$(SELECTORS.order.payBtn);
@@ -2400,14 +2622,14 @@ async function processAdpiaOrder(
         // 결제 로그 저장 (2곳에서 파싱 + 교차 검증)
         if (orderSuccess) {
           const fromCalc = (priceInfo.unitPrice || 0) * (product.quantity || 1);
-          // 주문서 페이지의 총 합계금액 파싱
+          // 결제하기 클릭 직전에 캡처해둔 주문서 총액 (배송비 포함된 최종 금액)
+          const fromCaptured = page._adpiaCapturedTotal || 0;
+          // 결제 후 페이지에서도 시도 (혹시 result 페이지에 표기될 수 있어 폴백)
           let fromPage = 0;
           try {
             fromPage = await page.evaluate(() => {
-              // 1. 셀렉터 기반
-              const selectorEl = document.querySelector("#ordersForm > div.cart_menu > div > div.list02 > div.list_menu03 > div .t3.t6");
-              if (selectorEl) return parseInt((selectorEl.textContent || "").replace(/[^0-9]/g, ""), 10) || 0;
-              // 2. "총 합계금액" 텍스트 기반 폴백
+              const t3el = document.querySelector(".t3.t6");
+              if (t3el) return parseInt((t3el.textContent || "").replace(/[^0-9]/g, ""), 10) || 0;
               const allElements = document.querySelectorAll("h6, div, span");
               for (const el of allElements) {
                 if ((el.textContent || "").trim() === "총 합계금액") {
@@ -2421,16 +2643,18 @@ async function processAdpiaOrder(
               return 0;
             });
           } catch (e) {
-            console.log(`[adpia] ${poLineId} 주문서 결제금액 파싱 실패: ${e.message}`);
+            console.log(`[adpia] ${poLineId} 결제후 페이지 금액 파싱 실패 (무시): ${e.message}`);
           }
 
-          console.log(`[adpia] ${poLineId} 결제금액 파싱 - 단가계산: ${fromCalc}원, 주문서: ${fromPage}원`);
+          console.log(`[adpia] ${poLineId} 결제금액 파싱 - 단가계산: ${fromCalc}원, 결제직전캡처: ${fromCaptured}원, 결제후페이지: ${fromPage}원`);
 
-          let paymentAmount = fromPage || fromCalc || 0;
-          if (fromCalc > 0 && fromPage > 0 && fromCalc !== fromPage) {
-            console.log(`[adpia] ${poLineId} ⚠️ 결제금액 불일치! → 주문서 금액 사용`);
-            paymentAmount = fromPage;
+          // 우선순위: 결제 직전 캡처(택배비 포함) → 결제후 페이지 → 단가계산
+          let paymentAmount = fromCaptured || fromPage || fromCalc || 0;
+          if (fromCaptured > 0 && fromCalc > 0 && fromCaptured !== fromCalc) {
+            console.log(`[adpia] ${poLineId} ℹ️ 단가계산(${fromCalc})과 결제직전(${fromCaptured}) 차이=${fromCaptured - fromCalc}원 (배송비 등) → 결제직전 금액 사용`);
           }
+          // 다음 상품을 위해 캡처값 클리어
+          page._adpiaCapturedTotal = 0;
 
           try {
             await createPaymentLogs(authToken, [
