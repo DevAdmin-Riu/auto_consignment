@@ -27,6 +27,7 @@ const {
   VENDORS,
   AUTOMATION_TYPES,
   getVendorByName,
+  resolveVendorByUrl,
 } = require("./vendors/config");
 
 // GraphQL 클라이언트
@@ -163,19 +164,30 @@ async function handleVendorOrder(req, res) {
       });
     }
 
+    // products 배열이 있으면 사용, 없으면 단일 상품으로 배열 생성 (하위 호환성)
+    const productsList = products || [{ productUrl, productName, quantity }];
+
     // 협력사 설정 찾기
-    const vendor = getVendorByName(vendorName);
+    // 1순위: vendorName 정확 매칭 (or alias)
+    // 3순위: productUrl host로 fallback (brand.naver.com / smartstore.naver.com 등)
+    let vendor = getVendorByName(vendorName);
+    if (!vendor) {
+      const fallbackUrl = productsList[0]?.productUrl;
+      vendor = resolveVendorByUrl(fallbackUrl);
+      if (vendor) {
+        console.log(
+          `[라우팅] vendorName="${vendorName}" 미등록, URL host로 fallback → ${vendor.name} (${fallbackUrl})`,
+        );
+      }
+    }
     if (!vendor) {
       return res.json({
         success: false,
         automationType: "unknown",
-        error: `등록되지 않은 협력사: ${vendorName}`,
+        error: `등록되지 않은 협력사: ${vendorName} (지원하지 않는 URL)`,
         message: "수동 발주 필요",
       });
     }
-
-    // products 배열이 있으면 사용, 없으면 단일 상품으로 배열 생성 (하위 호환성)
-    const productsList = products || [{ productUrl, productName, quantity }];
 
     // shippingAddress 처리:
     // 1. 최상위 shippingAddress 사용

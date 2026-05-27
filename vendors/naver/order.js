@@ -54,15 +54,15 @@ const { alertPaymentParsingFailed } = require("../../lib/alert-mail");
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
- * 네이버 스마트스토어 URL이면 nl-au={uuid4-32hex} 쿼리 파라미터 추가
+ * 네이버 커머스(스마트스토어/브랜드스토어) URL이면 nl-au={uuid4-32hex} 쿼리 파라미터 추가
  * 봇 감지 우회용 — 매 요청마다 새 UUID4 생성
  */
 function withNlAu(url) {
   try {
     if (!url || typeof url !== "string") return url;
     const u = new URL(url);
-    // 네이버 스마트스토어 도메인만 적용 (shopping.naver.com 등은 제외)
-    if (!/(^|\.)smartstore\.naver\.com$/.test(u.hostname)) {
+    // 네이버 커머스 도메인만 적용: smartstore / brand
+    if (!/(^|\.)(smartstore|brand)\.naver\.com$/.test(u.hostname)) {
       return url;
     }
     // 이미 nl-au 값이 있으면 그대로 사용 (덮어쓰지 않음)
@@ -75,6 +75,22 @@ function withNlAu(url) {
     return u.toString();
   } catch (e) {
     return url;
+  }
+}
+
+/**
+ * 네이버 커머스 URL의 host로 flow 종류 판별
+ * @returns {"smartstore" | "brand" | "unknown"}
+ */
+function getNaverFlow(url) {
+  try {
+    if (!url || typeof url !== "string") return "unknown";
+    const host = new URL(url).hostname;
+    if (/(^|\.)smartstore\.naver\.com$/.test(host)) return "smartstore";
+    if (/(^|\.)brand\.naver\.com$/.test(host)) return "brand";
+    return "unknown";
+  } catch {
+    return "unknown";
   }
 }
 
@@ -497,6 +513,10 @@ async function handleCustomsCode(page) {
  * @param {Page} page
  * @returns {number|null}
  */
+/**
+ * smartstore 전용: 수량 input 옆 금액 추출
+ * brand는 DOM depth/태그가 달라서 brand-order.js의 getBrandProductPriceFromQtyInput 사용
+ */
 async function getProductPriceFromQtyInput(page) {
   try {
     const price = await page.evaluate(() => {
@@ -504,83 +524,78 @@ async function getProductPriceFromQtyInput(page) {
       if (!qtyInput) return null;
       const container = qtyInput.parentElement?.parentElement;
       if (!container) return null;
-      const divs = container.querySelectorAll(':scope > div');
+      const divs = container.querySelectorAll(":scope > div");
       for (const div of divs) {
         if (div.contains(qtyInput)) continue;
-        const span = div.querySelector('span');
+        const span = div.querySelector("span");
         if (span) {
           const text = span.textContent.trim();
           const match = text.match(/([\d,]+)/);
-          if (match) return parseInt(match[1].replace(/,/g, ''), 10) || 0;
+          if (match) return parseInt(match[1].replace(/,/g, ""), 10) || 0;
         }
       }
       return null;
     });
     if (price && price > 0) {
-      console.log(`[naver] 수량 옆 금액 추출: ${price.toLocaleString()}원`);
+      console.log(`[naver:smartstore] 수량 옆 금액 추출: ${price.toLocaleString()}원`);
     }
     return price;
   } catch (e) {
-    console.log(`[naver] 수량 옆 금액 추출 실패: ${e.message}`);
+    console.log(`[naver:smartstore] 수량 옆 금액 추출 실패: ${e.message}`);
     return null;
   }
 }
 
+/**
+ * smartstore 전용: "총 상품 금액" 영역에서 가격 추출
+ * brand는 brand-order.js의 getBrandProductPrice 사용
+ */
 async function getProductPrice(page) {
   try {
-    // 1. 옵션 선택 후 "총 상품 금액" 에서 추출 (가장 정확)
     const totalInfo = await page.evaluate(() => {
-      // 페이지 전체 텍스트에서 "총 상품 금액" 근처의 금액 추출
       const allElements = document.querySelectorAll("*");
       for (const el of allElements) {
-        // 자식 없이 직접 "총 상품 금액" 텍스트를 가진 요소만
         if (el.children.length > 3) continue;
         const text = (el.textContent || "").trim();
         if (!text.includes("총 상품 금액")) continue;
 
-        // 상위 컨테이너에서 금액 패턴 찾기 (여러 레벨 탐색)
         let container = el.parentElement;
         for (let i = 0; i < 5 && container; i++) {
           const containerText = container.textContent || "";
-
-          // "총 상품 금액" 뒤에 나오는 첫 번째 금액 추출
           const priceMatch = containerText.match(/총 상품 금액[\s\S]*?([\d,]+)원/);
           if (priceMatch) {
             const totalPrice = parseInt(priceMatch[1].replace(/,/g, ""), 10) || 0;
-
-            // 수량: "총 수량 N개"
             let totalQty = 1;
             const qtyMatch = containerText.match(/총 수량\s*(\d+)/);
             if (qtyMatch) totalQty = parseInt(qtyMatch[1], 10) || 1;
-
             if (totalPrice > 0) {
               return { totalPrice, totalQty, debug: containerText.substring(0, 200) };
             }
           }
           container = container.parentElement;
         }
-        break; // 첫 번째 매칭된 요소만 처리
+        break;
       }
       return null;
     });
 
     if (totalInfo && totalInfo.totalPrice > 0) {
-      console.log(`[naver] 총 상품 금액: ${totalInfo.totalPrice}원 (수량 ${totalInfo.totalQty}개)`);
+      console.log(`[naver:smartstore] 총 상품 금액: ${totalInfo.totalPrice}원 (수량 ${totalInfo.totalQty}개)`);
       if (totalInfo.debug) {
-        console.log(`[naver] 가격 추출 컨텍스트: "${totalInfo.debug}"`);
+        console.log(`[naver:smartstore] 가격 추출 컨텍스트: "${totalInfo.debug}"`);
       }
       return totalInfo.totalPrice;
     }
 
-    // 2. 폴백: 기본 상품 가격 셀렉터
+    // 폴백: 기본 상품 가격 셀렉터
     const priceText = await page.$eval(SELECTORS.product.productPrice, (el) =>
       el.textContent.trim(),
     );
     const price = parseInt(priceText.replace(/[^0-9]/g, ""), 10);
-    console.log(`[naver] 기본 상품 가격 (폴백): ${priceText} → ${price}원`);
+    console.log(`[naver:smartstore] 기본 상품 가격 (폴백): ${priceText} → ${price}원`);
     return price;
   } catch (error) {
-    console.error("[naver] 가격 추출 실패:", error.message);
+    console.error("[naver:smartstore] 가격 추출 실패:", error.message);
     return null;
   }
 }
@@ -1999,24 +2014,39 @@ async function processProduct(page, product) {
     openMallAdditionalOptions,
   } = product;
 
-  console.log(`\n[naver] 상품 처리: ${productName || productUrl}`);
-  console.log(`[naver] URL: ${productUrl}`);
-  console.log(`[naver] 수량: ${quantity}`);
-  if (openMallOptions) {
-    console.log(`[naver] 옵션: ${Array.isArray(openMallOptions) ? openMallOptions.length + '개' : '없음'}`);
-  }
-  if (openMallAdditionalOptions) {
-    console.log(`[naver] 추가옵션: ${Array.isArray(openMallAdditionalOptions) ? openMallAdditionalOptions.length + '개' : '없음'}`);
-  }
-
-  // 1. 상품 페이지로 이동 (nl-au 파라미터 추가 — 봇 감지 우회용)
+  // 0. URL 검증 + flow 판별 (smartstore vs brand)
+  // 결제/배송지/송장은 네이버페이 통합이라 공통, 상품 페이지 DOM만 다름
   if (!productUrl || !productUrl.trim() || !productUrl.startsWith("https")) {
     console.log(`[naver] ⚠️ 오픈몰 상품 링크 비어 있음: ${product.productSku} (${product.productName})`);
     return { success: false, error: `오픈몰 상품 링크 비어 있음: ${product.productSku}`, needsManagerVerification: true };
   }
+  const flow = getNaverFlow(productUrl);
+  if (flow === "unknown") {
+    console.log(`[naver] ⚠️ 지원하지 않는 네이버 URL host: ${productUrl}`);
+    return { success: false, error: `지원하지 않는 URL: ${productUrl}`, needsManagerVerification: true };
+  }
+
+  // brand.naver.com이면 brand-order.js로 위임 (장바구니 담기까지만 — 결제는 공용)
+  if (flow === "brand") {
+    const { processBrandProduct } = require("./brand-order");
+    return processBrandProduct(page, product);
+  }
+
+  // === 이하 smartstore 전용 흐름 ===
+  console.log(`\n[naver:smartstore] 상품 처리: ${productName || productUrl}`);
+  console.log(`[naver:smartstore] URL: ${productUrl}`);
+  console.log(`[naver:smartstore] 수량: ${quantity}`);
+  if (openMallOptions) {
+    console.log(`[naver:smartstore] 옵션: ${Array.isArray(openMallOptions) ? openMallOptions.length + '개' : '없음'}`);
+  }
+  if (openMallAdditionalOptions) {
+    console.log(`[naver:smartstore] 추가옵션: ${Array.isArray(openMallAdditionalOptions) ? openMallAdditionalOptions.length + '개' : '없음'}`);
+  }
+
+  // 1. 상품 페이지로 이동 (nl-au 파라미터 추가 — 봇 감지 우회용)
   const navUrl = withNlAu(productUrl);
   if (navUrl !== productUrl) {
-    console.log(`[naver] URL nl-au 부여: ${navUrl}`);
+    console.log(`[naver:smartstore] URL nl-au 부여: ${navUrl}`);
   }
   await page.goto(navUrl, {
     waitUntil: "networkidle2",
@@ -2112,7 +2142,8 @@ async function processProduct(page, product) {
 
   // 4.6. 가격 추출 (옵션+수량 반영된 정확한 상품가)
   await delay(500);
-  const openMallPrice = await getProductPriceFromQtyInput(page) || await getProductPrice(page);
+  const openMallPrice =
+    (await getProductPriceFromQtyInput(page)) || (await getProductPrice(page));
 
   // 5. 장바구니에 담기
   const cartResult = await addToCart(page);
@@ -3516,8 +3547,10 @@ async function processNaverOrder(
 module.exports = {
   processNaverOrder,
   selectOptions,
+  selectAdditionalOptions,
   setQuantity,
   addToCart,
+  withNlAu,
   processProduct,
   selectDeliveryAddress,
   modifyDeliveryAddress,

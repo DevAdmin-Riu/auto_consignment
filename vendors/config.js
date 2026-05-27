@@ -239,6 +239,32 @@ function getVendorByName(vendorName) {
 }
 
 /**
+ * 상품 URL host로 협력사 설정 찾기 (vendorName 매칭 실패 시 fallback)
+ * 예: brand.naver.com / smartstore.naver.com → 네이버
+ */
+const URL_HOST_TO_VENDOR = [
+  { pattern: /(^|\.)smartstore\.naver\.com$/, vendorName: "네이버" },
+  { pattern: /(^|\.)brand\.naver\.com$/, vendorName: "네이버" },
+];
+
+function resolveVendorByUrl(url) {
+  if (!url || typeof url !== "string") return null;
+  let host;
+  try {
+    host = new URL(url).hostname;
+  } catch {
+    return null;
+  }
+  for (const { pattern, vendorName } of URL_HOST_TO_VENDOR) {
+    if (pattern.test(host)) {
+      const v = VENDORS[vendorName];
+      if (v) return wrapVendorConfig(vendorName, v);
+    }
+  }
+  return null;
+}
+
+/**
  * 협력사 키로 설정 찾기
  */
 function getVendorByKey(key) {
@@ -255,5 +281,6 @@ module.exports = {
   AUTOMATION_TYPES,
   getVendorByName,
   getVendorByKey,
+  resolveVendorByUrl,
   getEnv,
 };
